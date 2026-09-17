@@ -305,9 +305,12 @@ export default function HRPayrollPage() {
   });
 
   const fetchEmployees = async () => {
-    if (!projectId) return;
+    if (!companyId) return;
     try {
-      const res = await fetch(`${getApiHost()}/apis/v3/hr/employees/${projectId}`, { headers: authHeaders() });
+      const url = projectId
+        ? `${getApiHost()}/apis/v3/hr/employees/${projectId}`
+        : `${getApiHost()}/apis/v3/hr/company/employees/${companyId}`;
+      const res = await fetch(url, { headers: authHeaders() });
       if (res.ok) {
         const data = await res.json();
         const mapped = data.map((emp: any) => ({
@@ -479,10 +482,10 @@ export default function HRPayrollPage() {
   }, [companyId, tab]);
 
   useEffect(() => {
-    if (projectId) {
+    if (companyId) {
       fetchEmployees();
     }
-  }, [projectId]);
+  }, [companyId, projectId]);
 
   useEffect(() => {
     if (companyId) {
@@ -521,7 +524,7 @@ export default function HRPayrollPage() {
         headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
         body: JSON.stringify({
           company_id: companyId,
-          project_id: projectId,
+          project_id: projectId || null,
           name: empForm.name,
           employee_code: empForm.code,
           designation: empForm.designation,
@@ -824,7 +827,7 @@ export default function HRPayrollPage() {
         headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
         body: JSON.stringify({
           company_id: companyId,
-          project_id: projectId,
+          project_id: projectId || null,
           payroll_month: payrollMonth,
           days_in_month: daysInMonth
         }),

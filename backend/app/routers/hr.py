@@ -123,6 +123,13 @@ class EmployeeCreate(BaseModel):
     is_esi_applicable: bool = True
     date_of_joining: Optional[datetime] = None
 
+    @field_validator("project_id", mode="before")
+    @classmethod
+    def validate_project_id(cls, v):
+        if v == "" or v is None:
+            return None
+        return v
+
     @field_validator("name")
     @classmethod
     def _name_is_not_blank(cls, v: str) -> str:
@@ -304,6 +311,13 @@ class PayrollRunCreate(BaseModel):
     # attendance or leave (salaried staff who do not punch). Default False —
     # no recorded days, no pay.
     assume_full_month: bool = False
+
+    @field_validator("project_id", mode="before")
+    @classmethod
+    def validate_project_id(cls, v):
+        if v == "" or v is None:
+            return None
+        return v
 
     @field_validator("payroll_month")
     @classmethod
@@ -1263,6 +1277,13 @@ class LeaveRequestCreate(BaseModel):
     end_date: datetime
     days_count: float = Field(..., ge=0)
     reason: Optional[str] = None
+
+    @field_validator("project_id", mode="before")
+    @classmethod
+    def validate_project_id(cls, v):
+        if v == "" or v is None:
+            return None
+        return v
 
 class LeaveRequestResponse(BaseModel):
     id: uuid.UUID

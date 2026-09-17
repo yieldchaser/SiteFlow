@@ -406,3 +406,37 @@ def test_no_is_code_claims_in_billing_payroll_or_quality_copy():
         if "IS-456" in text or "per IS code" in text or "Compliant with IS code" in text:
             offenders.append(rel)
     assert not offenders, f"IS-code claims reintroduced in: {offenders}"
+
+
+def test_employee_and_payroll_create_accept_empty_project_id():
+    """An unselected project in the UI passes project_id="" instead of null.
+    The schema must coerce empty strings to None without raising a 422 UUID parsing error."""
+    import uuid as _uuid
+    from datetime import datetime, timezone
+    from app.routers.hr import EmployeeCreate, PayrollRunCreate, LeaveRequestCreate
+
+    cid = _uuid.uuid4()
+    emp = EmployeeCreate(company_id=cid, name="Ramesh Kumar", project_id="")
+    assert emp.project_id is None, "Empty string project_id should be coerced to None"
+
+    emp_none = EmployeeCreate(company_id=cid, name="Ramesh Kumar", project_id=None)
+    assert emp_none.project_id is None
+
+    pid = _uuid.uuid4()
+    emp_uuid = EmployeeCreate(company_id=cid, name="Ramesh Kumar", project_id=pid)
+    assert emp_uuid.project_id == pid
+
+    pr = PayrollRunCreate(company_id=cid, payroll_month="2026-09", project_id="")
+    assert pr.project_id is None
+
+    lr = LeaveRequestCreate(
+        employee_id=_uuid.uuid4(),
+        employee_name="Ramesh",
+        leave_type="Casual",
+        start_date=datetime.now(timezone.utc),
+        end_date=datetime.now(timezone.utc),
+        days_count=1,
+        project_id=""
+    )
+    assert lr.project_id is None
+
