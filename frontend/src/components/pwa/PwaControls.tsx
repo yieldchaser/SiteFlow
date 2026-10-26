@@ -77,7 +77,7 @@ export default function PwaControls() {
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-[10px] uppercase tracking-[0.2em] text-muted">Mobile PWA</div>
-          <div className="mt-1 text-sm font-semibold text-white">Installable shell and offline punch capture</div>
+          <div className="mt-1 text-sm font-semibold text-foreground">Installable shell and offline punch capture</div>
           <div className="mt-1 text-[11px] text-muted">{status}</div>
         </div>
         <Badge tone={isOnline ? "success" : "warning"}>

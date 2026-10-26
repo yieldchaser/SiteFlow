@@ -21,6 +21,69 @@ const compactINR = (val: number): string => {
   return `${sign}${Math.round(a)}`;
 };
 
+/**
+ * Monthly bar chart for the financial tab. Bars share the 160-unit plot width,
+ * so any number of months fits, and the zero line sits where the data needs it.
+ */
+function MonthlyBars({
+  series,
+  months,
+  color,
+  label,
+}: {
+  series: number[];
+  months: string[];
+  color: (val: number) => string;
+  label: (val: number) => string;
+}) {
+  const posMax = Math.max(0, ...series);
+  const negMax = Math.max(0, ...series.map((v) => -v));
+  const span = posMax + negMax || 1;
+  const top = 14;
+  const plot = 76;
+  const base = top + (plot * posMax) / span;
+  const slot = 160 / series.length;
+  const width = Math.min(30, slot * 0.6);
+  const crowded = series.length > 4;
+  const labelEvery = Math.ceil(series.length / 5);
+  const monthLabel = (m: string) => (crowded ? m.replace(/ 20(\d\d)$/, " '$1") : m);
+  return (
+    <div className="h-40 flex items-center justify-center bg-transparent relative">
+      <svg className="w-full h-full" viewBox="0 0 200 120">
+        <line x1="20" y1={base} x2="180" y2={base} stroke="var(--border)" strokeWidth="1" />
+        {posMax > 0 && <line x1="20" y1={top} x2="180" y2={top} stroke="var(--border)" strokeWidth="1" strokeDasharray="3" />}
+        {negMax > 0 && <line x1="20" y1={top + plot} x2="180" y2={top + plot} stroke="var(--border)" strokeWidth="1" strokeDasharray="3" />}
+        <text x="17" y={base + 3} fill="var(--muted)" fontSize="7" textAnchor="end">0</text>
+        {posMax > 0 && base - top > 10 && <text x="17" y={top + 3} fill="var(--muted)" fontSize="7" textAnchor="end">{compactINR(posMax)}</text>}
+        {negMax > 0 && top + plot - base > 10 && <text x="17" y={top + plot + 3} fill="var(--muted)" fontSize="7" textAnchor="end">{compactINR(-negMax)}</text>}
+        {series.map((val, idx) => {
+          const height = (Math.abs(val) / span) * plot;
+          const x = 20 + idx * slot + (slot - width) / 2;
+          const cx = x + width / 2;
+          const y = val < 0 ? base : base - height;
+          const showMonth = idx % labelEvery === 0 || idx === series.length - 1;
+          return (
+            <g key={idx}>
+              <title>{`${months[idx] || ""}: ${label(val)}`}</title>
+              <rect x={x} y={y} width={width} height={height || 1.5} fill={color(val)} rx="1.5" className="transition-all hover:opacity-90" />
+              {(!crowded || idx === series.length - 1) && (
+                <text x={cx} y={val < 0 ? y + height + 8 : y - 3} fill={color(val)} fontSize="7" fontWeight="bold" textAnchor="middle">
+                  {label(val)}
+                </text>
+              )}
+              {showMonth && (
+                <text x={cx} y="108" fill="var(--muted)" fontSize="7" textAnchor="middle">
+                  {monthLabel(months[idx] || "")}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const params = useParams();
   const companyId = params?.company_id as string;
@@ -1245,39 +1308,7 @@ export default function DashboardPage() {
                             );
                           }
 
-                          const absValues = series.map((v: number) => Math.abs(v));
-                          const maxVal = Math.max(...absValues, 1000);
-
-                          return (
-                            <div className="h-40 flex items-center justify-center bg-transparent relative overflow-visible">
-                              <svg className="w-full h-full overflow-visible" viewBox="0 0 200 120">
-                                <line x1="20" y1="40" x2="180" y2="40" stroke="var(--border)" strokeWidth="1" />
-                                <line x1="20" y1="90" x2="180" y2="90" stroke="var(--border)" strokeWidth="1" strokeDasharray="3" />
-                                <text x="15" y="43" fill="var(--muted)" fontSize="8" textAnchor="end">0</text>
-                                <text x="15" y="93" fill="var(--muted)" fontSize="8" textAnchor="end">-{compactINR(maxVal)}</text>
-
-                                {series.map((val: number, idx: number) => {
-                                  const x = series.length === 1 ? 85 : 45 + idx * 70;
-                                  const width = 30;
-                                  const ratio = Math.abs(val) / maxVal;
-                                  const height = ratio * 50;
-                                  const y = val < 0 ? 40 : 40 - height;
-
-                                  return (
-                                    <g key={idx}>
-                                      <rect x={x} y={y} width={width} height={height || 2} fill="var(--success)" rx="2" className="transition-all hover:opacity-90" />
-                                      <text x={x + 15} y={val < 0 ? y + height + 10 : y - 4} fill="var(--success)" fontSize="8" fontWeight="bold" textAnchor="middle">
-                                        {val === 0 ? "0" : compactINR(val)}
-                                      </text>
-                                      <text x={x + 15} y="112" fill="var(--muted)" fontSize="7" textAnchor="middle" transform={`rotate(-15 ${x + 15} 112)`}>
-                                        {months[idx] || ""}
-                                      </text>
-                                    </g>
-                                  );
-                                })}
-                              </svg>
-                            </div>
-                          );
+                          return <MonthlyBars series={series} months={months} color={() => "var(--success)"} label={(v) => (v === 0 ? "0" : compactINR(v))} />;
                         })()}
                       </div>
                       <div className="border-t border-border-custom pt-3 flex justify-between items-center text-xs mt-4">
@@ -1312,39 +1343,7 @@ export default function DashboardPage() {
                             );
                           }
 
-                          const absValues = series.map((v: number) => Math.abs(v));
-                          const maxVal = Math.max(...absValues, 1000);
-
-                          return (
-                            <div className="h-40 flex items-center justify-center bg-transparent relative overflow-visible">
-                              <svg className="w-full h-full overflow-visible" viewBox="0 0 200 120">
-                                <line x1="20" y1="40" x2="180" y2="40" stroke="var(--border)" strokeWidth="1" />
-                                <line x1="20" y1="90" x2="180" y2="90" stroke="var(--border)" strokeWidth="1" strokeDasharray="3" />
-                                <text x="15" y="43" fill="var(--muted)" fontSize="8" textAnchor="end">0</text>
-                                <text x="15" y="93" fill="var(--muted)" fontSize="8" textAnchor="end">-{compactINR(maxVal)}</text>
-
-                                {series.map((val: number, idx: number) => {
-                                  const x = series.length === 1 ? 85 : 45 + idx * 70;
-                                  const width = 30;
-                                  const ratio = Math.abs(val) / maxVal;
-                                  const height = ratio * 50;
-                                  const y = 40;
-
-                                  return (
-                                    <g key={idx}>
-                                      <rect x={x} y={y} width={width} height={height || 2} fill="var(--danger)" rx="2" className="transition-all hover:opacity-90" />
-                                      <text x={x + 15} y={y + height + 10} fill="var(--danger)" fontSize="8" fontWeight="bold" textAnchor="middle">
-                                        {val === 0 ? "0" : `-${compactINR(val)}`}
-                                      </text>
-                                      <text x={x + 15} y="112" fill="var(--muted)" fontSize="7" textAnchor="middle" transform={`rotate(-15 ${x + 15} 112)`}>
-                                        {months[idx] || ""}
-                                      </text>
-                                    </g>
-                                  );
-                                })}
-                              </svg>
-                            </div>
-                          );
+                          return <MonthlyBars series={series.map((v: number) => -Math.abs(v))} months={months} color={() => "var(--danger)"} label={(v) => (v === 0 ? "0" : compactINR(v))} />;
                         })()}
                       </div>
                       <div className="border-t border-border-custom pt-3 flex justify-between items-center text-xs mt-4">
@@ -1377,40 +1376,7 @@ export default function DashboardPage() {
                             );
                           }
 
-                          const absValues = series.map((v: number) => Math.abs(v));
-                          const maxVal = Math.max(...absValues, 1000);
-
-                          return (
-                            <div className="h-40 flex items-center justify-center bg-transparent relative overflow-visible">
-                              <svg className="w-full h-full overflow-visible" viewBox="0 0 200 120">
-                                <line x1="20" y1="40" x2="180" y2="40" stroke="var(--border)" strokeWidth="1" />
-                                <line x1="20" y1="90" x2="180" y2="90" stroke="var(--border)" strokeWidth="1" strokeDasharray="3" />
-                                <text x="15" y="43" fill="var(--muted)" fontSize="8" textAnchor="end">0</text>
-                                <text x="15" y="93" fill="var(--muted)" fontSize="8" textAnchor="end">-{compactINR(maxVal)}</text>
-
-                                {series.map((val: number, idx: number) => {
-                                  const x = series.length === 1 ? 85 : 45 + idx * 70;
-                                  const width = 30;
-                                  const ratio = Math.abs(val) / maxVal;
-                                  const height = ratio * 50;
-                                  const y = val < 0 ? 40 : 40 - height;
-                                  const color = val < 0 ? "var(--danger)" : "var(--success)";
-
-                                  return (
-                                    <g key={idx}>
-                                      <rect x={x} y={y} width={width} height={height || 2} fill={color} rx="2" className="transition-all hover:opacity-90" />
-                                      <text x={x + 15} y={val < 0 ? y + height + 10 : y - 4} fill={color} fontSize="8" fontWeight="bold" textAnchor="middle">
-                                        {val === 0 ? "0" : compactINR(val)}
-                                      </text>
-                                      <text x={x + 15} y="112" fill="var(--muted)" fontSize="7" textAnchor="middle" transform={`rotate(-15 ${x + 15} 112)`}>
-                                        {months[idx] || ""}
-                                      </text>
-                                    </g>
-                                  );
-                                })}
-                              </svg>
-                            </div>
-                          );
+                          return <MonthlyBars series={series} months={months} color={(v) => (v < 0 ? "var(--danger)" : "var(--success)")} label={(v) => (v === 0 ? "0" : compactINR(v))} />;
                         })()}
                       </div>
                       <div className="border-t border-border-custom pt-3 flex justify-between items-center text-xs mt-4">

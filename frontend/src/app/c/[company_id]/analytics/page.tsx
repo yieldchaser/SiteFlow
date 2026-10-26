@@ -97,7 +97,7 @@ function formatCurrency(value: number) {
 function buildPoints(values: number[], width = 640, height = 220, padding = 24) {
   const usableWidth = width - padding * 2;
   const usableHeight = height - padding * 2;
-  const maxValue = Math.max(...values, 1);
+  const maxValue = Math.max(...values, 100);
 
   return values
     .map((value, index) => {
@@ -169,6 +169,7 @@ function ChartCard({
           })}
 
           {labels.map((label, index) => {
+            if (index % Math.ceil(labels.length / 8) !== 0 && index !== labels.length - 1) return null;
             const x = labels.length === 1 ? width / 2 : padding + (index / Math.max(labels.length - 1, 1)) * (width - padding * 2);
             return (
               <text key={label} x={x} y={height - 6} fill="var(--muted)" fontSize="10" textAnchor="middle">
@@ -196,7 +197,7 @@ function ChartCard({
 
           {/* Interactive dots overlay */}
           {plannedValues.map((value, idx) => {
-            const maxVal = Math.max(...plannedValues, 1);
+            const maxVal = Math.max(...plannedValues, 100);
             const x = plannedValues.length === 1 ? width / 2 : padding + (idx / (plannedValues.length - 1)) * usableWidth;
             const y = height - padding - (value / maxVal) * usableHeight;
             return (
@@ -216,7 +217,7 @@ function ChartCard({
           })}
 
           {actualValues.map((value, idx) => {
-            const maxVal = Math.max(...actualValues, 1);
+            const maxVal = Math.max(...actualValues, 100);
             const x = actualValues.length === 1 ? width / 2 : padding + (idx / (actualValues.length - 1)) * usableWidth;
             const y = height - padding - (value / maxVal) * usableHeight;
             return (
@@ -374,7 +375,7 @@ export default function CompanyAnalyticsPage() {
                   <div className="mt-1 text-sm text-muted">Cumulative spend as a share of total project budget</div>
                 </div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted">
-                  {data ? `${data.total_spend.toLocaleString()} spent` : "Loading"}
+                  {data ? `${formatCurrency(data.total_spend)} spent` : "Loading"}
                 </div>
               </div>
               <div className="relative rounded-lg border border-border-custom bg-card">
@@ -392,6 +393,7 @@ export default function CompanyAnalyticsPage() {
                   })}
 
                   {burnLabels.map((label, index) => {
+                    if (index % Math.ceil(burnLabels.length / 8) !== 0 && index !== burnLabels.length - 1) return null;
                     const x = burnLabels.length === 1 ? 380 : 28 + (index / Math.max(burnLabels.length - 1, 1)) * 704;
                     return (
                       <text key={label} x={x} y="254" fill="var(--muted)" fontSize="10" textAnchor="middle">
@@ -411,7 +413,7 @@ export default function CompanyAnalyticsPage() {
 
                   {/* Interactive dots overlay */}
                   {burn.map((value, idx) => {
-                    const maxVal = Math.max(...burn, 1);
+                    const maxVal = Math.max(...burn, 100);
                     const x = burn.length === 1 ? 380 : 28 + (idx / Math.max(burn.length - 1, 1)) * 704;
                     const y = 260 - 28 - (value / maxVal) * (260 - 56);
                     return (
