@@ -32,6 +32,12 @@ interface Entry {
   notes?: string;
 }
 
+interface Asset {
+  id: string;
+  name: string;
+  code: string;
+}
+
 export default function DepreciationPage() {
   const params = useParams();
   const companyId = params?.company_id as string;
@@ -40,6 +46,7 @@ export default function DepreciationPage() {
 
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
   const [activeTab, setActiveTab] = useState<"schedules" | "entries">("schedules");
   const [showSchedModal, setShowSchedModal] = useState(false);
   const [showEntryModal, setShowEntryModal] = useState(false);
@@ -96,6 +103,22 @@ export default function DepreciationPage() {
     }, 0);
     return () => clearTimeout(id);
   }, [activeTab, companyId]);
+
+  // Schedules feed the entry form's picker, and the fleet names every row.
+  useEffect(() => {
+    if (!companyId) return;
+    fetchSchedules();
+    fetch(`${getApiHost()}/apis/v3/equipment/${companyId}`, { headers: authHeaders() })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setAssets(Array.isArray(data) ? data : []))
+      .catch((e) => console.error("Failed to load equipment", e));
+  }, [companyId]);
+
+  const assetLabel = (assetId: string) => {
+    const a = assets.find((x) => x.id === assetId);
+    return a ? `${a.name} (${a.code})` : "Unknown asset";
+  };
+  const methodLabel = (m: string) => (m === "wdv" ? "Written Down Value" : formatLabel(m));
 
   const handleCreateSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -189,6 +212,7 @@ export default function DepreciationPage() {
             <table className="w-full text-left text-sm">
               <thead className="bg-elevated text-muted">
                 <tr>
+                  <th className="px-6 py-4 font-medium">Asset</th>
                   <th className="px-6 py-4 font-medium">Method</th>
                   <th className="px-6 py-4 font-medium">Life (Yrs)</th>
                   <th className="px-6 py-4 font-medium">Salvage Value</th>
@@ -200,7 +224,7 @@ export default function DepreciationPage() {
               <tbody className="divide-y divide-border-custom">
                 {schedules.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="p-8">
+                    <td colSpan={7} className="p-8">
                       <EmptyState
                         icon="trending_down"
                         title="No depreciation schedules found"
@@ -216,7 +240,8 @@ export default function DepreciationPage() {
                 ) : (
                   schedules.map((s) => (
                     <tr key={s.id} className="hover:bg-elevated transition-colors">
-                      <td className="px-6 py-4">{formatLabel(s.method)}</td>
+                      <td className="px-6 py-4 font-medium text-foreground">{assetLabel(s.asset_id)}</td>
+                      <td className="px-6 py-4">{methodLabel(s.method)}</td>
                       <td className="px-6 py-4">{s.useful_life_years}</td>
                       <td className="px-6 py-4">₹{Number(s.salvage_value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
                       <td className="px-6 py-4">{s.depreciation_pct}%</td>
@@ -237,6 +262,7 @@ export default function DepreciationPage() {
             <table className="w-full text-left text-sm">
               <thead className="bg-elevated text-muted">
                 <tr>
+                  <th className="px-6 py-4 font-medium">Asset</th>
                   <th className="px-6 py-4 font-medium">Date</th>
                   <th className="px-6 py-4 font-medium">Depreciation</th>
                   <th className="px-6 py-4 font-medium">Accumulated</th>
@@ -247,7 +273,7 @@ export default function DepreciationPage() {
               <tbody className="divide-y divide-border-custom">
                 {entries.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="p-8">
+                    <td colSpan={6} className="p-8">
                       <EmptyState
                         icon="ledger"
                         title="No depreciation entries found"
@@ -263,6 +289,7 @@ export default function DepreciationPage() {
                 ) : (
                   entries.map((e) => (
                     <tr key={e.id} className="hover:bg-elevated transition-colors">
+                      <td className="px-6 py-4 font-medium text-foreground">{assetLabel(e.asset_id)}</td>
                       <td className="px-6 py-4">{formatDate(e.entry_date)}</td>
                       <td className="px-6 py-4">₹{Number(e.depreciation_amount).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
                       <td className="px-6 py-4">₹{Number(e.accumulated_depreciation).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
@@ -284,16 +311,23 @@ export default function DepreciationPage() {
             <h2 className="text-xl font-bold text-foreground mb-4">New Depreciation Schedule</h2>
             <form onSubmit={handleCreateSchedule} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-muted mb-1">Asset ID</label>
-                <input type="text" required className="w-full bg-elevated border border-border-custom rounded-md px-4 py-2 text-foreground" value={schedForm.asset_id} onChange={(e) => setSchedForm({...schedForm, asset_id: e.target.value})} />
+                <label className="block text-xs font-medium text-muted mb-1">Asset</label>
+                <select required className="w-full bg-elevated border border-border-custom rounded-md px-4 py-2 text-foreground" value={schedForm.asset_id} onChange={(e) => setSchedForm({...schedForm, asset_id: e.target.value})}>
+                  <option value="">Select equipment</option>
+                  {assets.map((a) => (
+                    <option key={a.id} value={a.id}>{a.name} ({a.code})</option>
+                  ))}
+                </select>
+                {assets.length === 0 && (
+                  <p className="text-xs text-muted mt-1">Add the machine under Equipment first, then come back here.</p>
+                )}
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-muted mb-1">Method</label>
                   <select className="w-full bg-elevated border border-border-custom rounded-md px-4 py-2 text-foreground" value={schedForm.method} onChange={(e) => setSchedForm({...schedForm, method: e.target.value})}>
                     <option value="straight_line">Straight Line</option>
-                    <option value="reducing_balance">Reducing Balance</option>
-                    <option value="written_down_value">Written Down Value</option>
+                    <option value="wdv">Written Down Value</option>
                   </select>
                 </div>
                 <div>
@@ -330,12 +364,26 @@ export default function DepreciationPage() {
             <h2 className="text-xl font-bold text-foreground mb-4">New Depreciation Entry</h2>
             <form onSubmit={handleCreateEntry} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-muted mb-1">Schedule ID</label>
-                <input type="text" required className="w-full bg-elevated border border-border-custom rounded-md px-4 py-2 text-foreground" value={entryForm.schedule_id} onChange={(e) => setEntryForm({...entryForm, schedule_id: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-muted mb-1">Asset ID</label>
-                <input type="text" required className="w-full bg-elevated border border-border-custom rounded-md px-4 py-2 text-foreground" value={entryForm.asset_id} onChange={(e) => setEntryForm({...entryForm, asset_id: e.target.value})} />
+                <label className="block text-xs font-medium text-muted mb-1">Asset Schedule</label>
+                <select
+                  required
+                  className="w-full bg-elevated border border-border-custom rounded-md px-4 py-2 text-foreground"
+                  value={entryForm.schedule_id}
+                  onChange={(e) => {
+                    const s = schedules.find((x) => x.id === e.target.value);
+                    setEntryForm({ ...entryForm, schedule_id: e.target.value, asset_id: s?.asset_id || "" });
+                  }}
+                >
+                  <option value="">Select a schedule</option>
+                  {schedules.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {assetLabel(s.asset_id)}: {methodLabel(s.method)}, {s.depreciation_pct}%
+                    </option>
+                  ))}
+                </select>
+                {schedules.length === 0 && (
+                  <p className="text-xs text-muted mt-1">Create a depreciation schedule for the asset first.</p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-muted mb-1">Entry Date</label>
