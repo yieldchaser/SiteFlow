@@ -219,7 +219,7 @@ export function CustomFieldsSection({
                 onChange={(e) => setValue(f.id, e.target.value)}
                 className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground"
               >
-                <option value="">— Select —</option>
+                <option value="">Select</option>
                 {f.options.map((o) => (
                   <option key={o} value={o}>{o}</option>
                 ))}

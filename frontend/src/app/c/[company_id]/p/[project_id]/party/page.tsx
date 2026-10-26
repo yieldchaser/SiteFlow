@@ -395,7 +395,7 @@ function AddPartyModal({
     <Modal title="Add Existing Party" onClose={onClose}>
       <Lbl>Select Party</Lbl>
       <select value={partyId} onChange={(e) => setPartyId(e.target.value)} className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground">
-        <option value="">— Choose —</option>
+        <option value="">Choose</option>
         {available.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.party_type || "—"})</option>)}
       </select>
       <div className="flex gap-3 mt-3">

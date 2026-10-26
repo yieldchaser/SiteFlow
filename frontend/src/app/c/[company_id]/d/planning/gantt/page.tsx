@@ -1088,7 +1088,7 @@ export default function GanttSchedulerPage() {
                     onChange={(e) => setSelectedTaskForLink(e.target.value)}
                     className="w-full bg-elevated border border-border-custom rounded-lg p-2 text-foreground"
                   >
-                    <option value="">-- Choose Task --</option>
+                    <option value="">Choose Task</option>
                     {tasks.map(t => (
                       <option key={t.id} value={t.id}>{t.name}</option>
                     ))}
@@ -1104,7 +1104,7 @@ export default function GanttSchedulerPage() {
                     onChange={(e) => setSelectedPredecessor(e.target.value)}
                     className="w-full bg-elevated border border-border-custom rounded-lg p-2 text-foreground"
                   >
-                    <option value="">-- Choose Predecessor --</option>
+                    <option value="">Choose Predecessor</option>
                     {tasks
                       .filter(t => t.id !== selectedTaskForLink)
                       .map(t => (

@@ -761,7 +761,7 @@ export default function ProductionPage() {
                     setActualOutputQty(String(selected.target_output_qty));
                   }
                 }} required className="w-full bg-elevated border border-border-custom rounded px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary">
-                  <option value="">-- Choose Recipe --</option>
+                  <option value="">Choose Recipe</option>
                   {(data?.recipes ?? []).map((r) => (
                     <option key={r.id} value={r.id}>{r.recipe_code} - {r.product_name} ({r.mix_type})</option>
                   ))}

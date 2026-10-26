@@ -185,7 +185,7 @@ export default function TeamSection({ companyId }: Props) {
                       }
                       className="w-full rounded-md border border-border-custom bg-elevated px-2.5 py-2 text-xs text-foreground focus:outline-none focus:border-primary cursor-pointer"
                     >
-                      <option value="">— No role (full access via failsafe) —</option>
+                      <option value="">No role (full access via failsafe)</option>
                       {roles.map((r) => (
                         <option key={r.id} value={r.id}>
                           {r.role_name}

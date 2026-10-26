@@ -1090,7 +1090,7 @@ isCode: cl.is_code_reference || "—",
                   onChange={(e) => setInspForm(prev => ({ ...prev, checklistId: e.target.value }))}
                   className="w-full bg-card border border-border-custom rounded-md px-3 py-2 text-xs text-foreground outline-none focus:border-secondary font-semibold"
                 >
-                  <option value="">-- Choose Template --</option>
+                  <option value="">Choose Template</option>
                   {checklists.map(cl => (
                     <option key={cl.id} value={cl.id} className="bg-card text-foreground">{cl.title} ({cl.isCode})</option>
                   ))}

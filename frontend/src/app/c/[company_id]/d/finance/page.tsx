@@ -1971,7 +1971,7 @@ export default function FinancePage() {
                       <div>
                         <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Contractor Role</label>
                         <select value={newParty.contractor_role} onChange={(e) => setNewParty({ ...newParty, contractor_role: e.target.value })} className="w-full bg-input border border-border-custom rounded-md p-2 text-xs text-foreground focus:outline-none focus:border-primary">
-                          <option value="">— Select —</option>
+                          <option value="">Select</option>
                           <option>Site Execution</option>
                           <option>Finishing</option>
                           <option>MEP</option>
@@ -2019,7 +2019,7 @@ export default function FinancePage() {
                       <div>
                         <label className="text-[10px] font-bold text-muted uppercase tracking-wider">Link Bank Account</label>
                         <select value={newParty.bank_account_id} onChange={(e) => setNewParty({ ...newParty, bank_account_id: e.target.value })} className="w-full bg-input border border-border-custom rounded-md p-2 text-xs text-foreground focus:outline-none focus:border-primary">
-                          <option value="">--NA--</option>
+                          <option value="">Not applicable</option>
                           {bankAccounts.map((b: any) => (
                             <option key={String(b.id)} value={String(b.id)}>{b.bank_name} — {b.account_number}</option>
                           ))}

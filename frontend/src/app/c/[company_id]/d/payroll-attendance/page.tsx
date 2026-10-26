@@ -355,7 +355,7 @@ function SalaryBreakupModal({
             value=""
             onChange={(e) => e.target.value && loadTemplate(e.target.value)}
           >
-            <option value="">— Select a saved template —</option>
+            <option value="">Select a saved template</option>
             {templates.map((t) => (
               <option key={t.id} value={t.id}>{t.name}</option>
             ))}

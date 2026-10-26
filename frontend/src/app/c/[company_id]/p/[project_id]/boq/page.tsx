@@ -720,7 +720,7 @@ export default function BoqTab() {
                       onChange={(e) => setClientId(e.target.value || null)}
                       className="w-full bg-input border border-border-custom rounded-lg px-3 py-2 text-sm text-foreground"
                     >
-                      <option value="">— Select client —</option>
+                      <option value="">Select client</option>
                       {filteredClients.map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.name}

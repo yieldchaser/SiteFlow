@@ -1785,7 +1785,7 @@ export default function LibraryHubPage() {
                     onChange={(e) => setMatUnit(e.target.value)}
                     className="input-field w-full px-3 py-2 text-xs focus:outline-none"
                   >
-                    <option value="">— Select unit —</option>
+                    <option value="">Select unit</option>
                     {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
                   </select>
                 </div>
@@ -1799,7 +1799,7 @@ export default function LibraryHubPage() {
                     onChange={(e) => setMatAltUnit(e.target.value)}
                     className="input-field w-full px-3 py-2 text-xs focus:outline-none"
                   >
-                    <option value="">— None —</option>
+                    <option value="">None</option>
                     {UNITS.filter((u) => u !== matUnit).map((u) => <option key={u} value={u}>{u}</option>)}
                   </select>
                 </div>
@@ -1934,7 +1934,7 @@ export default function LibraryHubPage() {
                     onChange={(e) => setRateUnit(e.target.value)}
                     className="input-field w-full px-3 py-2 text-xs focus:outline-none"
                   >
-                    <option value="">— Select unit —</option>
+                    <option value="">Select unit</option>
                     {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
                   </select>
                 </div>

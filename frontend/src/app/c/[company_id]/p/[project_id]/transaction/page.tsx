@@ -810,7 +810,7 @@ function NewTransactionModal({
         <div className="col-span-2">
           <Lbl>Party (Bill To)</Lbl>
           <select value={partyId} onChange={(e) => setPartyId(e.target.value)} className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground">
-            <option value="">— Select party —</option>
+            <option value="">Select party</option>
             {members.map((m) => (
               <option key={m.company_team_id} value={m.company_team_id}>{m.name}{m.role ? ` (${m.role})` : ""}</option>
             ))}
@@ -828,7 +828,7 @@ function NewTransactionModal({
               onChange={(e) => setBillId(e.target.value)}
               className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground"
             >
-              <option value="">— No invoice link (Standalone Note) —</option>
+              <option value="">No invoice link (Standalone Note)</option>
               {bills
                 .filter((b) => b.party_company_user_id === selectedMember?.company_team_id && b.status !== "Cancelled" && b.status !== "cancelled")
                 .map((b) => (
@@ -848,7 +848,7 @@ function NewTransactionModal({
               onChange={(e) => setBoqDocId(e.target.value)}
               className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground"
             >
-              <option value="">— No BOQ link —</option>
+              <option value="">No BOQ link</option>
               {boqDocs.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.title}
