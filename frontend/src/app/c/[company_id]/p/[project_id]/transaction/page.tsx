@@ -52,6 +52,25 @@ const TAXONOMY: TxnType[] = [
 
 const isInType = (t: string) => INVOICE_TYPES_IN.includes(t);
 
+// Taxonomy key -> the invoice_type the backend stores. The filter tabs are
+// taxonomy keys, so comparing them to stored types directly matched nothing for
+// Sales Invoice, Material Sales, Material Purchase, Other Expense and Equipment.
+const CANONICAL_TYPE: Record<string, string> = {
+  sales_invoice: "sale",
+  material_sales: "material_sale",
+  material_purchase: "purchase",
+  other_expense: "expense",
+  equipment_expense: "equipment",
+};
+const canonicalType = (key: string) => CANONICAL_TYPE[key] || key;
+
+// Stored type -> what the Type column shows.
+const TYPE_LABEL: Record<string, string> = {
+  ...Object.fromEntries(TAXONOMY.map((t) => [canonicalType(t.key), t.label])),
+  subcon: "Subcontractor Bill",
+};
+const typeLabel = (t: string) => TYPE_LABEL[t] || t.replace(/_/g, " ");
+
 // ── Backend shapes ───────────────────────────────────────────────────────────
 type Bill = {
   id: string;
@@ -78,6 +97,7 @@ type Note = {
 };
 type PRequest = {
   id: string;
+  project_id?: string | null;
   party_company_user_id: string;
   amount: number;
   details: string | null;
@@ -91,7 +111,11 @@ type Member = { company_team_id: string; user_id: string | null; name: string; r
 type CostCode = { id: string; code: string; name: string };
 type FinanceTxnRow = {
   id: string;
+  date: string;
   type: string;
+  party: string;
+  status: string;
+  ref: string;
   amount: number;
   project_id: string | null;
 };
@@ -149,6 +173,7 @@ export default function TransactionPage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [costCodes, setCostCodes] = useState<CostCode[]>([]);
   const [paymentTotals, setPaymentTotals] = useState<{ received: number; paid: number } | null>(null);
+  const [feedRows, setFeedRows] = useState<FinanceTxnRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState("All");
   const [search, setSearch] = useState("");
@@ -175,7 +200,8 @@ export default function TransactionPage() {
       if (bRes.ok) setBills(await bRes.json());
       if (dRes.ok) setDebits(await dRes.json());
       if (cRes.ok) setCredits(await cRes.json());
-      if (rRes.ok) setRequests(await rRes.json());
+      // The payment-request feed is company-wide; keep this project's only.
+      if (rRes.ok) setRequests(((await rRes.json()) as PRequest[]).filter((r) => r.project_id === projectId));
       if (mRes.ok) setMembers(await mRes.json());
       if (ccRes.ok) setCostCodes(await ccRes.json());
       if (sRes.ok) setZatcaEnabled(Boolean((await sRes.json()).is_zatca_enable));
@@ -190,8 +216,9 @@ export default function TransactionPage() {
         const rows: FinanceTxnRow[] = Array.isArray(body?.transactions) ? body.transactions : [];
         let received = 0;
         let paid = 0;
-        for (const r of rows) {
-          if (r.project_id !== projectId) continue;
+        const mine = rows.filter((r) => r.project_id === projectId);
+        setFeedRows(mine);
+        for (const r of mine) {
           const amt = Number(r.amount) || 0;
           if (r.type === "Payment In") received += amt;
           else if (r.type === "Payment Out") paid += amt;
@@ -216,6 +243,16 @@ export default function TransactionPage() {
   const memberName = useCallback(
     (id: string | undefined) => members.find((m) => m.company_team_id === id || m.user_id === id)?.name || "—",
     [members]
+  );
+  // A subcontractor billed through a work order is not a project member, so
+  // fall back to the party name the finance feed resolved for that bill.
+  const feedPartyById = useMemo(() => new Map(feedRows.map((r) => [r.id, r.party])), [feedRows]);
+  const billParty = useCallback(
+    (b: Bill) => {
+      const n = memberName(b.party_company_user_id);
+      return n !== "—" ? n : feedPartyById.get(b.id) || "—";
+    },
+    [memberName, feedPartyById]
   );
 
   // ── Summary cards: cash heads = settlement vouchers + recorded payments ────
@@ -272,7 +309,7 @@ export default function TransactionPage() {
         id: b.id,
         date: b.invoice_date,
         type: b.invoice_type,
-        party: memberName(b.party_company_user_id),
+        party: billParty(b),
         amount: Number(b.total_payable) || 0,
         direction: isInType(b.invoice_type) ? "in" : "out",
         kind: "Bill",
@@ -284,12 +321,18 @@ export default function TransactionPage() {
     for (const n of credits)
       rows.push({ id: n.id, date: n.created_at, type: "credit_note", party: memberName(n.party_company_user_id), amount: Number(n.total_amount) || 0, direction: "in", kind: "Credit Note", ref: n.reference_number || "—", status: "—" });
     for (const r of requests)
-      rows.push({ id: r.id, date: r.created_at, type: r.request_type || "payment_request", party: memberName(r.party_company_user_id), amount: Number(r.amount) || 0, direction: "out", kind: "Payment Request", ref: "—", status: r.approval_status });
+      rows.push({ id: r.id, date: r.created_at, type: TAXONOMY.some((t) => t.key === r.request_type) ? r.request_type : "payment_request", party: memberName(r.party_company_user_id), amount: Number(r.amount) || 0, direction: "out", kind: "Payment Request", ref: "—", status: r.approval_status });
+    // Recorded payments: they fed the cash tiles but were never listed.
+    for (const r of feedRows) {
+      if (r.type !== "Payment In" && r.type !== "Payment Out") continue;
+      const inbound = r.type === "Payment In";
+      rows.push({ id: r.id, date: r.date, type: inbound ? "payment_in" : "payment_out", party: r.party || "—", amount: Number(r.amount) || 0, direction: inbound ? "in" : "out", kind: "Payment", ref: r.ref || "—", status: r.status });
+    }
     return rows.sort((a, b) => (a.date < b.date ? 1 : -1));
-  }, [bills, debits, credits, requests, memberName]);
+  }, [bills, debits, credits, requests, memberName, billParty, feedRows]);
 
   const filtered = ledger.filter((r) => {
-    if (typeFilter !== "All" && r.type !== typeFilter) return false;
+    if (typeFilter !== "All" && r.type !== canonicalType(typeFilter)) return false;
     if (search) {
       const q = search.toLowerCase();
       if (!r.party.toLowerCase().includes(q) && !r.ref.toLowerCase().includes(q) && !r.type.toLowerCase().includes(q)) return false;
@@ -425,7 +468,7 @@ export default function TransactionPage() {
               <tr key={`${r.kind}-${r.id}`} className="border-t border-border-custom hover:bg-elevated/50">
                 <td className="px-4 py-3 text-muted whitespace-nowrap">{r.date ? formatDate(r.date) : "—"}</td>
                 <td className="px-4 py-3">
-                  <Badge tone="primary">{r.type.replace(/_/g, " ")}</Badge>
+                  <Badge tone="primary">{typeLabel(r.type)}</Badge>
                 </td>
                 <td className="px-4 py-3 text-foreground">{r.party}</td>
                 <td className="px-4 py-3 text-muted">{r.ref}</td>

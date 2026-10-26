@@ -439,3 +439,31 @@ def test_project_party_register_shows_client_dues_and_advances(client, db, make_
 
     totals = client.get(f"/apis/v3/projects/{project.id}/parties/balances", headers=hdr).json()
     assert totals["advance_paid"] == 75000 and totals["to_receive"] == 1180000, totals
+
+
+def test_finance_feed_names_equipment_and_other_expense_bills(client, db, make_tenant, auth_headers):
+    """Observed: equipment hire bills appeared in the transaction feed typed
+    "equipment", a raw key, beside "Sales Invoice" and "Material Purchase"."""
+    from app import models
+
+    sfx = _uuid.uuid4().hex[:8]
+    comp, user, team = make_tenant(
+        company_name=f"Feed-{sfx}", user_name=f"UFeed-{sfx}", mobile=f"+9185{sfx}", email=f"feed-{sfx}@test.com",
+    )
+    hdr = auth_headers(user, comp)
+    project = models.Project(id=_uuid.uuid4(), company_id=comp.id, name="S", state="Maharashtra")
+    db.add(project)
+    db.commit()
+    for itype, num in (("equipment", "SER/1"), ("expense", "EXP/1")):
+        r = client.post(
+            "/apis/v3/billing/bills",
+            json={
+                "company_id": str(comp.id), "project_id": str(project.id),
+                "party_company_user_id": str(team.id), "invoice_number": f"{num}-{sfx}",
+                "invoice_date": "2026-10-20T00:00:00Z", "invoice_type": itype, "subtotal": 10000, "gst_pct": 18,
+            },
+            headers=hdr,
+        )
+        assert r.status_code == 201, r.text
+    feed = client.get(f"/apis/v3/finance/transactions/{comp.id}", headers=hdr).json()["transactions"]
+    assert sorted(t["type"] for t in feed) == ["Equipment Expense", "Other Expense"], [t["type"] for t in feed]

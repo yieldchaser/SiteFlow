@@ -1333,8 +1333,11 @@ def get_company_transactions(
         outstanding = round(max(0.0, payable - paid), 2)
         type_label = {
             "sale": "Sales Invoice",
+            "material_sale": "Material Sales",
             "purchase": "Material Purchase",
             "subcon": "Subcon Bill",
+            "expense": "Other Expense",
+            "equipment": "Equipment Expense",
         }.get(b.invoice_type, b.invoice_type)
         # R2-326 + D3: revenue is every REVENUE_INVOICE_TYPES member
         # (sale AND material_sale) and expense is exactly EXPENSE_INVOICE_TYPES.

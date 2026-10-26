@@ -660,7 +660,7 @@ export default function DynamicReportViewPage() {
       .then(res => res.ok ? res.json() : null)
       .then((data: any) => {
         const txns: any[] = Array.isArray(data?.transactions) ? data.transactions : [];
-        const expenseTypes = ["Material Purchase", "Subcon Bill", "expense", "equipment"];
+        const expenseTypes = ["Material Purchase", "Subcon Bill", "Other Expense", "Equipment Expense"];
         setFinancePayments(txns.filter(t => expenseTypes.includes(t.type)));
       })
       .catch(() => setFinancePayments([]));
