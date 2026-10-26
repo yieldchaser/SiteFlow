@@ -679,6 +679,10 @@ app.include_router(chat.router, prefix="/apis/v3")
 app.include_router(custom_fields.router, prefix="/apis/v3")
 app.include_router(statutory.router, prefix="/apis/v3")
 app.include_router(face_recognition.router, prefix="/apis/v3")
+from app.routers import biometric as _biometric  # noqa: E402
+app.include_router(_biometric.router, prefix="/apis/v3")
+# Biometric terminals call /iclock/* at the server root (ADMS push protocol).
+app.include_router(_biometric.adms_router)
 app.include_router(subcon_performance.router, prefix="/apis/v3")
 app.include_router(vendor_performance.router, prefix="/apis/v3")
 app.include_router(rfq.router, prefix="/apis/v3")

@@ -754,6 +754,8 @@ class StaffEmployee(Base):
     project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=True)
     name = Column(String(255), nullable=False)
     employee_code = Column(String(50), nullable=True)
+    # User ID enrolled on the site biometric device (ZKTeco/eSSL "PIN").
+    biometric_pin = Column(String(20), nullable=True)
     uan = Column(String(12), nullable=True)
     designation = Column(String(100), nullable=True)
     department = Column(String(100), nullable=True)
@@ -800,6 +802,38 @@ class AttendanceLog(Base):
     marked_manually = Column(Boolean, default=False, nullable=False)
     marked_by = Column(String(255), nullable=True)
     notes = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=func.now(), nullable=False)
+
+
+class BiometricDevice(Base):
+    """A fingerprint/face attendance terminal that pushes punches over ADMS."""
+    __tablename__ = "biometric_devices"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    serial_number = Column(String(64), nullable=False, unique=True)
+    name = Column(String(255), nullable=False)
+    # Device clocks have no zone; punches are read in this offset (IST default).
+    tz_offset_minutes = Column(Integer, default=330, nullable=False)
+    last_seen_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=func.now(), nullable=False)
+
+
+class BiometricPunch(Base):
+    """Every punch a device sent, matched or not, so nothing a device records is
+    lost when its user ID has not been mapped to an employee yet."""
+    __tablename__ = "biometric_punches"
+    __table_args__ = (
+        UniqueConstraint("device_id", "device_pin", "punch_time", name="uq_biometric_punches_device_pin_time"),
+    )
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    device_id = Column(UUID(as_uuid=True), ForeignKey("biometric_devices.id", ondelete="CASCADE"), nullable=False)
+    device_pin = Column(String(20), nullable=False)
+    punch_time = Column(DateTime(timezone=True), nullable=False)
+    verify_mode = Column(String(20), nullable=True)
+    employee_id = Column(UUID(as_uuid=True), ForeignKey("staff_employees.id", ondelete="SET NULL"), nullable=True)
+    attendance_log_id = Column(UUID(as_uuid=True), ForeignKey("attendance_logs.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=func.now(), nullable=False)
 
 

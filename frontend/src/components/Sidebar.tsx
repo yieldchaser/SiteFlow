@@ -186,6 +186,14 @@ export default function Sidebar() {
           activePattern: "/d/attendance",
         },
         {
+          id: "biometric",
+          label: "Biometric Devices",
+          href: `/c/${companyId}/d/biometric`,
+          iconName: "domain_verification",
+          permission: "attendance:view",
+          activePattern: "/d/biometric",
+        },
+        {
           id: "face-recognition",
           label: "Face Recognition",
           href: `/c/${companyId}/d/face-recognition`,
