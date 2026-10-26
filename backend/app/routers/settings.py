@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File,
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field, field_validator, model_validator
 from app.database import get_db
-from app.auth import get_current_user, verify_company_access, get_company_membership, require_permission, is_owner_equivalent, role_grants_full_access, invite_never_claimed
+from app.auth import get_current_user, verify_company_access, get_company_membership, require_permission, is_owner_equivalent, role_grants_full_access, invite_never_claimed, allowed_project_ids
 from app import models, supabase_storage
 from app.models import (
     Company, CompanyBranch, ApprovalRule, CompanyFile, CompanyRole, CompanyTeam,
@@ -621,6 +621,11 @@ class TeamMemberResponse(BaseModel):
     # Invited but has not yet set a password with the emailed code.
     invite_pending: bool = False
     is_me: bool = False
+    # "all": every project. "assigned": only project_ids. Owners and full-access
+    # roles always see every project, so full_access says the choice is moot.
+    project_scope: str = "all"
+    project_ids: List[uuid.UUID] = []
+    full_access: bool = False
 
     class Config:
         from_attributes = True
@@ -632,6 +637,22 @@ def _invite_pending(user: Optional[User]) -> bool:
 
 class TeamMemberRoleUpdate(BaseModel):
     role_id: Optional[uuid.UUID] = None
+
+
+class TeamMemberProjectsUpdate(BaseModel):
+    scope: Literal["all", "assigned"]
+    project_ids: List[uuid.UUID] = []
+
+
+def _member_projects(db: Session, member: CompanyTeam) -> dict:
+    ids = [r[0] for r in db.query(models.ProjectMember.project_id).filter(
+        models.ProjectMember.company_team_id == member.id
+    ).all()]
+    return {
+        "project_scope": member.project_scope or "all",
+        "project_ids": ids,
+        "full_access": is_owner_equivalent(db, member),
+    }
 
 
 @router.get("/team/{company_id}", response_model=List[TeamMemberResponse])
@@ -662,6 +683,7 @@ def list_team_members(
             priority_type=t.priority_type,
             invite_pending=_invite_pending(u),
             is_me=u.id == current_user.id,
+            **_member_projects(db, t),
         )
         for t, u, r in rows
     ]
@@ -740,6 +762,71 @@ def assign_member_role(
         priority_type=member.priority_type,
         invite_pending=_invite_pending(user),
         is_me=bool(user is not None and user.id == current_user.id),
+        **_member_projects(db, member),
+    )
+
+
+@router.put("/team/{member_id}/projects", response_model=TeamMemberResponse)
+def set_member_projects(
+    member_id: uuid.UUID,
+    payload: TeamMemberProjectsUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Let a member see every project, or only the ones picked here."""
+    member = db.query(CompanyTeam).filter(CompanyTeam.id == member_id).first()
+    if not member or member.user_id is None:
+        raise HTTPException(status_code=404, detail="Team member not found")
+    caller = get_company_membership(db, current_user, member.company_id)
+    require_permission(db, current_user, member.company_id, "team:manage")
+    # Someone limited to a few projects could otherwise hand themselves the rest.
+    if allowed_project_ids(db, caller) is not None:
+        raise HTTPException(
+            status_code=403,
+            detail="Only someone who can see every project can choose projects for others.",
+        )
+    if is_owner_equivalent(db, member):
+        raise HTTPException(
+            status_code=400,
+            detail="The owner and people with full access always see every project.",
+        )
+    wanted = set(payload.project_ids)
+    if payload.scope == "assigned":
+        if not wanted:
+            raise HTTPException(status_code=400, detail="Pick at least one project.")
+        found = {r[0] for r in db.query(models.Project.id).filter(
+            models.Project.id.in_(list(wanted)),
+            models.Project.company_id == member.company_id,
+        ).all()}
+        if found != wanted:
+            raise HTTPException(status_code=400, detail="One of those projects is not in this company.")
+    current = {r[0] for r in db.query(models.ProjectMember.project_id).filter(
+        models.ProjectMember.company_team_id == member.id
+    ).all()}
+    if payload.scope == "assigned":
+        for pid in wanted - current:
+            db.add(models.ProjectMember(project_id=pid, company_team_id=member.id))
+        stale = current - wanted
+        if stale:
+            db.query(models.ProjectMember).filter(
+                models.ProjectMember.company_team_id == member.id,
+                models.ProjectMember.project_id.in_(list(stale)),
+            ).delete(synchronize_session=False)
+    member.project_scope = payload.scope
+    db.commit()
+    user = db.query(User).filter(User.id == member.user_id).first()
+    role = db.query(CompanyRole).filter(CompanyRole.id == member.role_id).first() if member.role_id else None
+    return TeamMemberResponse(
+        id=member.id,
+        name=user.name if user else "Unknown member",
+        email=user.email if user else None,
+        phone=user.mobile if user else None,
+        role_id=member.role_id,
+        role_name=role.role_name if role else None,
+        priority_type=member.priority_type,
+        invite_pending=_invite_pending(user),
+        is_me=bool(user is not None and user.id == current_user.id),
+        **_member_projects(db, member),
     )
 
 

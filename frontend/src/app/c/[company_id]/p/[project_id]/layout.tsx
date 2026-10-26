@@ -92,6 +92,8 @@ export default function ProjectDetailLayout({ children }: { children: React.Reac
   const [status, setStatus] = useState("Ongoing");
   const [savingStatus, setSavingStatus] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  // Set when this person is not allowed into this project at all.
+  const [closed, setClosed] = useState<string | null>(null);
 
   useEffect(() => {
     setMoreOpen(false);
@@ -104,6 +106,7 @@ export default function ProjectDetailLayout({ children }: { children: React.Reac
   const load = useCallback(async () => {
     try {
       const res = await fetch(getApi(`/projects/${projectId}`), { headers: authHeaders() });
+      setClosed(res.status === 403 ? await readErrorDetail(res) : null);
       if (res.ok) {
         const data = await res.json();
         setProject({
@@ -172,7 +175,9 @@ export default function ProjectDetailLayout({ children }: { children: React.Reac
             onChange={(e) => onSwitchProject(e.target.value)}
             className="rounded-md border border-border-custom bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary cursor-pointer"
           >
-            {projects.length === 0 && <option value={projectId}>Switch Project…</option>}
+            {(projects.length === 0 || !projects.some((p) => p.id === projectId)) && (
+              <option value={projectId}>Switch Project…</option>
+            )}
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.project_name || p.name}
@@ -183,7 +188,7 @@ export default function ProjectDetailLayout({ children }: { children: React.Reac
 
           <select
             value={status === "Onhold" ? "On Hold" : status}
-            disabled={savingStatus}
+            disabled={savingStatus || !can("projects:edit")}
             onChange={(e) => onStatusChange(e.target.value)}
             className="rounded-md border border-border-custom bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary cursor-pointer disabled:opacity-50"
           >
@@ -251,7 +256,20 @@ export default function ProjectDetailLayout({ children }: { children: React.Reac
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 overflow-y-auto">{children}</div>
+      <div className="flex-1 overflow-y-auto">
+        {closed ? (
+          <div className="p-6">
+            <div className="max-w-lg rounded-lg border border-warning/20 bg-warning/10 p-4 text-sm text-warning">
+              {closed}
+              {projects.length > 0 && (
+                <div className="mt-2 text-xs text-muted">Pick one of your projects from the list at the top.</div>
+              )}
+            </div>
+          </div>
+        ) : (
+          children
+        )}
+      </div>
     </div>
   );
 }

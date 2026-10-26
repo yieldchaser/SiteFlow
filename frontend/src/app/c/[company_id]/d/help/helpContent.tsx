@@ -287,16 +287,20 @@ export function getHelpCategories(companyId: string): HelpCategory[] {
           a: (
             <>
               <p>
-                Not yet. Everyone in your company can open every project. Their role controls which pages they see and what they can change, not which projects.
+                Yes. Open Settings, then Team, find the person and press Change under Projects. Pick &quot;Only the ones I tick&quot;, tick their sites and save. From their next page they only see those projects, and the others are closed to them even if someone sends them a link.
               </p>
               <p className="mt-2">
-                If someone outside the company, such as a client, should only look, give them a look-only role like Client or Viewer so they cannot change anything.
+                New projects are not added for them on their own. When you start a new site, come back and tick it for the people who should work on it.
+              </p>
+              <p className="mt-2">
+                The owner and anyone with full access, such as an Admin, always see every project. Company-wide pages like Finance and Reports add up all projects, so give site staff a role without money pages, like Supervisor.
               </p>
             </>
           ),
           text: "limit restrict person to project site only one project access per project client",
           sources: [
-            "frontend/src/components/rbac/TeamSection.tsx:41",
+            "frontend/src/components/rbac/TeamSection.tsx:451",
+            "PUT /apis/v3/settings/team/{member_id}/projects",
             "frontend/src/app/c/[company_id]/settings/page.tsx:182",
           ],
         },

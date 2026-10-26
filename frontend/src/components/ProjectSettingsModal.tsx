@@ -135,7 +135,8 @@ export default function ProjectSettingsModal({
           location: form.location.trim() || null,
           stage: form.stage,
           category: form.category,
-          project_value: parseFloat(form.project_value) || 0,
+          // Left out for roles that cannot see the accounts, so a save never zeroes it.
+          ...(project.project_value == null ? {} : { project_value: parseFloat(form.project_value) || 0 }),
           orientation: form.orientation,
           dimension: form.dimension,
           scope_of_work: form.scope_of_work,
@@ -264,9 +265,11 @@ export default function ProjectSettingsModal({
                 <Field label="Site Coordinates">
                   <input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="28.6280, 77.3649" className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground" />
                 </Field>
-                <Field label="Project Value">
-                  <input type="number" value={form.project_value} onChange={(e) => setForm({ ...form, project_value: e.target.value })} className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground" />
-                </Field>
+                {project.project_value != null && (
+                  <Field label="Project Value">
+                    <input type="number" value={form.project_value} onChange={(e) => setForm({ ...form, project_value: e.target.value })} className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground" />
+                  </Field>
+                )}
               </div>
               <Field label="Orientation"><input value={form.orientation} onChange={(e) => setForm({ ...form, orientation: e.target.value })} className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground" /></Field>
               <Field label="Dimension"><input value={form.dimension} onChange={(e) => setForm({ ...form, dimension: e.target.value })} className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground" /></Field>

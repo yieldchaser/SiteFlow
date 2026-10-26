@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field, field_validator
 from app.database import get_db
-from app.auth import get_current_user, verify_project_in_company, verify_company_access, verify_project_access, get_company_membership, require_permission, require_module_view, assert_cost_codes_known
+from app.auth import get_current_user, verify_project_in_company, verify_company_access, verify_project_access, get_company_membership, require_permission, require_module_view, assert_cost_codes_known, scope_projects
 # R2-185/R2-407: the shared CSV formula guard (one helper, every export).
 from app.csv_export import csv_safe_cell as _csv_safe_cell, CSV_FORMULA_PREFIXES as _CSV_FORMULA_PREFIXES
 from app.models import (
@@ -783,7 +783,7 @@ def list_project_timesheet_headers(project_id: uuid.UUID, db: Session = Depends(
 
 
 @router.get("/timesheets/company/{company_id}")
-def list_company_timesheet_entries(company_id: uuid.UUID, db: Session = Depends(get_db), _: None = Depends(verify_company_access)):
+def list_company_timesheet_entries(company_id: uuid.UUID, db: Session = Depends(get_db), _: None = Depends(verify_company_access), current_user: User = Depends(get_current_user)):
     results = db.query(
         TimesheetEntry,
         StaffEmployee.name.label("employee_name"),
@@ -793,7 +793,8 @@ def list_company_timesheet_entries(company_id: uuid.UUID, db: Session = Depends(
      .join(Timesheet, TimesheetEntry.timesheet_id == Timesheet.id)\
      .join(StaffEmployee, Timesheet.employee_id == StaffEmployee.id)\
      .join(Project, Timesheet.project_id == Project.id)\
-     .filter(Project.company_id == company_id)\
+     .filter(Project.company_id == company_id)
+    results = scope_projects(results, db, current_user, company_id)\
      .order_by(TimesheetEntry.entry_date.desc())\
      .all()
     

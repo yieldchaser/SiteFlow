@@ -996,7 +996,8 @@ function ProjectSettingsModal({
           city: form.city,
           stage: form.stage,
           category: form.category,
-          project_value: parseFloat(form.project_value) || 0,
+          // Left out for roles that cannot see the accounts, so a save never zeroes it.
+          ...(project.project_value == null ? {} : { project_value: parseFloat(form.project_value) || 0 }),
           planned_start_date: form.planned_start_date || null,
           planned_end_date: form.planned_end_date || null,
           orientation: form.orientation,
@@ -1114,9 +1115,11 @@ function ProjectSettingsModal({
                 <Field label="City">
                   <input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground" />
                 </Field>
-                <Field label="Project Value">
-                  <input type="number" value={form.project_value} onChange={(e) => setForm({ ...form, project_value: e.target.value })} className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground" />
-                </Field>
+                {project.project_value != null && (
+                  <Field label="Project Value">
+                    <input type="number" value={form.project_value} onChange={(e) => setForm({ ...form, project_value: e.target.value })} className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground" />
+                  </Field>
+                )}
               </div>
               <Field label="Orientation">
                 <input value={form.orientation} onChange={(e) => setForm({ ...form, orientation: e.target.value })} className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground" />

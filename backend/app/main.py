@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
+from app.auth import enforce_project_scope
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -571,6 +572,8 @@ app = FastAPI(
     description="Backend microservice handling operational logic, calculators, and integrations.",
     version="3.0.0",
     lifespan=lifespan,
+    # Members limited to some projects cannot reach any other project's data.
+    dependencies=[Depends(enforce_project_scope)],
 )
 
 # Rate limiting (slowapi). The limiter instance itself lives in app.rate_limit so

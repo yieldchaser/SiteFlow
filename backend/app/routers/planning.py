@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, or_, and_
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.auth import get_current_user, verify_company_access, verify_project_access, get_company_membership, require_permission
+from app.auth import get_current_user, verify_company_access, verify_project_access, get_company_membership, require_permission, scope_projects
 from app.models import Task, TaskPredecessor, ProjectMilestone, Project, TaskTodo, TaskComment, CompanyTeam, User, BOQItem
 from app.constants import MILESTONE_TYPE_PATTERN, MILESTONE_STATUS_PATTERN, PREDECESSOR_LINK_TYPE_PATTERN, PROJECT_STATUS_PATTERN
 from app.workflow_controls import (
@@ -287,20 +287,20 @@ def get_task_hierarchy(project_id: UUID, db: Session = Depends(get_db), _: None 
 
 
 @router.get("/tasks/company/{company_id}", response_model=List[CompanyTaskResponse])
-def get_company_tasks(company_id: UUID, db: Session = Depends(get_db), _: None = Depends(verify_company_access)):
+def get_company_tasks(company_id: UUID, db: Session = Depends(get_db), _: None = Depends(verify_company_access), current_user: User = Depends(get_current_user)):
     """Cross-project rollup of every task in the company (Team Schedule Gantt)."""
     company = db.query(Project).filter(Project.company_id == company_id).first()
     if not company:
         raise HTTPException(status_code=404, detail="Company has no projects")
 
-    tasks = (
+    tasks = scope_projects(
         db.query(Task)
         .join(Project, Task.project_id == Project.id)
-        .filter(Project.company_id == company_id)
-        .all()
-    )
+        .filter(Project.company_id == company_id),
+        db, current_user, company_id,
+    ).all()
 
-    projects = db.query(Project).filter(Project.company_id == company_id).all()
+    projects = scope_projects(db.query(Project).filter(Project.company_id == company_id), db, current_user, company_id).all()
     proj_by_id = {p.id: p for p in projects}
 
     annotate_critical(tasks, db)
@@ -971,8 +971,8 @@ class ProjectResponseSchema(BaseModel):
         from_attributes = True
 
 @router.get("/projects", response_model=List[ProjectResponseSchema])
-def list_projects_v3(company_id: UUID, db: Session = Depends(get_db), _: None = Depends(verify_company_access)):
-    return db.query(Project).filter(Project.company_id == company_id).all()
+def list_projects_v3(company_id: UUID, db: Session = Depends(get_db), _: None = Depends(verify_company_access), current_user: User = Depends(get_current_user)):
+    return scope_projects(db.query(Project).filter(Project.company_id == company_id), db, current_user, company_id).all()
 
 @router.get("/projects/{project_id}", response_model=ProjectResponseSchema)
 def get_project_v3(project_id: UUID, db: Session = Depends(get_db), _: None = Depends(verify_project_access)):

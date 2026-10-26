@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import List, Optional
 from app.database import get_db
 from app import models
-from app.auth import get_current_user, verify_company_access, verify_project_access, get_company_membership, require_permission
+from app.auth import get_current_user, verify_company_access, verify_project_access, get_company_membership, require_permission, scope_projects
 from app.routers.custom_fields import CustomFieldValueInput, upsert_values_for_entity, enforce_required_custom_fields
 from app.constants import (
     EXPENSE_INVOICE_TYPES,
@@ -184,6 +184,24 @@ def _project_cash(db: Session, project_id: uuid.UUID):
     return float(cash_in), float(cash_out)
 
 
+_MONEY_FIELDS = ("project_value", "cash_in", "cash_out")
+
+
+def _sees_money(db: Session, user: models.User, company_id) -> bool:
+    try:
+        require_permission(db, user, company_id, "finance:view")
+        return True
+    except HTTPException:
+        return False
+
+
+def _without_money(row: dict) -> dict:
+    """Site roles (Supervisor, Site Engineer...) open projects but not the accounts."""
+    for key in _MONEY_FIELDS:
+        row[key] = None
+    return row
+
+
 def _serialize_project(db: Session, p: models.Project, include_members=False):
     progress = _project_progress(db, p.id)
     cash_in, cash_out = _project_cash(db, p.id)
@@ -341,14 +359,17 @@ class LocationCreate(BaseModel):
 # ─── project CRUD ───
 
 @router.get("/company/{company_id}")
-def list_projects(company_id: uuid.UUID, db: Session = Depends(get_db), _: None = Depends(verify_company_access)):
-    projects = db.query(models.Project).filter(models.Project.company_id == company_id).all()
-    return [_serialize_project(db, p) for p in projects]
+def list_projects(company_id: uuid.UUID, db: Session = Depends(get_db), _: None = Depends(verify_company_access), current_user: models.User = Depends(get_current_user)):
+    projects = scope_projects(db.query(models.Project).filter(models.Project.company_id == company_id), db, current_user, company_id).all()
+    rows = [_serialize_project(db, p) for p in projects]
+    if not _sees_money(db, current_user, company_id):
+        rows = [_without_money(r) for r in rows]
+    return rows
 
 
 @router.get("/company/{company_id}/summary")
-def project_summary(company_id: uuid.UUID, user_id: Optional[uuid.UUID] = None, db: Session = Depends(get_db), _: None = Depends(verify_company_access)):
-    project_ids = [p.id for p in db.query(models.Project.id).filter(models.Project.company_id == company_id).all()]
+def project_summary(company_id: uuid.UUID, user_id: Optional[uuid.UUID] = None, db: Session = Depends(get_db), _: None = Depends(verify_company_access), current_user: models.User = Depends(get_current_user)):
+    project_ids = [p.id for p in scope_projects(db.query(models.Project.id).filter(models.Project.company_id == company_id), db, current_user, company_id).all()]
 
     # Approval (Pending) - drawing revisions + credit notes + payment requests
     dr_pending = db.query(func.count(models.DrawingRevision.id)).join(
@@ -357,6 +378,7 @@ def project_summary(company_id: uuid.UUID, user_id: Optional[uuid.UUID] = None, 
         models.Project, models.Project.id == models.Drawing.project_id
     ).filter(
         models.Project.company_id == company_id,
+        models.Project.id.in_(project_ids),
         models.DrawingRevision.approval_status == "pending"
     ).scalar() or 0
     cn_pending = db.query(func.count(models.CreditNote.id)).filter(
@@ -372,6 +394,7 @@ def project_summary(company_id: uuid.UUID, user_id: Optional[uuid.UUID] = None, 
     # Material (Pending) - pending material indents
     materials_pending = db.query(func.count(models.MaterialIndent.id)).filter(
         models.MaterialIndent.company_id == company_id,
+        models.MaterialIndent.project_id.in_(project_ids),
         models.MaterialIndent.status == "pending"
     ).scalar() or 0
 
@@ -450,11 +473,12 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db), curren
 
 
 @router.get("/{project_id}")
-def get_project(project_id: uuid.UUID, db: Session = Depends(get_db), _: None = Depends(verify_project_access)):
+def get_project(project_id: uuid.UUID, db: Session = Depends(get_db), _: None = Depends(verify_project_access), current_user: models.User = Depends(get_current_user)):
     p = db.query(models.Project).filter(models.Project.id == project_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
-    return _serialize_project(db, p, include_members=True)
+    row = _serialize_project(db, p, include_members=True)
+    return row if _sees_money(db, current_user, p.company_id) else _without_money(row)
 
 
 @router.put("/{project_id}")
@@ -512,7 +536,8 @@ def update_project(project_id: uuid.UUID, payload: ProjectUpdate, db: Session = 
     upsert_values_for_entity(db, p.company_id, "project", p.id, custom_fields)
     db.commit()
     db.refresh(p)
-    return _serialize_project(db, p, include_members=True)
+    row = _serialize_project(db, p, include_members=True)
+    return row if _sees_money(db, current_user, p.company_id) else _without_money(row)
 
 
 @router.post("/{project_id}/pin")
@@ -643,6 +668,9 @@ def add_project_member(project_id: uuid.UUID, member_id: uuid.UUID, db: Session 
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
     require_permission(db, current_user, p.company_id, "team:manage")
+    target = db.query(models.CompanyTeam).filter(models.CompanyTeam.id == member_id).first()
+    if not target or target.company_id != p.company_id:
+        raise HTTPException(status_code=404, detail="Team member not found")
     existing = db.query(models.ProjectMember).filter(
         models.ProjectMember.project_id == project_id,
         models.ProjectMember.company_team_id == member_id

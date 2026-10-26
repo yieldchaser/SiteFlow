@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { getApi, authHeaders, fmtINR, formatDate, formatLabel } from "@/lib/siteflow";
 import { useCompanySettings } from "@/context/CompanySettingsContext";
+import { usePermissions } from "@/context/PermissionsContext";
 import PageShell from "@/components/layout/PageShell";
 import PageHeader from "@/components/PageHeader";
 import Icon from "@/components/marketing/Icon";
@@ -17,10 +18,11 @@ type ProjectDash = {
   status: string;
   stage?: string | null;
   category?: string | null;
-  project_value: number;
+  // null for roles without the accounts (the server leaves them out).
+  project_value: number | null;
   progress: number;
-  cash_in: number;
-  cash_out: number;
+  cash_in: number | null;
+  cash_out: number | null;
   todo_pending: number;
   planned_start_date?: string | null;
   planned_end_date?: string | null;
@@ -179,6 +181,7 @@ function DrillModal({
 // ─── Page ──────────────────────────────────────────────────────────────────────
 export default function ProjectDashboardPage() {
   const { currencyDecimalPlaces } = useCompanySettings();
+  const { can } = usePermissions();
   const params = useParams();
   const companyId = params.company_id as string;
   const projectId = params.project_id as string;
@@ -235,6 +238,9 @@ export default function ProjectDashboardPage() {
 
   if (loading) return <div className="p-6 text-muted">Loading project dashboard…</div>;
   if (!project) return <div className="p-6 text-muted">Project not found.</div>;
+  // Site roles open the project but not its money.
+  const seesMoney = project.cash_in !== null && project.cash_in !== undefined;
+  const addsCostCodes = can("library:edit");
 
   // ── Real financial computations (per spec) ───────────────────────────────────
   const boqValue = docs.reduce((s, d) => s + (d.boq_value || 0), 0);
@@ -338,12 +344,14 @@ export default function ProjectDashboardPage() {
         title={project.name}
         subtitle={[project.code, project.category, project.stage].filter(Boolean).join(" · ") || "Project Overview"}
         action={
-          <button
-            onClick={() => setShowAddCC(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary/95 text-white rounded-md text-xs font-semibold transition-all cursor-pointer"
-          >
-            + Add Cost Code
-          </button>
+          addsCostCodes ? (
+            <button
+              onClick={() => setShowAddCC(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary/95 text-white rounded-md text-xs font-semibold transition-all cursor-pointer"
+            >
+              + Add Cost Code
+            </button>
+          ) : null
         }
       />
       <div className="flex-1 overflow-y-auto">
@@ -352,12 +360,17 @@ export default function ProjectDashboardPage() {
       {/* Basic snapshot - D1 R2-021: accrual is Billed In/Out, margin is ex-GST */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card label="Progress" value={`${project.progress ?? 0}%`} tone="violet" />
-        <Card label="Billed In" value={fmtINR(project.cash_in, currencyDecimalPlaces)} tone="emerald" />
-        <Card label="Billed Out" value={fmtINR(project.cash_out, currencyDecimalPlaces)} tone="rose" />
-        <Card label="Net Margin" value={fmtINR(margin0, currencyDecimalPlaces)} tone={margin0 >= 0 ? "emerald" : "rose"} />
+        {seesMoney && (
+          <>
+            <Card label="Billed In" value={fmtINR(project.cash_in, currencyDecimalPlaces)} tone="emerald" />
+            <Card label="Billed Out" value={fmtINR(project.cash_out, currencyDecimalPlaces)} tone="rose" />
+            <Card label="Net Margin" value={fmtINR(margin0, currencyDecimalPlaces)} tone={margin0 >= 0 ? "emerald" : "rose"} />
+          </>
+        )}
       </div>
 
       {/* Financial View — 6 spec cards */}
+      {seesMoney && (
       <div>
         <div className="text-xs uppercase tracking-wider text-muted mb-3">Financial View</div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -506,11 +519,12 @@ export default function ProjectDashboardPage() {
           />
         </div>
       </div>
+      )}
 
       {/* Info + Schedule (existing) */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card label="Pending To-Dos" value={`${project.todo_pending ?? 0}`} />
-        <Card label="Project Value" value={fmtINR(project.project_value, currencyDecimalPlaces)} />
+        {seesMoney && <Card label="Project Value" value={fmtINR(project.project_value, currencyDecimalPlaces)} />}
         <Card label="Status" value={formatLabel(project.status)} />
       </div>
 

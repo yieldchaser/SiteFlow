@@ -98,7 +98,7 @@ export function startHereCategory(companyId: string): HelpCategory {
                 Go to the Team tab, press &quot;+ Add person&quot;, and enter their name, email and role. They get an
                 email with a code to sign in.
               </li>
-              <li>Everyone you add can open every project. Their role decides what they can see and change there.</li>
+              <li>Everyone you add can open every project unless you limit them. Press Change under Projects in Team to pick their sites. Their role decides what they can see and change.</li>
             </Steps>
             <p className="mt-2">
               These are people who log in to SiteFlow. Site workers who never log in are added as employees or

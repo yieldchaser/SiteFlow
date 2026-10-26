@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 import uuid
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
@@ -247,6 +247,89 @@ def require_any_permission(db: Session, current_user: models.User, company_id: u
         except HTTPException:
             continue
     require_permission(db, current_user, company_id, permission_keys[-1])
+
+
+def allowed_project_ids(db: Session, membership: Optional[models.CompanyTeam]) -> Optional[set]:
+    """The projects this member may open, or None when they may open every one.
+
+    A member is limited only when their project_scope is "assigned"; owners and
+    full-access roles are never limited."""
+    if membership is None or (membership.project_scope or "all") != "assigned":
+        return None
+    if is_owner_equivalent(db, membership):
+        return None
+    rows = db.query(models.ProjectMember.project_id).filter(
+        models.ProjectMember.company_team_id == membership.id
+    ).all()
+    return {r[0] for r in rows}
+
+
+def project_ids_for_user(db: Session, user: models.User, company_id: uuid.UUID) -> Optional[set]:
+    membership = db.query(models.CompanyTeam).filter(
+        models.CompanyTeam.user_id == user.id,
+        models.CompanyTeam.company_id == company_id,
+    ).first()
+    return allowed_project_ids(db, membership)
+
+
+def scope_projects(query, db: Session, user: models.User, company_id: uuid.UUID, column=None):
+    """Narrow a query over a company's projects to the ones this user may open."""
+    ids = project_ids_for_user(db, user, company_id)
+    if ids is None:
+        return query
+    column = column if column is not None else models.Project.id
+    return query.filter(column.in_(list(ids))) if ids else query.filter(False)
+
+
+def _project_ids_in_request(request: Request, body) -> list:
+    found = []
+    raw = request.path_params.get("project_id")
+    if raw:
+        found.append(raw)
+    found += request.query_params.getlist("project_id")
+    if isinstance(body, dict) and body.get("project_id"):
+        found.append(body["project_id"])
+    out = []
+    for value in found:
+        try:
+            out.append(uuid.UUID(str(value)))
+        except ValueError:
+            continue
+    return out
+
+
+async def enforce_project_scope(request: Request, db: Session = Depends(get_db)) -> None:
+    """App-wide guard: a member limited to some projects cannot read or write
+    any other project, whichever endpoint names it (path, query or JSON body).
+    Requests without a valid token are left to the endpoint's own auth."""
+    header = request.headers.get("authorization") or ""
+    if not header.lower().startswith("bearer "):
+        return
+    try:
+        payload = jwt.decode(header[7:], settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        user_id = uuid.UUID(str(payload.get("sub")))
+    except (JWTError, ValueError, TypeError):
+        return
+    body = None
+    if request.method in ("POST", "PUT", "PATCH") and "application/json" in (request.headers.get("content-type") or ""):
+        try:
+            body = await request.json()
+        except Exception:
+            body = None
+    for project_id in _project_ids_in_request(request, body):
+        project = db.query(models.Project).filter(models.Project.id == project_id).first()
+        if project is None:
+            continue
+        membership = db.query(models.CompanyTeam).filter(
+            models.CompanyTeam.user_id == user_id,
+            models.CompanyTeam.company_id == project.company_id,
+        ).first()
+        allowed = allowed_project_ids(db, membership)
+        if allowed is not None and project_id not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This project is not one of yours. Ask your company owner or admin to add you to it.",
+            )
 
 
 def is_owner_equivalent(db: Session, membership: models.CompanyTeam) -> bool:

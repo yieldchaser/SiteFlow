@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Response
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.auth import get_current_user, verify_project_access, get_company_membership, require_any_permission, require_module_view
+from app.auth import get_current_user, verify_project_access, get_company_membership, require_any_permission, require_module_view, scope_projects
 from app.models import DailyProgressReport, Task, WarehouseInventory, MaterialTransaction, Project, User
 from app.workflow_controls import enforce_entry_creation_window, enforce_entry_editing_window, enforce_stock_availability, get_company
 from app.inventory_reservation import release_reservation, rereserve_reservation
@@ -332,7 +332,7 @@ def export_dpr_csv(
     if project_id:
         query = query.filter(DailyProgressReport.project_id == project_id)
     else:
-        proj_ids = db.query(Project.id).filter(Project.company_id == cid).subquery()
+        proj_ids = scope_projects(db.query(Project.id).filter(Project.company_id == cid), db, current_user, cid).subquery()
         query = query.filter(DailyProgressReport.project_id.in_(proj_ids))
 
     if from_date:

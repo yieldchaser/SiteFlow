@@ -16,6 +16,14 @@ interface TeamMember {
   priority_type: string;
   invite_pending?: boolean;
   is_me?: boolean;
+  project_scope?: "all" | "assigned";
+  project_ids?: string[];
+  full_access?: boolean;
+}
+
+interface ProjectOption {
+  id: string;
+  name: string;
 }
 
 interface RoleOption {
@@ -62,15 +70,22 @@ export default function TeamSection({ companyId }: Props) {
   const [invite, setInvite] = useState({ name: "", email: "", role_id: "" });
   const [inviting, setInviting] = useState(false);
 
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
+  // The member whose projects are being picked, and the picks so far.
+  const [pickFor, setPickFor] = useState<string | null>(null);
+  const [pick, setPick] = useState<{ scope: "all" | "assigned"; ids: string[] }>({ scope: "all", ids: [] });
+
   const load = useCallback(() => {
     if (!companyId) return;
     setLoading(true);
     Promise.all([
       fetch(getApi(`/settings/team/${companyId}`), { headers: authHeaders() }).then((r) => (r.ok ? r.json() : [])),
       fetch(getApi(`/settings/roles/${companyId}`), { headers: authHeaders() }).then((r) => (r.ok ? r.json() : [])),
+      fetch(getApi(`/projects/company/${companyId}`), { headers: authHeaders() }).then((r) => (r.ok ? r.json() : [])),
     ])
-      .then(([m, r]) => {
+      .then(([m, r, p]) => {
         setMembers(Array.isArray(m) ? m : []);
+        setProjects(Array.isArray(p) ? p.map((x: ProjectOption) => ({ id: x.id, name: x.name })) : []);
         setRoles(
           Array.isArray(r)
             ? r.map((x: RoleOption) => ({ id: x.id, role_name: x.role_name, permissions: x.permissions }))
@@ -80,6 +95,7 @@ export default function TeamSection({ companyId }: Props) {
       .catch(() => {
         setMembers([]);
         setRoles([]);
+        setProjects([]);
       })
       .finally(() => setLoading(false));
   }, [companyId]);
@@ -124,7 +140,51 @@ export default function TeamSection({ companyId }: Props) {
     }
   };
 
-  const sendInvite = async (body: { name: string; email: string; role_id: string }) => {
+  const openPicker = (m: TeamMember) => {
+    setPickFor(m.id);
+    setPick({ scope: m.project_scope === "assigned" ? "assigned" : "all", ids: m.project_ids ?? [] });
+  };
+
+  const saveProjects = async (m: TeamMember) => {
+    setBusyId(m.id);
+    setMsg(null);
+    try {
+      const res = await fetch(getApi(`/settings/team/${m.id}/projects`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
+        body: JSON.stringify({ scope: pick.scope, project_ids: pick.scope === "assigned" ? pick.ids : [] }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setMembers((prev) =>
+          prev.map((x) => (x.id === m.id ? { ...x, project_scope: updated.project_scope, project_ids: updated.project_ids } : x))
+        );
+        setPickFor(null);
+        flash(
+          "ok",
+          updated.project_scope === "assigned"
+            ? `${m.name} now sees only the projects you picked.`
+            : `${m.name} now sees every project.`
+        );
+      } else {
+        const err = await res.json().catch(() => ({}));
+        flash("err", detailToMessage(err.detail, "Could not change their projects"));
+      }
+    } catch {
+      flash("err", "Could not change their projects");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const projectsLabel = (m: TeamMember) => {
+    if (m.priority_type === "partner" || m.full_access || m.project_scope !== "assigned") return "All projects";
+    const names = projects.filter((p) => (m.project_ids ?? []).includes(p.id)).map((p) => p.name);
+    if (names.length === 0) return "No projects";
+    return names.length <= 2 ? names.join(", ") : `${names.length} projects`;
+  };
+
+  const sendInvite = async (body:{ name: string; email: string; role_id: string }) => {
     const res = await fetch(getApi("/auth/team/invite"), {
       method: "POST",
       headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
@@ -209,6 +269,9 @@ export default function TeamSection({ companyId }: Props) {
   }
 
   const inviteRole = roles.find((r) => r.id === invite.role_id);
+  // Someone limited to a few projects cannot hand out projects.
+  const me = members.find((m) => m.is_me);
+  const callerSeesAll = !me || me.priority_type === "partner" || !!me.full_access || me.project_scope !== "assigned";
 
   return (
     <div className="space-y-4">
@@ -217,7 +280,7 @@ export default function TeamSection({ companyId }: Props) {
           <h2 className="text-sm font-bold uppercase tracking-wider text-muted">Team Members &amp; Roles</h2>
           <p className="mt-1 text-xs text-muted max-w-xl">
             Everyone who can sign in to this company. Their role decides which pages they see and what they can change.
-            Every member sees every project.
+            Projects decides which sites they can open. The owner and admins always see every project.
           </p>
         </div>
         {!showInvite && (
@@ -299,6 +362,7 @@ export default function TeamSection({ companyId }: Props) {
               <th className="px-4 py-2.5 text-left font-bold uppercase tracking-wider text-[10px]">Member</th>
               <th className="px-4 py-2.5 text-left font-bold uppercase tracking-wider text-[10px]">Contact</th>
               <th className="px-4 py-2.5 text-left font-bold uppercase tracking-wider text-[10px] w-72">Role</th>
+              <th className="px-4 py-2.5 text-left font-bold uppercase tracking-wider text-[10px]">Projects</th>
               <th className="px-4 py-2.5 text-right font-bold uppercase tracking-wider text-[10px]">Action</th>
             </tr>
           </thead>
@@ -309,8 +373,11 @@ export default function TeamSection({ companyId }: Props) {
               // The owner's seat, and anyone with full access when you lack it, is not yours to change.
               const locked = isOwner || (fullAccess(current) && !canGrantFullAccess);
               const options = current && !assignable.some((r) => r.id === current.id) ? [current, ...assignable] : assignable;
+              const seesAll = isOwner || !!m.full_access || fullAccess(current);
+              const canPickProjects = !seesAll && !locked && callerSeesAll;
               return (
-                <tr key={m.id} className={i % 2 ? "bg-background/40" : ""}>
+                <React.Fragment key={m.id}>
+                <tr className={i % 2 ? "bg-background/40" : ""}>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2.5">
                       <div className="h-8 w-8 shrink-0 rounded-full bg-primary/15 text-primary font-bold flex items-center justify-center text-xs">
@@ -340,7 +407,7 @@ export default function TeamSection({ companyId }: Props) {
                         value={m.role_id ?? ""}
                         disabled={busyId === m.id}
                         onChange={(e) => e.target.value && assignRole(m.id, e.target.value)}
-                        className="w-full rounded-md border border-border-custom bg-elevated px-2.5 py-2 text-xs text-foreground focus:outline-none focus:border-primary cursor-pointer"
+                        className="w-full min-w-[10rem] rounded-md border border-border-custom bg-elevated px-2.5 py-2 text-xs text-foreground focus:outline-none focus:border-primary cursor-pointer"
                       >
                         {!m.role_id && <option value="">Pick a role</option>}
                         {options.map((r) => (
@@ -350,6 +417,16 @@ export default function TeamSection({ companyId }: Props) {
                     )}
                     {m.role_name && ROLE_SUMMARIES[m.role_name] && (
                       <div className="mt-1 text-[10px] text-muted leading-snug">{ROLE_SUMMARIES[m.role_name]}</div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className={m.project_scope === "assigned" && !seesAll ? "text-foreground font-semibold" : "text-muted"}>
+                      {projectsLabel(m)}
+                    </div>
+                    {canPickProjects && pickFor !== m.id && (
+                      <button onClick={() => openPicker(m)} className="mt-1 text-[10px] font-bold text-primary hover:underline">
+                        Change
+                      </button>
                     )}
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap space-x-2">
@@ -367,6 +444,66 @@ export default function TeamSection({ companyId }: Props) {
                     )}
                   </td>
                 </tr>
+                {pickFor === m.id && (
+                  <tr className="bg-elevated/60">
+                    <td colSpan={5} className="px-4 py-4">
+                      <div className="space-y-3 max-w-2xl">
+                        <div className="text-xs font-bold text-foreground">Which projects can {m.name} open?</div>
+                        <div className="flex flex-wrap gap-4 text-xs">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" checked={pick.scope === "all"} onChange={() => setPick({ ...pick, scope: "all" })} />
+                            Every project, including new ones
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" checked={pick.scope === "assigned"} onChange={() => setPick({ ...pick, scope: "assigned" })} />
+                            Only the ones I tick
+                          </label>
+                        </div>
+                        {pick.scope === "assigned" && (
+                          projects.length === 0 ? (
+                            <div className="text-xs text-muted">There are no projects yet.</div>
+                          ) : (
+                            <div className="grid gap-1.5 sm:grid-cols-2">
+                              {projects.map((p) => (
+                                <label key={p.id} className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={pick.ids.includes(p.id)}
+                                    onChange={(e) =>
+                                      setPick({
+                                        ...pick,
+                                        ids: e.target.checked ? [...pick.ids, p.id] : pick.ids.filter((x) => x !== p.id),
+                                      })
+                                    }
+                                  />
+                                  {p.name}
+                                </label>
+                              ))}
+                            </div>
+                          )
+                        )}
+                        {pick.scope === "assigned" && (
+                          <p className="text-[11px] text-muted">
+                            Company-wide pages like Finance and Reports still add up every project, so keep money pages out of their role.
+                          </p>
+                        )}
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => saveProjects(m)}
+                            disabled={busyId === m.id || (pick.scope === "assigned" && pick.ids.length === 0)}
+                            className="bg-primary text-white text-xs font-bold px-4 py-2 rounded-md disabled:opacity-50"
+                          >
+                            {busyId === m.id ? "Saving…" : "Save"}
+                          </button>
+                          <button onClick={() => setPickFor(null)} className="text-muted hover:text-foreground text-xs font-bold px-4 py-2">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
               );
             })}
           </tbody>

@@ -291,6 +291,9 @@ class CompanyTeam(Base):
     role_id = Column(UUID(as_uuid=True), ForeignKey("company_roles.id", ondelete="SET NULL"), nullable=True)
     priority_type = Column(String(50), default="employee", nullable=False)
     library_party_id = Column(UUID(as_uuid=True), ForeignKey("library_parties.id", ondelete="SET NULL"), nullable=True)
+    # "all": every project in the company. "assigned": only the projects linked in
+    # project_members. Owners and full-access roles always see every project.
+    project_scope = Column(String(20), default="all", server_default="all", nullable=False)
     created_at = Column(DateTime(timezone=True), default=func.now(), nullable=False)
 
 class BOQItem(Base):
