@@ -268,6 +268,14 @@ def test_operational_dashboard_rows_name_the_client_and_the_key_person(
     )
     db.add_all([project, clientp])
     db.commit()
+    from datetime import datetime as _dt
+    db.add_all([
+        models.Task(id=_uuid.uuid4(), project_id=project.id, name="Excavation", duration_days=10,
+                    start_date=_dt(2026, 2, 1), end_date=_dt(2026, 2, 11), status="completed", progress=100),
+        models.Task(id=_uuid.uuid4(), project_id=project.id, name="Shoring", duration_days=30,
+                    start_date=_dt(2026, 2, 11), end_date=_dt(2026, 3, 13), status="in_progress", progress=50),
+    ])
+    db.commit()
     assert client.post(
         f"/apis/v3/projects/{project.id}/parties", json={"party_id": str(clientp.id)}, headers=hdr
     ).status_code == 200
@@ -279,6 +287,10 @@ def test_operational_dashboard_rows_name_the_client_and_the_key_person(
     assert row["key_personnel"] == f"Anita Kulkarni {sfx}", row
     assert row["health"] == "Onhold", row
     assert res.json()["health_counts"]["Onhold"] == 1
+    # The project page shows duration-weighted progress, (10 + 15) / 40; the
+    # company table counted completed tasks (1 of 2) and showed 50%.
+    page = client.get(f"/apis/v3/projects/{project.id}", headers=hdr).json()
+    assert row["progress"] == page["progress"] == 62.5, (row["progress"], page["progress"])
 
 
 def test_key_personnel_must_belong_to_the_project_company(client, db, make_tenant, auth_headers):

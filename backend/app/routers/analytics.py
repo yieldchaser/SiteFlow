@@ -48,6 +48,8 @@ from app.models import (
     WorkOrder,
 )
 
+from app.routers.projects import _project_progress
+
 router = APIRouter(prefix="/analytics", tags=["Analytics & Executive Dashboard"], dependencies=[Depends(get_current_user)])
 
 AREA_UNITS = {
@@ -565,11 +567,9 @@ def get_company_operational_analytics(company_id: uuid.UUID, db: Session = Depen
         if health in health_counts:
             health_counts[health] += 1
 
-        # Task Progress
-        tasks = db.query(Task).filter(Task.project_id == p.id).all()
-        total_tasks = len(tasks)
-        completed_tasks = sum(1 for t in tasks if _task_is_completed(t))
-        progress_pct = round((completed_tasks / total_tasks) * 100, 1) if total_tasks else 0.0
+        # Same duration-weighted progress the project page shows; counting
+        # completed tasks gave a different figure for the same project.
+        progress_pct = _project_progress(db, p.id)
 
         s_val = getattr(p, "actual_start_date", None) or getattr(p, "planned_start_date", None) or getattr(p, "created_at", None)
         e_val = getattr(p, "actual_end_date", None) or getattr(p, "planned_end_date", None)

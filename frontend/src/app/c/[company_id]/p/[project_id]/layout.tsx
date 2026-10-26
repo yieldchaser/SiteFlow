@@ -57,7 +57,9 @@ const MORE_TABS = [
   { label: "Wastage", path: "/d/wastage", withProject: true },
 ];
 
-const STATUSES = ["Ongoing", "Completed", "On Hold", "Cancelled", "Planning"];
+// Every status the backend accepts must be listed: a project whose status is
+// missing here showed as "Ongoing" (the first option) and saved as such.
+const STATUSES = ["Not Started", "Planning", "Ongoing", "On Hold", "Completed", "Cancelled"];
 
 async function readErrorDetail(res: Response): Promise<string> {
   try {
@@ -177,7 +179,7 @@ export default function ProjectDetailLayout({ children }: { children: React.Reac
           </select>
 
           <select
-            value={status}
+            value={status === "Onhold" ? "On Hold" : status}
             disabled={savingStatus}
             onChange={(e) => onStatusChange(e.target.value)}
             className="rounded-md border border-border-custom bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary cursor-pointer disabled:opacity-50"
