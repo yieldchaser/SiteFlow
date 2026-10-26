@@ -9,6 +9,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.auth import get_current_user, verify_project_in_company, verify_company_access, verify_project_access, get_company_membership, require_permission
+from app.party_names import resolve_party_name
 from app.models import (
     MaterialIndent, MaterialIndentItem,
     PurchaseOrder, PurchaseOrderItem,
@@ -1547,15 +1548,14 @@ def get_po_pdf(po_id: UUID, db: Session = Depends(get_db), current_user=Depends(
     # masthead like the bill PDF already does (R2-403).
     supplier_lines = resolve_supplier_tax_details(db, po.company_id, project)
 
-    vendor = db.query(CompanyTeam).filter(CompanyTeam.id == po.vendor_id).first() if po.vendor_id else None
-    vendor_user = db.query(User).filter(User.id == vendor.user_id).first() if vendor else None
-    vendor_name = vendor_user.name if vendor_user and vendor_user.name else "N/A"
+    # Party Library suppliers have no login user; read the vendor master name.
+    vendor_name = resolve_party_name(db, po.vendor_id, fallback="N/A")
 
     party_lines = [
         f"Vendor: {vendor_name}",
         f"PO Number: {po.po_number}",
         f"PO Date: {po.po_date.strftime('%Y-%m-%d') if po.po_date else ''}",
-        f"Status: {po.status}",
+        f"Status: {(po.status or '').replace('_', ' ').title()}",
     ]
 
     items = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.po_id == po.id).all()

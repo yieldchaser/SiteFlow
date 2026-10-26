@@ -82,6 +82,11 @@ def test_received_stock_takes_its_category_from_the_material_library(
     assert names == ["Balaji Steels"], f"vendor scorecard not built after a GRN: {names}"
     assert perf.json()[0]["total_grns"] == 1
 
+    # And the PO PDF printed "Vendor: N/A" for every Party Library supplier.
+    pdf = client.get(f"/apis/v3/procurement/pos/{po_body['id']}/pdf", headers=hdr)
+    assert pdf.status_code == 200
+    assert b"Vendor: Balaji Steels" in pdf.content, "PO PDF does not name the supplier"
+
 
 def test_payment_request_stale_users_fk_has_a_migration():
     """Observed: POST /finance/payment-requests returned 409 'violates foreign key
