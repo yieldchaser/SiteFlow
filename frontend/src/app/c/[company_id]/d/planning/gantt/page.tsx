@@ -137,8 +137,11 @@ export default function GanttSchedulerPage() {
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [error, setErrorState] = useState("");
+  const [success, setSuccessState] = useState("");
+  // Only the latest outcome shows: a new error replaces an old success and vice versa.
+  const setError = (msg: string) => { setErrorState(msg); if (msg) setSuccessState(""); };
+  const setSuccess = (msg: string) => { setSuccessState(msg); if (msg) setErrorState(""); };
   const [mainTab, setMainTab] = useState<"wbs" | "milestones" | "baseline" | "lookahead">("wbs");
   const [isOffline, setIsOffline] = useState(false);
 
