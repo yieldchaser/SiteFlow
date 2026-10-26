@@ -981,6 +981,15 @@ def get_project_v3(project_id: UUID, db: Session = Depends(get_db), _: None = De
         raise HTTPException(status_code=404, detail="Project not found")
     return proj
 
+def _require_own_team_member(db: Session, company_id, team_id) -> None:
+    # key_personnel_id must name a member of the project's own company.
+    if team_id is None:
+        return
+    from app.models import CompanyTeam
+    if not db.query(CompanyTeam.id).filter(CompanyTeam.id == team_id, CompanyTeam.company_id == company_id).first():
+        raise HTTPException(status_code=400, detail="Key personnel must be a member of this company.")
+
+
 @router.post("/projects", response_model=ProjectResponseSchema, status_code=status.HTTP_201_CREATED)
 def create_project_v3(payload: ProjectCreateSchema, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     import uuid
@@ -1026,6 +1035,7 @@ def create_project_v3(payload: ProjectCreateSchema, db: Session = Depends(get_db
         stage=payload.stage,
         key_personnel_id=payload.key_personnel_id
     )
+    _require_own_team_member(db, payload.company_id, payload.key_personnel_id)
     db.add(proj)
     db.commit()
     db.refresh(proj)
@@ -1059,6 +1069,7 @@ def update_project_v3(project_id: UUID, payload: ProjectUpdateSchema, db: Sessio
     if payload.stage is not None:
         proj.stage = payload.stage
     if payload.key_personnel_id is not None:
+        _require_own_team_member(db, proj.company_id, payload.key_personnel_id)
         proj.key_personnel_id = payload.key_personnel_id
         
     db.commit()

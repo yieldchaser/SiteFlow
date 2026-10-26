@@ -274,3 +274,23 @@ def test_operational_dashboard_rows_name_the_client_and_the_key_person(
     assert row["key_personnel"] == f"Anita Kulkarni {sfx}", row
     assert row["health"] == "Onhold", row
     assert res.json()["health_counts"]["Onhold"] == 1
+
+
+def test_key_personnel_must_belong_to_the_project_company(client, db, make_tenant, auth_headers):
+    from app import models
+
+    sfx = _uuid.uuid4().hex[:8]
+    comp, user, _ = make_tenant(
+        company_name=f"KP-{sfx}", user_name=f"UKP-{sfx}", mobile=f"+9188{sfx}", email=f"kp-{sfx}@test.com",
+    )
+    _other, _u2, foreign_team = make_tenant(
+        company_name=f"KPB-{sfx}", user_name=f"UKPB-{sfx}", mobile=f"+9187{sfx}", email=f"kpb-{sfx}@test.com",
+    )
+    project = models.Project(id=_uuid.uuid4(), company_id=comp.id, name="S", state="Goa")
+    db.add(project)
+    db.commit()
+    res = client.patch(
+        f"/apis/v3/planning/projects/{project.id}",
+        json={"key_personnel_id": str(foreign_team.id)}, headers=auth_headers(user, comp),
+    )
+    assert res.status_code == 400, res.text

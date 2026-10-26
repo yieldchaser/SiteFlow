@@ -521,7 +521,7 @@ def get_company_operational_analytics(company_id: uuid.UUID, db: Session = Depen
             db.query(CompanyTeam.id, User.name, LibraryParty.name)
             .outerjoin(User, User.id == CompanyTeam.user_id)
             .outerjoin(LibraryParty, LibraryParty.id == CompanyTeam.library_party_id)
-            .filter(CompanyTeam.id.in_(personnel_ids))
+            .filter(CompanyTeam.id.in_(personnel_ids), CompanyTeam.company_id == company_id)
             .all()
         ):
             if uname or lpname:
