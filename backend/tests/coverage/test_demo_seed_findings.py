@@ -294,3 +294,61 @@ def test_key_personnel_must_belong_to_the_project_company(client, db, make_tenan
         json={"key_personnel_id": str(foreign_team.id)}, headers=auth_headers(user, comp),
     )
     assert res.status_code == 400, res.text
+
+
+def _walk_pdf(pdf: bytes):
+    """Follow a PDF the way a viewer does: trailer Root -> Catalog -> Pages ->
+    each Page, checking every xref offset lands on its object. Returns the
+    page content streams."""
+    import re
+
+    objs = {int(m.group(1)): m.start() for m in re.finditer(rb"(\d+) 0 obj\n", pdf)}
+
+    def body(oid):
+        start = pdf.index(b"obj\n", objs[oid]) + 4
+        return pdf[start:pdf.index(b"endobj", start)]
+
+    xref = pdf[int(pdf.rsplit(b"startxref\n", 1)[1].split()[0]):]
+    assert xref.startswith(b"xref"), "startxref does not point at the xref table"
+    for oid, line in enumerate(xref.split(b"\n")[3:3 + len(objs)], start=1):
+        assert int(line[:10]) == objs[oid], f"xref offset wrong for object {oid}"
+
+    root = int(re.search(rb"/Root (\d+) 0 R", pdf.rsplit(b"trailer", 1)[1]).group(1))
+    assert b"/Type /Catalog" in body(root), f"trailer /Root {root} is not the Catalog"
+    pages_id = int(re.search(rb"/Pages (\d+) 0 R", body(root)).group(1))
+    pages = body(pages_id)
+    assert b"/Type /Pages" in pages, f"Catalog /Pages {pages_id} is not a Pages tree: {pages[:60]!r}"
+    streams = []
+    for kid in re.findall(rb"(\d+) 0 R", pages.split(b"/Kids", 1)[1].split(b"]", 1)[0]):
+        page = body(int(kid))
+        assert b"/Type /Page" in page
+        assert re.search(rb"/Parent (\d+) 0 R", page) and int(
+            re.search(rb"/Parent (\d+) 0 R", page).group(1)) == pages_id, "Page /Parent is not the Pages tree"
+        streams.append(body(int(re.search(rb"/Contents (\d+) 0 R", page).group(1))))
+    assert streams, "PDF has no pages"
+    return streams
+
+
+def test_document_and_report_pdfs_have_reachable_pages():
+    """Observed: a PO downloaded as PDF opened blank. The file held the text,
+    but the Catalog and Page pointed /Pages and /Parent at "2 0 R", the
+    Helvetica font object, so no viewer could find a page. Client report PDFs
+    had /Root pointing at the content stream."""
+    from app.utils.pdf_generator import generate_client_report_pdf, generate_document_pdf
+
+    po = generate_document_pdf(
+        title="Purchase Order", party_lines=["Vendor: Balaji Steels"],
+        table_headers=["Material", "Qty"], table_rows=[["TMT Bar 12mm", "10"]],
+        col_widths=[30, 8], totals_lines=["Total: 731600.00"], company_name="Shivalik Infracon",
+    )
+    streams = _walk_pdf(po)
+    assert b"TMT Bar 12mm" in b"".join(streams)
+
+    long_po = generate_document_pdf(
+        title="Purchase Order", table_headers=["Material", "Qty"],
+        table_rows=[[f"Item {i}", "1"] for i in range(150)], col_widths=[30, 8],
+    )
+    assert len(_walk_pdf(long_po)) > 1
+
+    report = generate_client_report_pdf(title="Monthly Report", summary="Progress on track.", metrics={"Progress": "46%"})
+    assert b"Monthly Report" in b"".join(_walk_pdf(report))

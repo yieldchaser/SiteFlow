@@ -459,9 +459,13 @@ def generate_client_report_pdf(
             + f"     /ExtGState << /GS1 {ext_gstate_id} 0 R >>\n".encode("ascii")
         )
 
+    # The Pages tree is the object right after the page. The trailer must name
+    # the Catalog: it used to name object 1 (the content stream), so viewers
+    # found no document and showed a blank file.
     page_id = add_object(
         b"<< /Type /Page\n"
-        b"   /Resources <<\n"
+        + f"   /Parent {len(objects) + 2} 0 R\n".encode("ascii")
+        + b"   /Resources <<\n"
         + resources
         + b"   >>\n"
         + b"   /MediaBox [0 0 595 842]\n"
@@ -469,7 +473,7 @@ def generate_client_report_pdf(
         + b">>\n"
     )
     pages_tree_id = add_object(f"<< /Type /Pages /Kids [{page_id} 0 R] /Count 1 >>\n".encode("ascii"))
-    add_object(f"<< /Type /Catalog /Pages {pages_tree_id} 0 R >>\n".encode("ascii"))
+    catalog_id = add_object(f"<< /Type /Catalog /Pages {pages_tree_id} 0 R >>\n".encode("ascii"))
 
     # Assemble byteoffsets
     current_offset = len(pdf)
@@ -488,7 +492,7 @@ def generate_client_report_pdf(
         pdf.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
 
     pdf.extend(b"trailer\n")
-    pdf.extend(f"<< /Size {len(objects) + 1} /Root 1 0 R >>\n".encode("ascii"))
+    pdf.extend(f"<< /Size {len(objects) + 1} /Root {catalog_id} 0 R >>\n".encode("ascii"))
     pdf.extend(b"startxref\n")
     pdf.extend(f"{xref_start}\n".encode("ascii"))
     pdf.extend(b"%%EOF\n")
@@ -715,13 +719,17 @@ def generate_document_pdf(
             + f" /ExtGState << /GS1 {ext_gstate_id} 0 R >>".encode("ascii")
         )
 
-    # Page objects + Pages tree.
+    # Page objects + Pages tree. The tree is the object right after the last
+    # page; Catalog and every Page must point at it. A hard-coded "2 0 R" hit
+    # the Helvetica font object, so viewers found no pages: every bill, PO and
+    # BOQ download opened blank.
     page_ids = []
+    pages_tree_id = len(objects) + len(content_ids) + 1
     for cid in content_ids:
         pid = add_object(
             b"<< /Type /Page\n"
-            b"   /Parent 2 0 R\n"
-            b"   /Resources << /Font << /F1 "
+            + f"   /Parent {pages_tree_id} 0 R\n".encode("ascii")
+            + b"   /Resources << /Font << /F1 "
             + str(f1).encode()
             + b" 0 R /F2 "
             + str(f2).encode()
@@ -737,8 +745,9 @@ def generate_document_pdf(
         page_ids.append(pid)
 
     kids = " ".join(f"{pid} 0 R" for pid in page_ids)
-    catalog = add_object(b"<< /Type /Catalog /Pages 2 0 R >>\n")
     pages_tree = add_object(f"<< /Type /Pages /Kids [{kids}] /Count {len(page_ids)} >>\n".encode("ascii"))
+    assert pages_tree == pages_tree_id
+    catalog = add_object(f"<< /Type /Catalog /Pages {pages_tree} 0 R >>\n".encode("ascii"))
 
     # Assemble byte offsets.
     current_offset = len(pdf)
