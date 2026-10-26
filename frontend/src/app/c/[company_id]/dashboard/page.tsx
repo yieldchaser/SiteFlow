@@ -434,7 +434,23 @@ export default function DashboardPage() {
           {activeTab === "overview" && (
             <>
               {overviewTab === "operational" && (() => {
-                const filteredProjList = projects.filter(p => {
+                // The planning list carries no dates, progress, customer or key
+                // personnel; the operational analytics row for the project does.
+                const opById = new Map<string, any>((operationalData?.projects || []).map((o: any) => [o.project_id, o]));
+                const projRows = projects.map(p => {
+                  const o = opById.get(p.id);
+                  if (!o) return p;
+                  const val = (v: any) => (v && v !== "—" ? v : "");
+                  return {
+                    ...p,
+                    startDate: val(o.start_date) || p.startDate,
+                    endDate: val(o.end_date) || p.endDate,
+                    progress: Number(o.progress) || 0,
+                    customerName: val(o.customer_name) || p.customerName,
+                    keyPersonnel: val(o.key_personnel) || p.keyPersonnel,
+                  };
+                });
+                const filteredProjList = projRows.filter(p => {
                   const matchProj = selProject === "All" || p.id === selProject;
                   const matchStatus = selStatus === "All" || p.status === selStatus || (selStatus === "On Hold" && p.status === "Onhold") || (selStatus === "Planning" && p.status === "Not Started");
                   const matchHealth = selHealth === "All" || p.health === selHealth;

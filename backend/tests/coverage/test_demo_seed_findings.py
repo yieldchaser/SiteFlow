@@ -238,3 +238,39 @@ def test_dashboard_reports_unsettled_party_payments_as_advances(
     body = fin.json()
     assert body["advance_received"] == 500000, body
     assert body["advance_paid"] == 120000, body
+
+
+def test_operational_dashboard_rows_name_the_client_and_the_key_person(
+    client, db, make_tenant, auth_headers
+):
+    """Observed: the company dashboard project table showed the project category
+    ("Residential") as the customer, "Supervisor" as key personnel for every
+    project, and an On Hold project as Healthy."""
+    from app import models
+
+    sfx = _uuid.uuid4().hex[:8]
+    comp, user, team = make_tenant(
+        company_name=f"Ops-{sfx}", user_name=f"Anita Kulkarni {sfx}",
+        mobile=f"+9189{sfx}", email=f"ops-{sfx}@test.com",
+    )
+    hdr = auth_headers(user, comp)
+    project = models.Project(
+        id=_uuid.uuid4(), company_id=comp.id, name="Kharadi Mall", state="Maharashtra",
+        category="Commercial", status="On Hold", key_personnel_id=team.id,
+    )
+    clientp = models.LibraryParty(
+        id=_uuid.uuid4(), company_id=comp.id, name="Panchshil Realty", party_type="Client"
+    )
+    db.add_all([project, clientp])
+    db.commit()
+    assert client.post(
+        f"/apis/v3/projects/{project.id}/parties", json={"party_id": str(clientp.id)}, headers=hdr
+    ).status_code == 200
+
+    res = client.get(f"/apis/v3/analytics/company/{comp.id}/operational", headers=hdr)
+    assert res.status_code == 200, res.text
+    row = [r for r in res.json()["projects"] if r["project_id"] == str(project.id)][0]
+    assert row["customer_name"] == "Panchshil Realty", row
+    assert row["key_personnel"] == f"Anita Kulkarni {sfx}", row
+    assert row["health"] == "Onhold", row
+    assert res.json()["health_counts"]["Onhold"] == 1

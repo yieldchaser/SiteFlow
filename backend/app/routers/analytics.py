@@ -38,6 +38,7 @@ from app.models import (
     Payment,
     Project,
     ProjectBudget,
+    ProjectParty,
     PurchaseOrder,
     PurchaseOrderItem,
     MaterialTransaction,
@@ -501,6 +502,31 @@ def get_company_operational_analytics(company_id: uuid.UUID, db: Session = Depen
     health_counts = {"Healthy": 0, "Warning": 0, "Critical": 0, "Onhold": 0, "Completed": 0}
     status_counts = {"Not Started": 0, "Ongoing": 0, "On Hold": 0, "Cancelled": 0, "Planning": 0, "Completed": 0, "Other": 0}
 
+    # The customer is the Client party linked to the project; key personnel is
+    # the company_team member named on it. Projects carry neither as text.
+    client_names: Dict[uuid.UUID, str] = {}
+    if project_ids:
+        for pid, pname in (
+            db.query(ProjectParty.project_id, LibraryParty.name)
+            .join(LibraryParty, LibraryParty.id == ProjectParty.party_id)
+            .filter(ProjectParty.project_id.in_(project_ids), func.lower(LibraryParty.party_type).in_(("client", "customer")))
+            .order_by(ProjectParty.created_at)
+            .all()
+        ):
+            client_names.setdefault(pid, pname)
+    personnel_ids = {p.key_personnel_id for p in projects if p.key_personnel_id}
+    personnel_names: Dict[uuid.UUID, str] = {}
+    if personnel_ids:
+        for tid, uname, lpname in (
+            db.query(CompanyTeam.id, User.name, LibraryParty.name)
+            .outerjoin(User, User.id == CompanyTeam.user_id)
+            .outerjoin(LibraryParty, LibraryParty.id == CompanyTeam.library_party_id)
+            .filter(CompanyTeam.id.in_(personnel_ids))
+            .all()
+        ):
+            if uname or lpname:
+                personnel_names[tid] = uname or lpname
+
     for p in projects:
         # Determine status
         p_status = p.status or "—"
@@ -525,8 +551,10 @@ def get_company_operational_analytics(company_id: uuid.UUID, db: Session = Depen
         # Determine Health
         if p_status == "Completed":
             health = "Completed"
-        elif p_status == "Onhold":
+        elif count_status == "On Hold":
             health = "Onhold"
+        elif p_status == "Cancelled":
+            health = "Cancelled"
         elif spend > budget_total and budget_total > 0:
             health = "Critical"
         elif spend > 0.9 * budget_total and budget_total > 0:
@@ -557,8 +585,8 @@ def get_company_operational_analytics(company_id: uuid.UUID, db: Session = Depen
             "start_date": s_dt.strftime("%Y-%m-%d") if s_dt else "—",
             "end_date": e_dt.strftime("%Y-%m-%d") if e_dt else "—",
             "progress": progress_pct,
-            "customer_name": getattr(p, "customer_name", None) or getattr(p, "category", None) or "—",
-            "key_personnel": "Supervisor"
+            "customer_name": client_names.get(p.id, "—"),
+            "key_personnel": personnel_names.get(p.key_personnel_id, "Unassigned")
         })
 
     # Last 7 Days Attendance Sparkline
@@ -688,8 +716,10 @@ def get_company_financial_analytics(company_id: uuid.UUID, db: Session = Depends
 
         if p_status == "Completed":
             health = "Completed"
-        elif p_status == "Onhold":
+        elif p_status in ("Onhold", "On Hold"):
             health = "Onhold"
+        elif p_status == "Cancelled":
+            health = "Cancelled"
         elif total_expense > budget_total and budget_total > 0:
             health = "Critical"
         elif total_expense > 0.9 * budget_total and budget_total > 0:
