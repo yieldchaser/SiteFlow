@@ -157,3 +157,38 @@ def test_a_party_from_another_company_cannot_be_added_to_a_project(
         json={"party_id": str(foreign.id)}, headers=auth_headers(user, comp),
     )
     assert res.status_code == 404, res.text
+
+
+def test_billing_list_labels_pre_tax_from_the_stored_flag_not_the_milestone_flag():
+    """Observed: every bill in the RA bill list said "Post-Tax", including bills
+    created with pre_tax_deductions true. The list read is_milestone_fixed_amount,
+    an unrelated column that is always false, and the real flag was never stored."""
+    src = (ROOT / "frontend/src/app/c/[company_id]/d/billing/page.tsx").read_text(encoding="utf-8")
+    assert "preTax: bill.is_milestone_fixed_amount" not in src
+    assert "preTax: Boolean(bill.pre_tax_deductions)" in src
+
+
+def test_a_pre_tax_bill_reports_itself_as_pre_tax(client, db, make_tenant, auth_headers):
+    from app import models
+
+    sfx = _uuid.uuid4().hex[:8]
+    comp, user, team = make_tenant(
+        company_name=f"PreTax-{sfx}", user_name=f"UPreTax-{sfx}",
+        mobile=f"+9191{sfx}", email=f"pretax-{sfx}@test.com",
+    )
+    project = models.Project(id=_uuid.uuid4(), company_id=comp.id, name="S", state="Maharashtra")
+    db.add(project)
+    db.commit()
+    res = client.post(
+        "/apis/v3/billing/bills",
+        json={
+            "company_id": str(comp.id), "project_id": str(project.id),
+            "party_company_user_id": str(team.id), "invoice_number": f"RA-{sfx}",
+            "invoice_date": "2026-10-20T00:00:00Z", "invoice_type": "subcon",
+            "subtotal": 100000, "gst_pct": 18, "pre_tax_deductions": True,
+            "deductions": [{"deduction_type": "TDS", "percentage": 2, "amount": 2000}],
+        },
+        headers=auth_headers(user, comp),
+    )
+    assert res.status_code == 201, res.text
+    assert res.json()["pre_tax_deductions"] is True

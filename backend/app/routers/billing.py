@@ -171,6 +171,7 @@ class BillResponse(BaseModel):
     paid_amount: float
     approval_flag: str
     is_milestone_fixed_amount: bool
+    pre_tax_deductions: bool = False
     created_at: datetime
     deductions: List[DeductionResponseSchema] = []
     items_json: Optional[str] = None
@@ -756,6 +757,7 @@ def _bills_query_and_serialize(
                 paid_amount=float(b.paid_amount),
                 approval_flag=b.approval_flag,
                 is_milestone_fixed_amount=b.is_milestone_fixed_amount,
+                pre_tax_deductions=bool(b.pre_tax_deductions),
                 created_at=b.created_at,
                 deductions=ded_schemas,
                 items_json=b.items_json,
@@ -871,6 +873,7 @@ def cancel_bill(bill_id: UUID, db: Session = Depends(get_db), current_user: User
         paid_amount=float(bill.paid_amount),
         approval_flag=bill.approval_flag,
         is_milestone_fixed_amount=bill.is_milestone_fixed_amount,
+        pre_tax_deductions=bool(bill.pre_tax_deductions),
         created_at=bill.created_at,
         deductions=ded_schemas,
         items_json=bill.items_json,
@@ -939,6 +942,7 @@ def approve_bill(bill_id: UUID, db: Session = Depends(get_db), current_user: Use
         paid_amount=float(bill.paid_amount),
         approval_flag=bill.approval_flag,
         is_milestone_fixed_amount=bill.is_milestone_fixed_amount,
+        pre_tax_deductions=bool(bill.pre_tax_deductions),
         created_at=bill.created_at,
         deductions=ded_schemas,
         items_json=bill.items_json,
@@ -1516,6 +1520,7 @@ def create_bill(req: BillCreateRequest, db: Session = Depends(get_db), current_u
         paid_amount=0.0,
         approval_flag="pending",
         is_milestone_fixed_amount=False,
+        pre_tax_deductions=req.pre_tax_deductions,
         items_json=req.items_json,
         payment_mode=req.payment_mode,
         payment_bank_name=req.payment_bank_name,
@@ -1607,6 +1612,7 @@ def create_bill(req: BillCreateRequest, db: Session = Depends(get_db), current_u
         paid_amount=float(bill.paid_amount),
         approval_flag=bill.approval_flag,
         is_milestone_fixed_amount=bill.is_milestone_fixed_amount,
+        pre_tax_deductions=bool(bill.pre_tax_deductions),
         created_at=bill.created_at,
         deductions=ded_responses,
         items_json=bill.items_json,
@@ -1682,6 +1688,7 @@ def link_bill_match(bill_id: UUID, req: BillMatchLinkRequest, db: Session = Depe
         paid_amount=float(bill.paid_amount),
         approval_flag=bill.approval_flag,
         is_milestone_fixed_amount=bill.is_milestone_fixed_amount,
+        pre_tax_deductions=bool(bill.pre_tax_deductions),
         created_at=bill.created_at,
         deductions=ded_schemas,
         items_json=bill.items_json,

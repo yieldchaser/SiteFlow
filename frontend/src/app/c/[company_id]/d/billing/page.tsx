@@ -184,7 +184,7 @@ export default function SubcontractorBillingPage() {
             sgstAmount: halfGst,
             igstAmount: 0,
             totalPayable: parseFloat(bill.total_payable || 0),
-            preTax: bill.is_milestone_fixed_amount,
+            preTax: Boolean(bill.pre_tax_deductions),
             status: bill.status || "Unpaid",
             approvalFlag: bill.approval_flag || "pending",
             invoiceType: bill.invoice_type || null,
