@@ -1842,6 +1842,7 @@ class ChatGroup(Base):
     project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(255), nullable=False)
     group_type = Column(String(50), default="general", nullable=False) # general, site, finance, safety
+    icon_url = Column(String(1024), nullable=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("company_team.id"), nullable=True)
     is_archived = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), default=func.now(), nullable=False)
@@ -2229,6 +2230,11 @@ class MoM(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), index=True, nullable=False)
     project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True, nullable=True)
+    title = Column(String(255), nullable=True)
+    meeting_date = Column(Date, nullable=True)
+    venue = Column(String(255), nullable=True)
+    # [{"text", "owner", "due_date", "done"}]
+    action_items = Column(JSONB, default=list, nullable=False)
     type = Column(String(100), nullable=False, default="Regular")  # Regular, Review, Client Meeting, Internal
     status = Column(String(50), nullable=False, default="Open")    # Open, Closed, Action Pending
     attendees = Column(JSONB, default=list, nullable=False)        # List of attendee names

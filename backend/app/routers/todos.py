@@ -54,12 +54,13 @@ def _serialize(db: Session, t: models.Todo):
     if t.linked_task_id:
         task = db.query(models.Task).filter(models.Task.id == t.linked_task_id).first()
         task_name = task.name if task else None
-    is_overdue = False
-    if t.due_date is not None and t.status != "done":
-        now = datetime.utcnow()
-        if t.due_date.tzinfo is not None:
-            now = now.replace(tzinfo=timezone.utc)
-        is_overdue = t.due_date < now
+    # A to-do is overdue the day after its due date, not from the first
+    # minute of the due day (due dates are stored as midnight).
+    is_overdue = (
+        t.due_date is not None
+        and t.status != "done"
+        and t.due_date.date() < datetime.now(timezone.utc).date()
+    )
     return {
         "id": str(t.id),
         "company_id": str(t.company_id),
@@ -203,12 +204,26 @@ def list_todos(
     return [_serialize(db, t) for t in todos]
 
 
+def _check_assignees(db: Session, company_id, assignee_ids) -> None:
+    """Assignees must be members of the to-do's own company."""
+    if not assignee_ids:
+        return
+    found = {
+        r.id for r in db.query(models.CompanyTeam.id).filter(
+            models.CompanyTeam.id.in_(assignee_ids), models.CompanyTeam.company_id == company_id
+        ).all()
+    }
+    if len(found) != len(set(assignee_ids)):
+        raise HTTPException(status_code=400, detail="Assignees must be members of this company")
+
+
 @router.post("/")
 def create_todo(payload: TodoCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     membership = get_company_membership(db, current_user, payload.company_id)
     if payload.project_id:
         verify_project_in_company(db, payload.project_id, payload.company_id)
     require_permission(db, current_user, payload.company_id, "planning:edit")
+    _check_assignees(db, payload.company_id, payload.assignee_ids)
     t = models.Todo(
         company_id=payload.company_id,
         project_id=payload.project_id,
@@ -254,6 +269,7 @@ def update_todo(todo_id: uuid.UUID, payload: TodoUpdate, db: Session = Depends(g
     if payload.status is not None:
         t.status = payload.status
     if payload.assignee_ids is not None:
+        _check_assignees(db, t.company_id, payload.assignee_ids)
         db.query(models.TodoAssignee).filter(models.TodoAssignee.todo_id == t.id).delete()
         for aid in payload.assignee_ids:
             db.add(models.TodoAssignee(todo_id=t.id, assignee_id=aid))

@@ -12,6 +12,7 @@ import PageShell from "@/components/layout/PageShell";
 import PageHeader from "@/components/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import FieldHint from "@/components/ui/FieldHint";
+import AuthImage, { uploadProjectImage } from "@/components/ui/AuthImage";
 
 interface ChatGroup {
   id: string;
@@ -19,6 +20,11 @@ interface ChatGroup {
   group_type: string;
   created_at: string;
   member_count: number;
+  unread_count?: number;
+  icon_url?: string | null;
+  last_message?: string | null;
+  last_sender?: string | null;
+  last_message_at?: string | null;
 }
 
 interface ChatMessage {
@@ -29,6 +35,56 @@ interface ChatMessage {
   is_mom: boolean;
   mom_date?: string;
   created_at: string;
+  is_mine?: boolean;
+}
+
+const sameDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+/** "Today", "Yesterday", or "24 Oct 2026" for the divider above a day's messages. */
+const dayLabel = (iso: string) => {
+  const d = new Date(iso);
+  const now = new Date();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (sameDay(d, now)) return "Today";
+  if (sameDay(d, yesterday)) return "Yesterday";
+  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+};
+
+/** Time for today's messages, otherwise the short date, as in the chat list. */
+const listTime = (iso?: string | null) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (sameDay(d, new Date())) return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+  return dayLabel(iso);
+};
+
+const isPictureUrl = (u: string) => /^https?:\/\//i.test(u) || u.startsWith("/apis/v3/files/file/");
+
+const getAvatarColor = (type: string) => {
+  switch (type.toLowerCase()) {
+    case "site":
+      return "bg-success text-white";
+    case "finance":
+      return "bg-chart-4 text-white";
+    case "safety":
+      return "bg-warning text-white";
+    default:
+      return "bg-info text-white";
+  }
+};
+
+/** The group's picture, or its first letter on the category colour. */
+function GroupAvatar({ group, size }: { group: ChatGroup; size: string }) {
+  const letter = (
+    <div className={`${size} rounded-full flex items-center justify-center font-bold shrink-0 ${getAvatarColor(group.group_type)}`}>
+      {group.name.charAt(0).toUpperCase()}
+    </div>
+  );
+  return group.icon_url ? (
+    <AuthImage src={group.icon_url} alt={group.name} className={`${size} rounded-full object-cover shrink-0`} fallback={letter} />
+  ) : letter;
 }
 
 interface ChatMember {
@@ -70,7 +126,18 @@ export default function ChatPage() {
   const [searchGroupQuery, setSearchGroupQuery] = useState("");
   const [searchMemberQuery, setSearchMemberQuery] = useState("");
   const [messageText, setMessageText] = useState("");
-  const [imageUrl, setImageUrl] = useState("");
+  const [attachments, setAttachments] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [messagesLoaded, setMessagesLoaded] = useState(false);
+  const [groupsLoaded, setGroupsLoaded] = useState(false);
+  const [lightbox, setLightbox] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [iconBusy, setIconBusy] = useState(false);
+  const [newGroupIcon, setNewGroupIcon] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const iconInputRef = useRef<HTMLInputElement>(null);
+  const newIconInputRef = useRef<HTMLInputElement>(null);
   const [isMom, setIsMom] = useState(false);
   const [momDate, setMomDate] = useState("");
   const [currentUserRole, setCurrentUserRole] = useState("member");
@@ -89,9 +156,16 @@ export default function ChatPage() {
   const fetchGroups = async () => {
     try {
       const res = await fetch(`${getApiHost()}/apis/v3/chat/groups/${projectId}`, { headers: authHeaders() });
-      if (res.ok) setGroups(await res.json());
+      if (res.ok) {
+        const fresh: ChatGroup[] = await res.json();
+        setGroups(fresh);
+        // Keep the open conversation's header (name, icon) in step with the list.
+        setActiveGroup((cur) => (cur ? fresh.find((g) => g.id === cur.id) ?? cur : cur));
+      }
     } catch (e) {
       console.error("Failed to load groups", e);
+    } finally {
+      setGroupsLoaded(true);
     }
   };
 
@@ -113,6 +187,8 @@ export default function ChatPage() {
       }
     } catch (e) {
       console.error("Failed to load messages", e);
+    } finally {
+      if (!sinceId) setMessagesLoaded(true);
     }
   };
 
@@ -142,17 +218,10 @@ export default function ChatPage() {
         }));
         setMembers(resolved);
 
-        // Resolve current user's role! A missing stored user id simply means
-        // the default "member" role; no sentinel id is ever substituted.
-        const currentLoggedUserId = typeof window !== "undefined" ? localStorage.getItem("user_id") : null;
-        const currentMember = currentLoggedUserId
-          ? rawMembers.find((m: ChatMember) => m.user_id === currentLoggedUserId)
-          : undefined;
-        if (currentMember) {
-          setCurrentUserRole(currentMember.role);
-        } else {
-          setCurrentUserRole("member");
-        }
+        // The server marks the caller's own row; member ids are company-team
+        // ids, so they can never be matched against the login's user id.
+        const currentMember = rawMembers.find((m: ChatMember & { is_me?: boolean }) => m.is_me);
+        setCurrentUserRole(currentMember ? currentMember.role : "member");
       }
     } catch (e) {
       console.error("Failed to load members", e);
@@ -160,20 +229,28 @@ export default function ChatPage() {
   };
 
   useEffect(() => {
-    if (projectId) {
-      fetchGroups();
-    }
+    if (!projectId) return;
+    setGroupsLoaded(false);
+    fetchGroups();
+    // Refresh previews and unread counts for the other conversations.
+    const t = setInterval(fetchGroups, 15000);
+    return () => clearInterval(t);
   }, [projectId]);
 
   useEffect(() => {
     fetchTeamOptions();
   }, [companyId]);
 
+  const activeGroupId = activeGroup?.id;
   useEffect(() => {
     if (!activeGroup) return;
     lastMessageIdRef.current = null;
     let interval: NodeJS.Timeout;
-    
+    setMessages([]);
+    setMessagesLoaded(false);
+    setAttachments([]);
+    setRenameValue(activeGroup.name);
+
     fetchMessages(activeGroup.id);
     fetchMembers(activeGroup.id);
     
@@ -190,7 +267,9 @@ export default function ChatPage() {
     return () => {
       clearInterval(interval);
     };
-  }, [activeGroup]);
+    // Re-run only when a different group is opened, not when its preview refreshes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeGroupId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -212,12 +291,17 @@ export default function ChatPage() {
           project_id: projectId,
           name: newGroupName,
           group_type: newGroupType,
+          icon_url: newGroupIcon,
         }),
       });
       if (res.ok) {
+        const created: ChatGroup = await res.json();
         setNewGroupName("");
+        setNewGroupIcon(null);
         setShowGroupModal(false);
-        fetchGroups();
+        await fetchGroups();
+        setActiveGroup(created);
+        setShowMobileList(false);
       } else {
         const err = await readErrorDetail(res);
         alert(err || 'Action failed');
@@ -292,20 +376,89 @@ export default function ChatPage() {
     }
   };
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const imageUrls = imageUrl
-      ? imageUrl.split(",").map((s) => s.trim()).filter(Boolean).filter((u) => /^https?:\/\//i.test(u))
-      : [];
-    if (!activeGroup || (!messageText.trim() && imageUrls.length === 0)) return;
+  const pickImage = (input: HTMLInputElement | null): File | null => {
+    const file = input?.files?.[0] ?? null;
+    if (input) input.value = "";
+    if (file && !file.type.startsWith("image/")) {
+      alert("Please choose a photo (JPG or PNG).");
+      return null;
+    }
+    return file;
+  };
 
+  const handleAttachPhoto = async () => {
+    const file = pickImage(photoInputRef.current);
+    if (!file || !projectId) return;
+    setUploading(true);
+    try {
+      const path = await uploadProjectImage(projectId, file);
+      setAttachments((prev) => [...prev, path]);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const updateGroup = async (patch: { name?: string; icon_url?: string }) => {
+    if (!activeGroup) return false;
+    const res = await fetch(`${getApiHost()}/apis/v3/chat/groups/${activeGroup.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) {
+      alert((await readErrorDetail(res)) || "Could not update the group");
+      return false;
+    }
+    const updated: ChatGroup = await res.json();
+    setActiveGroup((cur) => (cur ? { ...cur, ...updated } : cur));
+    fetchGroups();
+    return true;
+  };
+
+  const handleChangeIcon = async () => {
+    const file = pickImage(iconInputRef.current);
+    if (!file || !projectId) return;
+    setIconBusy(true);
+    try {
+      await updateGroup({ icon_url: await uploadProjectImage(projectId, file) });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setIconBusy(false);
+    }
+  };
+
+  const handleNewGroupIcon = async () => {
+    const file = pickImage(newIconInputRef.current);
+    if (!file || !projectId) return;
+    setIconBusy(true);
+    try {
+      setNewGroupIcon(await uploadProjectImage(projectId, file));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setIconBusy(false);
+    }
+  };
+
+  const handleSendMessage = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!activeGroup || sending || uploading || (!messageText.trim() && attachments.length === 0)) return;
+    if (isMom && !momDate) {
+      alert("Choose the meeting date for these minutes.");
+      return;
+    }
+
+    setSending(true);
     try {
       const body: Record<string, unknown> = {
         group_id: activeGroup.id,
-        message_text: messageText || null,
+        message_text: messageText.trim() || null,
         is_mom: isMom,
         mom_date: isMom ? new Date(momDate).toISOString() : null,
-        image_urls: imageUrls,
+        image_urls: attachments,
       };
       const res = await fetch(`${getApiHost()}/apis/v3/chat/messages`, {
         method: "POST",
@@ -313,17 +466,22 @@ export default function ChatPage() {
         body: JSON.stringify(body),
       });
       if (res.ok) {
+        const sent: ChatMessage = await res.json();
         setMessageText("");
-        setImageUrl("");
+        setAttachments([]);
         setIsMom(false);
         setMomDate("");
-        fetchMessages(activeGroup.id);
+        setMessages((prev) => (prev.some((m) => m.id === sent.id) ? prev : [...prev, sent]));
+        lastMessageIdRef.current = sent.id;
+        fetchGroups();
       } else {
         const err = await readErrorDetail(res);
         alert(err || 'Action failed');
       }
     } catch (e) {
       console.error("Failed to send message", e);
+    } finally {
+      setSending(false);
     }
   };
 
@@ -358,19 +516,7 @@ export default function ChatPage() {
     (m.name || m.user_id).toLowerCase().includes(searchMemberQuery.toLowerCase())
   );
 
-  // Helper avatar colors
-  const getAvatarColor = (type: string) => {
-    switch (type.toLowerCase()) {
-      case "site":
-        return "bg-success text-white";
-      case "finance":
-        return "bg-chart-4 text-white";
-      case "safety":
-        return "bg-warning text-white";
-      default:
-        return "bg-info text-white";
-    }
-  };
+  const isAdmin = currentUserRole === "admin";
 
   return (
     <div className="flex-1 flex flex-col h-full bg-background text-foreground overflow-hidden font-sans">
@@ -433,17 +579,35 @@ export default function ChatPage() {
                       : "hover:bg-elevated/50 text-muted hover:text-foreground"
                   }`}
                 >
-                  <div className={`h-8 w-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${getAvatarColor(g.group_type)}`}>
-                    {g.name.charAt(0).toUpperCase()}
-                  </div>
+                  <GroupAvatar group={g} size="h-10 w-10 text-sm" />
                   <div className="min-w-0 flex-1">
-                    <div className="font-bold text-xs text-foreground truncate">{g.name}</div>
-                    <div className="text-[10px] text-muted capitalize truncate">
-                      {g.group_type} • {g.member_count} member{g.member_count !== 1 && "s"}
+                    <div className="flex items-baseline justify-between gap-2">
+                      <div className="font-bold text-xs text-foreground truncate">{g.name}</div>
+                      <div className={`text-[10px] shrink-0 ${g.unread_count ? "text-primary font-bold" : "text-muted"}`}>
+                        {listTime(g.last_message_at)}
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 mt-0.5">
+                      <div className="text-[11px] text-muted truncate">
+                        {g.last_message
+                          ? `${g.last_sender ? `${g.last_sender}: ` : ""}${g.last_message}`
+                          : `${g.member_count} member${g.member_count !== 1 ? "s" : ""} · no messages yet`}
+                      </div>
+                      {!!g.unread_count && activeGroup?.id !== g.id && (
+                        <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                          {g.unread_count > 99 ? "99+" : g.unread_count}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </button>
               ))
+            ) : projectId && !groupsLoaded ? (
+              <div className="space-y-2 p-1">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="h-12 rounded-lg bg-elevated/50 animate-pulse" />
+                ))}
+              </div>
             ) : projectId ? (
               <EmptyState
                 title="No chats found"
@@ -472,9 +636,14 @@ export default function ChatPage() {
                   >
                     <span className="text-base leading-none">&#8592;</span>
                   </button>
-                  <div className={`h-9 w-9 rounded-full flex items-center justify-center font-bold text-sm ${getAvatarColor(activeGroup.group_type)}`}>
-                    {activeGroup.name.charAt(0).toUpperCase()}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setMembersTab("about"); setShowMembersModal(true); }}
+                    className="cursor-pointer"
+                    title="Group info"
+                  >
+                    <GroupAvatar group={activeGroup} size="h-9 w-9 text-sm" />
+                  </button>
                   <div>
                     <h2 className="text-xs font-bold text-foreground leading-tight">{activeGroup.name}</h2>
                     <p className="text-[10px] text-muted capitalize">
@@ -552,13 +721,17 @@ export default function ChatPage() {
                           >
                             Manage Members
                           </button>
-                          <hr className="border-border-custom/50 my-1" />
-                          <button
-                            onClick={handleDeleteGroup}
-                            className="w-full text-left px-4 py-2 text-xs hover:bg-danger/10 text-danger font-bold"
-                          >
-                            Delete Group
-                          </button>
+                          {isAdmin && (
+                            <>
+                              <hr className="border-border-custom/50 my-1" />
+                              <button
+                                onClick={handleDeleteGroup}
+                                className="w-full text-left px-4 py-2 text-xs hover:bg-danger/10 text-danger font-bold"
+                              >
+                                Delete Group
+                              </button>
+                            </>
+                          )}
                         </div>
                       </>
                     )}
@@ -567,70 +740,94 @@ export default function ChatPage() {
               </div>
 
               {/* Chat Message list panel */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                {messages.length === 0 ? (
+              <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 space-y-2">
+                {!messagesLoaded ? (
+                  <div className="space-y-3">
+                    {[48, 64, 40].map((w, i) => (
+                      <div key={i} className={`flex ${i % 2 ? "justify-end" : "justify-start"}`}>
+                        <div className="h-14 rounded-2xl bg-elevated/50 animate-pulse" style={{ width: `${w}%` }} />
+                      </div>
+                    ))}
+                  </div>
+                ) : messages.length === 0 ? (
                   <div className="h-full flex items-center justify-center">
                     <EmptyState
                       title="No messages yet"
-                      description="This is the beginning of the chat group. Send a text, upload a drawing, or record a Minutes of Meeting."
+                      description="Say hello to the site team. You can send text, attach site photos, or record minutes of a meeting."
                     />
                   </div>
                 ) : (
-                  messages.map((msg) => {
+                  messages.map((msg, idx) => {
                     const isSystemMom = msg.is_mom;
+                    const mine = !!msg.is_mine && !isSystemMom;
+                    const prev = messages[idx - 1];
+                    const newDay = !prev || !sameDay(new Date(prev.created_at), new Date(msg.created_at));
+                    // Group consecutive messages from one sender under a single name.
+                    const showName = !mine && !isSystemMom && (newDay || prev?.user_name !== msg.user_name || prev?.is_mom);
+                    const pictures = (msg.image_urls || []).filter(isPictureUrl);
                     return (
-                      <div key={msg.id} className={`flex ${isSystemMom ? "justify-center" : "justify-start"}`}>
-                        <div
-                          className={`max-w-lg rounded-2xl p-4 border transition-all ${
-                            isSystemMom
-                              ? "bg-primary/5 border-primary/20 text-center w-full max-w-md rounded-xl"
-                              : "bg-card border-border-custom"
-                          }`}
-                        >
-                          {/* MOM Badge */}
-                          {isSystemMom && (
-                            <Badge tone="primary" icon="bolt" className="font-extrabold uppercase tracking-wider mb-2.5">Minutes of Meeting</Badge>
-                          )}
+                      <React.Fragment key={msg.id}>
+                        {newDay && (
+                          <div className="flex justify-center py-2">
+                            <span className="text-[10px] font-semibold text-muted bg-elevated/60 border border-border-custom/50 rounded-full px-3 py-0.5">
+                              {dayLabel(msg.created_at)}
+                            </span>
+                          </div>
+                        )}
+                        <div className={`flex ${isSystemMom ? "justify-center" : mine ? "justify-end" : "justify-start"}`}>
+                          <div
+                            className={`max-w-[85%] md:max-w-lg px-3.5 py-2.5 border transition-all ${
+                              isSystemMom
+                                ? "bg-primary/5 border-primary/20 text-center w-full max-w-md rounded-xl"
+                                : mine
+                                  ? "bg-primary/15 border-primary/25 rounded-2xl rounded-br-md"
+                                  : "bg-card border-border-custom rounded-2xl rounded-bl-md"
+                            }`}
+                          >
+                            {isSystemMom && (
+                              <Badge tone="primary" icon="bolt" className="font-extrabold uppercase tracking-wider mb-2.5">Minutes of Meeting</Badge>
+                            )}
 
-                          {/* Sender details */}
-                          {!isSystemMom && (msg.user_name || "—") && (
-                            <div className="text-[10px] font-bold text-primary mb-1">{msg.user_name || "—"}</div>
-                          )}
+                            {showName && (
+                              <div className="text-[10px] font-bold text-primary mb-1">{msg.user_name || "Team member"}</div>
+                            )}
+                            {isSystemMom && msg.user_name && (
+                              <div className="text-[10px] text-muted mb-1">Recorded by {msg.user_name}</div>
+                            )}
 
-                          {/* Message Body */}
-                          {msg.message_text && (
-                            <div className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">
-                              {msg.message_text}
+                            {pictures.length > 0 && (
+                              <div className={`grid gap-1.5 mb-1.5 ${pictures.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+                                {pictures.map((url, i) => (
+                                  <AuthImage
+                                    key={i}
+                                    src={url}
+                                    alt="Site photo"
+                                    className="rounded-lg w-full max-h-60 min-h-24 object-cover cursor-zoom-in hover:opacity-90 transition-opacity"
+                                    fallback={<div className="rounded-lg bg-elevated text-[10px] text-muted p-3">Photo could not be loaded</div>}
+                                    onClick={setLightbox}
+                                  />
+                                ))}
+                              </div>
+                            )}
+
+                            {msg.message_text && (
+                              <div className="text-xs text-foreground leading-relaxed whitespace-pre-wrap break-words">
+                                {msg.message_text}
+                              </div>
+                            )}
+
+                            {msg.mom_date && (
+                              <div className="text-[10px] text-muted mt-2 font-medium flex items-center justify-center gap-1">
+                                <Icon name="calendar" className="w-3 h-3" /> Meeting date: {formatDate(msg.mom_date)}
+                              </div>
+                            )}
+
+                            <div className="text-[9px] text-muted/80 mt-1 text-right font-medium">
+                              {new Date(msg.created_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
                             </div>
-                          )}
-
-                          {/* Image attachments */}
-                          {msg.image_urls && msg.image_urls.filter((u) => /^https?:\/\//i.test(u)).length > 0 && (
-                            <div className="flex flex-wrap gap-2 mt-2.5">
-                              {msg.image_urls.filter((u) => /^https?:\/\//i.test(u)).map((url, i) => (
-                                <img
-                                  key={i}
-                                  src={url}
-                                  alt="Attachment"
-                                  className="rounded-lg max-h-48 object-cover border border-border-custom/50 hover:opacity-90 cursor-zoom-in transition-opacity"
-                                />
-                              ))}
-                            </div>
-                          )}
-
-                          {/* MOM Date details */}
-                          {msg.mom_date && (
-                            <div className="text-[10px] text-muted mt-2 font-medium flex items-center justify-center gap-1">
-                              <Icon name="calendar" className="w-3 h-3" /> MOM Date: {formatDate(msg.mom_date)}
-                            </div>
-                          )}
-
-                          {/* Timestamp info */}
-                          <div className="text-[9px] text-muted/70 mt-1.5 text-right font-medium">
-                            {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </div>
                         </div>
-                      </div>
+                      </React.Fragment>
                     );
                   })
                 )}
@@ -649,21 +846,48 @@ export default function ChatPage() {
                   <form onSubmit={handleSendMessage} className="space-y-3">
                     <div className="flex flex-col gap-2">
                       
-                      {/* Top inputs row */}
-                      <div className="flex flex-col md:flex-row md:flex-wrap items-stretch md:items-center gap-2">
-                        <input
-                          type="text"
+                      {(attachments.length > 0 || uploading) && (
+                        <div className="flex flex-wrap gap-2">
+                          {attachments.map((url) => (
+                            <div key={url} className="relative">
+                              <AuthImage src={url} alt="Photo to send" className="h-16 w-16 rounded-lg object-cover border border-border-custom" />
+                              <button
+                                type="button"
+                                onClick={() => setAttachments((prev) => prev.filter((u) => u !== url))}
+                                className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-danger text-white text-[10px] font-bold flex items-center justify-center cursor-pointer"
+                                title="Remove photo"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                          {uploading && <div className="h-16 w-16 rounded-lg bg-elevated animate-pulse flex items-center justify-center text-[9px] text-muted">Uploading</div>}
+                        </div>
+                      )}
+
+                      <div className="flex items-end gap-2">
+                        <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handleAttachPhoto} />
+                        <button
+                          type="button"
+                          onClick={() => photoInputRef.current?.click()}
+                          disabled={uploading}
+                          className="h-9 w-9 shrink-0 flex items-center justify-center rounded-lg border border-border-custom text-muted hover:text-primary hover:border-primary transition-all cursor-pointer disabled:opacity-50"
+                          title="Attach a photo"
+                        >
+                          <Icon name="image" className="w-4 h-4" />
+                        </button>
+                        <textarea
                           value={messageText}
                           onChange={(e) => setMessageText(e.target.value)}
-                          placeholder="Enter Message..."
-                          className="flex-1 min-w-0 md:min-w-[200px] bg-elevated/35 border border-border-custom rounded-lg px-4 py-2 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-primary transition-all"
-                        />
-                        <input
-                          type="text"
-                          value={imageUrl}
-                          onChange={(e) => setImageUrl(e.target.value)}
-                          placeholder="Image URL (optional)"
-                          className="w-full md:w-44 bg-elevated/35 border border-border-custom rounded-lg px-4 py-2 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-primary transition-all"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSendMessage();
+                            }
+                          }}
+                          rows={1}
+                          placeholder="Type a message. Enter to send, Shift+Enter for a new line"
+                          className="flex-1 min-w-0 resize-none max-h-32 bg-elevated/35 border border-border-custom rounded-lg px-4 py-2 text-xs text-foreground placeholder:text-muted focus:outline-none focus:border-primary transition-all"
                         />
                       </div>
 
@@ -677,12 +901,12 @@ export default function ChatPage() {
                               onChange={(e) => setIsMom(e.target.checked)}
                               className="rounded border-border-custom text-primary focus:ring-primary h-3.5 w-3.5"
                             />
-                            <span className="text-[11px] font-bold text-muted hover:text-foreground transition-colors">Mark as MOM</span>
+                            <span className="text-[11px] font-bold text-muted hover:text-foreground transition-colors">Minutes of meeting</span>
                           </label>
 
                           {isMom && (
                             <div className="flex items-center gap-1.5">
-                              <span className="text-[10px] text-muted">MOM Date:</span>
+                              <span className="text-[10px] text-muted">Meeting date:</span>
                               <input
                                 type="date"
                                 value={momDate}
@@ -695,9 +919,10 @@ export default function ChatPage() {
 
                         <button
                           type="submit"
-                          className="px-5 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                          disabled={sending || uploading || (!messageText.trim() && attachments.length === 0)}
+                          className="px-5 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          <span>Send</span>
+                          <span>{sending ? "Sending" : "Send"}</span>
                           <Icon name="envelope" className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -711,9 +936,9 @@ export default function ChatPage() {
             <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-4">
               <Icon name="chat_bubble" className="w-16 h-16 text-muted/30" />
               <div className="space-y-1">
-                <h3 className="text-sm font-bold text-foreground">Chat Group (Beta Version)</h3>
+                <h3 className="text-sm font-bold text-foreground">Team Chat</h3>
                 <p className="text-xs text-muted max-w-sm">
-                  Select a discussion channel from the sidebar or click the "+" button to start a new workspace chat.
+                  Pick a group on the left to read and reply, or press Create Group to start one for this project.
                 </p>
               </div>
             </div>
@@ -721,6 +946,17 @@ export default function ChatPage() {
         </div>
 
       </div>
+
+      {/* Full-size photo viewer */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 bg-black/85 flex items-center justify-center z-[60] p-4 cursor-zoom-out"
+          onClick={() => setLightbox(null)}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={lightbox} alt="Site photo" className="max-h-full max-w-full rounded-lg object-contain" />
+        </div>
+      )}
 
       {/* MODAL 1: Create Group Modal */}
       {showGroupModal && (
@@ -737,12 +973,25 @@ export default function ChatPage() {
             <h2 className="text-sm font-extrabold text-foreground uppercase tracking-wider mb-6 text-center">Create Group</h2>
             
             <form onSubmit={handleCreateGroupSubmit} className="space-y-4">
-              {/* Group icon placeholder */}
+              {/* Group icon */}
               <div className="flex flex-col items-center justify-center gap-2 mb-4">
-                <div className="h-16 w-16 rounded-full bg-elevated/40 border border-border-custom flex items-center justify-center text-muted select-none">
-                  <Icon name="group" className="w-7 h-7" />
-                </div>
-                <span className="text-[10px] text-muted">Select Group Image</span>
+                <input ref={newIconInputRef} type="file" accept="image/*" className="hidden" onChange={handleNewGroupIcon} />
+                <button
+                  type="button"
+                  onClick={() => newIconInputRef.current?.click()}
+                  disabled={iconBusy}
+                  className="h-16 w-16 rounded-full bg-elevated/40 border border-border-custom flex items-center justify-center text-muted hover:border-primary hover:text-primary transition-all overflow-hidden cursor-pointer"
+                  title="Choose a group picture"
+                >
+                  {iconBusy ? (
+                    <span className="text-[9px]">Uploading</span>
+                  ) : newGroupIcon ? (
+                    <AuthImage src={newGroupIcon} alt="Group picture" className="h-16 w-16 object-cover" />
+                  ) : (
+                    <Icon name="camera" className="w-7 h-7" />
+                  )}
+                </button>
+                <span className="text-[10px] text-muted">{newGroupIcon ? "Tap to change the picture" : "Add a group picture (optional)"}</span>
               </div>
 
               <div>
@@ -798,9 +1047,7 @@ export default function ChatPage() {
 
             {/* Header info */}
             <div className="flex items-center gap-3 pb-4 mb-4 border-b border-border-custom/50">
-              <div className={`h-11 w-11 rounded-full flex items-center justify-center font-bold text-sm ${getAvatarColor(activeGroup.group_type)}`}>
-                {activeGroup.name.charAt(0).toUpperCase()}
-              </div>
+              <GroupAvatar group={activeGroup} size="h-11 w-11 text-sm" />
               <div>
                 <h3 className="text-xs font-bold text-foreground leading-tight">{activeGroup.name}</h3>
                 <p className="text-[10px] text-muted capitalize">{activeGroup.group_type} Group</p>
@@ -830,9 +1077,58 @@ export default function ChatPage() {
             {/* Tab content 1: About */}
             {membersTab === "about" && (
               <div className="space-y-4 py-2">
+                <div className="flex flex-col items-center gap-2">
+                  <GroupAvatar group={activeGroup} size="h-24 w-24 text-3xl" />
+                  {isAdmin && (
+                    <div className="flex items-center gap-3">
+                      <input ref={iconInputRef} type="file" accept="image/*" className="hidden" onChange={handleChangeIcon} />
+                      <button
+                        type="button"
+                        onClick={() => iconInputRef.current?.click()}
+                        disabled={iconBusy}
+                        className="text-[11px] font-bold text-primary hover:underline cursor-pointer disabled:opacity-50"
+                      >
+                        {iconBusy ? "Uploading..." : activeGroup.icon_url ? "Change picture" : "Add group picture"}
+                      </button>
+                      {activeGroup.icon_url && !iconBusy && (
+                        <button
+                          type="button"
+                          onClick={() => updateGroup({ icon_url: "" })}
+                          className="text-[11px] font-bold text-muted hover:text-danger cursor-pointer"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <div>
                   <h4 className="text-[9px] font-extrabold text-muted uppercase tracking-wider">Group Name</h4>
-                  <p className="text-xs text-foreground font-medium mt-0.5">{activeGroup.name}</p>
+                  {isAdmin ? (
+                    <form
+                      className="flex gap-2 mt-1"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (renameValue.trim() && renameValue.trim() !== activeGroup.name) updateGroup({ name: renameValue.trim() });
+                      }}
+                    >
+                      <input
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        maxLength={255}
+                        className="flex-1 bg-elevated/35 border border-border-custom rounded-lg px-3 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!renameValue.trim() || renameValue.trim() === activeGroup.name}
+                        className="px-3 py-1.5 bg-primary text-white rounded-lg text-[11px] font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        Save
+                      </button>
+                    </form>
+                  ) : (
+                    <p className="text-xs text-foreground font-medium mt-0.5">{activeGroup.name}</p>
+                  )}
                 </div>
                 <div>
                   <h4 className="text-[9px] font-extrabold text-muted uppercase tracking-wider">Category</h4>
@@ -844,12 +1140,9 @@ export default function ChatPage() {
                     {formatDateTime(activeGroup.created_at)}
                   </p>
                 </div>
-                <div>
-                  <h4 className="text-[9px] font-extrabold text-muted uppercase tracking-wider">Group ID</h4>
-                  <p className="text-[10px] text-muted font-sans bg-elevated/40 border border-border-custom rounded-lg p-2 mt-1 select-all">
-                    {activeGroup.id}
-                  </p>
-                </div>
+                {!isAdmin && (
+                  <p className="text-[10px] text-muted">Only a group admin can change the picture or the name.</p>
+                )}
               </div>
             )}
 
@@ -881,10 +1174,14 @@ export default function ChatPage() {
                         {(m.name || m.user_id).charAt(0).toUpperCase()}
                           </div>
                           <div className="min-w-0">
-                            <div className="text-xs font-bold text-foreground truncate">{m.name || `User ${m.user_id.slice(0, 8)}`}</div>
+                            <div className="text-xs font-bold text-foreground truncate">
+                              {m.name || `User ${m.user_id.slice(0, 8)}`}
+                              {(m as ChatMember & { is_me?: boolean }).is_me && <span className="text-muted font-medium"> (you)</span>}
+                            </div>
                             <div className="text-[9px] text-muted capitalize font-medium">{m.role === "admin" ? "Group Admin" : "Member"}</div>
                           </div>
                         </div>
+                        {isAdmin && !(m as ChatMember & { is_me?: boolean }).is_me && (
                         <div className="flex items-center gap-2">
                           <select
                             value={m.role}
@@ -904,6 +1201,7 @@ export default function ChatPage() {
                             </button>
                           )}
                         </div>
+                        )}
                       </div>
                     ))
                   ) : (

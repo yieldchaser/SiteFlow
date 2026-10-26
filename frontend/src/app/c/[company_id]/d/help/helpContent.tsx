@@ -232,7 +232,7 @@ export function getHelpCategories(companyId: string): HelpCategory[] {
           text: "import boq bill of quantities excel xlsx rate qty unit supply installation cost code items upload",
           sources: [
             "frontend/src/components/Sidebar.tsx:308",
-            "frontend/src/app/c/[company_id]/d/budgeting/boq/page.tsx:1",
+            "frontend/src/app/c/[company_id]/p/[project_id]/boq/page.tsx:1",
             "POST /apis/v3/budgeting/boq/import",
           ],
         },

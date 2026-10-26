@@ -1,4 +1,5 @@
 "use client";
+import AuthImage from "@/components/ui/AuthImage";
 import Badge, { type BadgeTone } from "@/components/ui/Badge";
 import { getApiHost, readErrorDetail, detailToMessage} from "@/lib/api";
 import { authHeaders, formatDate, formatLabel } from "@/lib/siteflow";
@@ -874,10 +875,10 @@ export default function CompanySettingsPage() {
       if (res.ok) {
         setSettings((prev) => prev ? {
           ...prev,
-          logo_url: type === "logo" ? `${apiHost}/apis/v3/settings/company-file/${company_id}/logo` : prev.logo_url,
-          signature_url: type === "signature" ? `${apiHost}/apis/v3/settings/company-file/${company_id}/signature` : prev.signature_url,
-          stamp_url: type === "stamp" ? `${apiHost}/apis/v3/settings/company-file/${company_id}/stamp` : prev.stamp_url,
-          watermark_url: type === "watermark" ? `${apiHost}/apis/v3/settings/company-file/${company_id}/watermark` : prev.watermark_url,
+          logo_url: type === "logo" ? `${apiHost}/apis/v3/settings/company-file/${company_id}/logo?v=${Date.now()}` : prev.logo_url,
+          signature_url: type === "signature" ? `${apiHost}/apis/v3/settings/company-file/${company_id}/signature?v=${Date.now()}` : prev.signature_url,
+          stamp_url: type === "stamp" ? `${apiHost}/apis/v3/settings/company-file/${company_id}/stamp?v=${Date.now()}` : prev.stamp_url,
+          watermark_url: type === "watermark" ? `${apiHost}/apis/v3/settings/company-file/${company_id}/watermark?v=${Date.now()}` : prev.watermark_url,
         } : prev);
       } else {
         const err = await readErrorDetail(res);
@@ -1396,7 +1397,14 @@ export default function CompanySettingsPage() {
                           return (
                             <div key={type} className="border border-dashed border-border-custom rounded-lg p-3 flex flex-col items-center gap-2">
                               <div className="h-20 w-full flex items-center justify-center rounded-md bg-elevated overflow-hidden">
-                                {url ? <img src={url} alt={label} className="max-h-20 max-w-full object-contain" /> : <span className="text-[10px] text-muted">{label}</span>}
+                                {url ? (
+                                  <AuthImage
+                                    src={url.startsWith("/settings/") ? `/apis/v3${url}` : url}
+                                    alt={label}
+                                    className="max-h-20 max-w-full object-contain"
+                                    fallback={<span className="text-[10px] text-muted">{label}</span>}
+                                  />
+                                ) : <span className="text-[10px] text-muted">{label}</span>}
                               </div>
                               <div className="text-[10px] text-muted font-bold">{label}</div>
                               <input type="file" accept="image/*" id={`up-${type}`} className="hidden"

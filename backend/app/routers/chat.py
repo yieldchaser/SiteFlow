@@ -1,3 +1,4 @@
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -7,11 +8,32 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from app.database import get_db
 from app.auth import get_current_user, verify_project_access, get_company_membership
-from app.models import ChatGroup, ChatMessage, ChatGroupMember, User, CompanyTeam
+from app.models import ChatGroup, ChatMessage, ChatGroupMember, User, CompanyTeam, ProjectFile
 
 router = APIRouter(prefix="/chat", tags=["Chat & MOM"], dependencies=[Depends(get_current_user)])
 
 CHAT_GROUP_ROLE_PATTERN = "^(admin|member|viewer)$"
+
+# Group icons and message photos are files uploaded to the group's own project.
+PROJECT_FILE_PATH = re.compile(r"^/apis/v3/files/file/([0-9a-fA-F-]{36})$")
+
+
+def check_project_file_url(db: Session, url: str, project_id: uuid.UUID) -> str:
+    """Accept only a path to a file stored in this project (or, for older
+    messages, an absolute https link). Anything else is refused so a group
+    cannot point its members' browsers at an arbitrary address."""
+    url = url.strip()
+    m = PROJECT_FILE_PATH.match(url)
+    if m:
+        f = db.query(ProjectFile.id).filter(
+            ProjectFile.id == uuid.UUID(m.group(1)), ProjectFile.project_id == project_id
+        ).first()
+        if f is None:
+            raise HTTPException(status_code=400, detail="That file does not belong to this project")
+        return url
+    if url.lower().startswith("https://"):
+        return url
+    raise HTTPException(status_code=400, detail="Pictures must be uploaded files")
 
 
 def company_team_for(db: Session, company_id: uuid.UUID, current_user: User) -> Optional[CompanyTeam]:
@@ -64,7 +86,14 @@ class ChatGroupCreate(BaseModel):
     project_id: uuid.UUID
     name: str
     group_type: str = "general"
+    icon_url: Optional[str] = None
     created_by: Optional[uuid.UUID] = None
+
+
+class ChatGroupUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    # Empty string removes the icon.
+    icon_url: Optional[str] = None
 
 
 
@@ -77,8 +106,12 @@ class ChatGroupResponse(BaseModel):
     created_by: Optional[uuid.UUID]
     is_archived: bool
     created_at: datetime
+    icon_url: Optional[str] = None
     member_count: int = 0
     unread_count: int = 0
+    last_message: Optional[str] = None
+    last_sender: Optional[str] = None
+    last_message_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -102,6 +135,7 @@ class ChatMessageResponse(BaseModel):
     is_mom: bool
     mom_date: Optional[datetime]
     created_at: datetime
+    is_mine: bool = False
 
     class Config:
         from_attributes = True
@@ -135,6 +169,7 @@ class ChatGroupMemberResponse(BaseModel):
     role: str
     joined_at: datetime
     name: Optional[str] = None
+    is_me: bool = False
 
     class Config:
         from_attributes = True
@@ -148,6 +183,10 @@ def create_group(payload: ChatGroupCreate, db: Session = Depends(get_db), curren
         raise HTTPException(status_code=403, detail="Not a member of this company team")
     data = payload.model_dump()
     data.pop("created_by", None)
+    if data.get("icon_url"):
+        data["icon_url"] = check_project_file_url(db, data["icon_url"], payload.project_id)
+    else:
+        data["icon_url"] = None
     group = ChatGroup(**data)
     group.created_by = creator.id
     db.add(group)
@@ -204,6 +243,21 @@ def list_groups(project_id: uuid.UUID, db: Session = Depends(get_db), current_us
             unread_q = unread_q.filter(ChatMessage.created_at > last_read)
         unread_cnt = unread_q.scalar() or 0
 
+        last = (
+            db.query(ChatMessage, User.name)
+            .join(CompanyTeam, CompanyTeam.id == ChatMessage.user_id, isouter=True)
+            .join(User, User.id == CompanyTeam.user_id, isouter=True)
+            .filter(ChatMessage.group_id == g.id)
+            .order_by(ChatMessage.created_at.desc())
+            .first()
+        )
+        last_text = last_sender = last_at = None
+        if last:
+            lm, lname = last
+            last_text = lm.message_text or ("Photo" if lm.image_urls else None)
+            last_sender = "You" if ct and lm.user_id == ct.id else (lname or lm.user_name)
+            last_at = lm.created_at
+
         result.append(
             ChatGroupResponse(
                 id=g.id,
@@ -214,11 +268,39 @@ def list_groups(project_id: uuid.UUID, db: Session = Depends(get_db), current_us
                 created_by=g.created_by,
                 is_archived=g.is_archived,
                 created_at=g.created_at,
+                icon_url=g.icon_url,
                 member_count=counts.get(g.id, 0),
                 unread_count=unread_cnt,
+                last_message=last_text,
+                last_sender=last_sender,
+                last_message_at=last_at,
             )
         )
+    # Most recent conversation first, like any messenger.
+    result.sort(key=lambda r: r.last_message_at or r.created_at, reverse=True)
     return result
+
+
+@router.patch("/groups/{group_id}", response_model=ChatGroupResponse)
+def update_group(group_id: uuid.UUID, payload: ChatGroupUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Rename a group or set / remove its icon. Group admins only."""
+    group = db.query(ChatGroup).filter(ChatGroup.id == group_id, ChatGroup.is_archived == False).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Chat group not found")
+    get_company_membership(db, current_user, group.company_id)
+    require_group_admin(db, current_user, group.id)
+    if payload.name is not None:
+        group.name = payload.name.strip()
+    if payload.icon_url is not None:
+        group.icon_url = check_project_file_url(db, payload.icon_url, group.project_id) if payload.icon_url.strip() else None
+    db.commit()
+    db.refresh(group)
+    count = db.query(func.count(ChatGroupMember.id)).filter(ChatGroupMember.group_id == group.id).scalar() or 0
+    return ChatGroupResponse(
+        id=group.id, company_id=group.company_id, project_id=group.project_id, name=group.name,
+        group_type=group.group_type, created_by=group.created_by, is_archived=group.is_archived,
+        created_at=group.created_at, icon_url=group.icon_url, member_count=count,
+    )
 
 
 @router.post("/groups/{group_id}/read")
@@ -245,7 +327,11 @@ def send_message(payload: ChatMessageCreate, db: Session = Depends(get_db), curr
         raise HTTPException(status_code=404, detail="Chat group not found")
     get_company_membership(db, current_user, group.company_id)
     verify_group_membership(db, current_user, group.id)
-    msg = ChatMessage(**payload.model_dump())
+    if not (payload.message_text or "").strip() and not payload.image_urls:
+        raise HTTPException(status_code=400, detail="Write a message or attach a photo")
+    data = payload.model_dump()
+    data["image_urls"] = [check_project_file_url(db, u, group.project_id) for u in payload.image_urls if u.strip()]
+    msg = ChatMessage(**data)
     # Stamp the real sender so names resolve on read. The server owns the
     # sender identity, not the client payload. user_id links to company_team.id.
     ct = company_team_for(db, group.company_id, current_user)
@@ -256,7 +342,9 @@ def send_message(payload: ChatMessageCreate, db: Session = Depends(get_db), curr
     db.add(msg)
     db.commit()
     db.refresh(msg)
-    return ChatMessageResponse.from_attributes(msg)
+    out = ChatMessageResponse.from_attributes(msg)
+    out.is_mine = True
+    return out
 
 
 @router.get("/messages/{group_id}", response_model=List[ChatMessageResponse])
@@ -287,6 +375,7 @@ def list_messages(
                 if r[0].created_at >= anchor and r[0].id != since_id
             ]
     rows = rows[::-1]
+    me = company_team_for(db, group.company_id, current_user)
     result = []
     for msg, resolved_name in rows:
         data = {
@@ -299,6 +388,7 @@ def list_messages(
             "is_mom": msg.is_mom,
             "mom_date": msg.mom_date,
             "created_at": msg.created_at,
+            "is_mine": bool(me and msg.user_id == me.id),
         }
         result.append(ChatMessageResponse(**data))
     return result
@@ -318,6 +408,7 @@ def list_members(group_id: uuid.UUID, db: Session = Depends(get_db), current_use
         .filter(ChatGroupMember.group_id == group_id)
         .all()
     )
+    me = company_team_for(db, group.company_id, current_user)
     result = []
     for member, name in rows:
         result.append(ChatGroupMemberResponse(
@@ -327,6 +418,7 @@ def list_members(group_id: uuid.UUID, db: Session = Depends(get_db), current_use
             role=member.role,
             joined_at=member.joined_at,
             name=name,
+            is_me=bool(me and member.user_id == me.id),
         ))
     return result
 

@@ -4,14 +4,12 @@ Router for logging and tracking meeting minutes per company/project site.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import cast
-from sqlalchemy import Date as SA_Date
 from app.database import get_db
 from app.auth import get_current_user, verify_project_in_company, get_company_membership, require_permission
 from app.models import MoM, Project, User
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, date
 import uuid
 
 router = APIRouter(prefix="/mom", tags=["Minutes of Meeting"], dependencies=[Depends(get_current_user)])
@@ -19,8 +17,19 @@ router = APIRouter(prefix="/mom", tags=["Minutes of Meeting"], dependencies=[Dep
 
 # ─── Pydantic Schemas ────────────────────────────────────────────────────────
 
+class ActionItem(BaseModel):
+    text: str = Field(..., min_length=1, max_length=500)
+    owner: Optional[str] = Field(None, max_length=255)
+    due_date: Optional[date] = None
+    done: bool = False
+
+
 class MoMCreate(BaseModel):
     project_id: Optional[str] = None
+    title: Optional[str] = Field(None, max_length=255)
+    meeting_date: Optional[date] = None
+    venue: Optional[str] = Field(None, max_length=255)
+    action_items: List[ActionItem] = []
     type: str = "Regular"           # Regular, Review, Client Meeting, Internal
     status: str = "Open"            # Open, Closed, Action Pending
     attendees: List[str] = []
@@ -29,6 +38,12 @@ class MoMCreate(BaseModel):
 
 
 class MoMUpdate(BaseModel):
+    # An explicit null moves the minutes to company-wide.
+    project_id: Optional[str] = None
+    title: Optional[str] = Field(None, max_length=255)
+    meeting_date: Optional[date] = None
+    venue: Optional[str] = Field(None, max_length=255)
+    action_items: Optional[List[ActionItem]] = None
     type: Optional[str] = None
     status: Optional[str] = None
     attendees: Optional[List[str]] = None
@@ -43,6 +58,10 @@ def _serialize(m: MoM) -> dict:
         "id": str(m.id),
         "company_id": str(m.company_id),
         "project_id": str(m.project_id) if m.project_id else None,
+        "title": m.title,
+        "meeting_date": m.meeting_date.isoformat() if m.meeting_date else None,
+        "venue": m.venue,
+        "action_items": m.action_items or [],
         "type": m.type,
         "status": m.status,
         "attendees": m.attendees or [],
@@ -77,12 +96,14 @@ def list_mom(
     if date:
         try:
             target = datetime.fromisoformat(date).date()
-            query = query.filter(cast(MoM.created_at, SA_Date) == target)
+            query = query.filter(MoM.meeting_date == target)
         except ValueError:
             pass
-    records = query.order_by(MoM.created_at.desc()).all()
+    records = query.order_by(MoM.meeting_date.desc().nullslast(), MoM.created_at.desc()).all()
     if attendee:
-        records = [m for m in records if attendee in (m.attendees or [])]
+        # Part of a name is enough: "kulkarni" finds "Rajesh Kulkarni".
+        needle = attendee.strip().lower()
+        records = [m for m in records if any(needle in (a or "").lower() for a in (m.attendees or []))]
     return [_serialize(m) for m in records]
 
 
@@ -101,6 +122,10 @@ def create_mom(
     mom = MoM(
         company_id=uuid.UUID(company_id),
         project_id=uuid.UUID(payload.project_id) if payload.project_id else None,
+        title=payload.title,
+        meeting_date=payload.meeting_date or datetime.now().date(),
+        venue=payload.venue,
+        action_items=[a.model_dump(mode="json") for a in payload.action_items],
         type=payload.type,
         status=payload.status,
         attendees=payload.attendees or [],
@@ -150,6 +175,20 @@ def update_mom(
     )
     if not mom:
         raise HTTPException(status_code=404, detail="MOM not found.")
+    if "project_id" in payload.model_fields_set:
+        if payload.project_id:
+            verify_project_in_company(db, uuid.UUID(payload.project_id), uuid.UUID(company_id))
+            mom.project_id = uuid.UUID(payload.project_id)
+        else:
+            mom.project_id = None
+    if payload.title is not None:
+        mom.title = payload.title
+    if payload.meeting_date is not None:
+        mom.meeting_date = payload.meeting_date
+    if payload.venue is not None:
+        mom.venue = payload.venue
+    if payload.action_items is not None:
+        mom.action_items = [a.model_dump(mode="json") for a in payload.action_items]
     if payload.type is not None:
         mom.type = payload.type
     if payload.status is not None:

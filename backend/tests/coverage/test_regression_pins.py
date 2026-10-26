@@ -126,14 +126,19 @@ def test_pin_R2_040_report_export_never_xlsx():
 
 
 def test_pin_R2_148_todo_mutations_persist():
-    src = _read_frontend("src/app/c/[company_id]/d/todo/page.tsx")
+    # Both to-do pages render the shared TodoBoard since 2026-10-27.
+    for page in ("src/app/c/[company_id]/d/todo/page.tsx", "src/app/c/[company_id]/p/[project_id]/todo/page.tsx"):
+        assert "TodoBoard" in _read_frontend(page), f"{page} no longer uses TodoBoard"
+    src = _read_frontend("src/components/TodoBoard.tsx")
     assert src.count("apis/v3/todos/${") >= 2, "R2-148 todo PUT/DELETE wiring regressed"
 
 
 def test_pin_R2_149_repeat_settings_removed():
-    src = _read_frontend("src/app/c/[company_id]/d/todo/page.tsx")
+    # R2-149 removed a decorative repeat modal that sent nothing. Recurrence
+    # has a runtime since R2-383, so the repeat choice must now be SENT.
+    src = _read_frontend("src/components/TodoBoard.tsx")
     assert "isRepeatModalOpen" not in src, "R2-149 repeat modal state reintroduced"
-    assert "repeatType" not in src, "R2-149 repeat type state reintroduced"
+    assert "repeat_type: form.repeat_type" in src, "repeat choice shown but not sent (R2-149 shape)"
 
 
 def test_pin_R2_032_ctc_no_double_count():
@@ -846,10 +851,11 @@ def test_pin_R2_436_mom_creator_not_in_form():
 
 
 def test_pin_R2_446_mom_statuses_include_draft():
-    d = _read_frontend("src/app/c/[company_id]/d/mom/page.tsx")
-    p = _read_frontend("src/app/c/[company_id]/p/[project_id]/mom/page.tsx")
-    for src in (d, p):
-        assert '"Action Pending", "Draft"' in src, "R2-446 MOM Draft status regressed"
+    # Both MOM pages render the shared MomRegister since 2026-10-27.
+    for page in ("src/app/c/[company_id]/d/mom/page.tsx", "src/app/c/[company_id]/p/[project_id]/mom/page.tsx"):
+        assert "MomRegister" in _read_frontend(page), f"{page} no longer uses MomRegister"
+    src = _read_frontend("src/components/MomRegister.tsx")
+    assert '"Draft"' in src and '"Action Pending"' in src, "R2-446 MOM Draft status regressed"
 
 
 def test_pin_R2_460_gantt_fmt_date_helper():
