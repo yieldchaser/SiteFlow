@@ -14,7 +14,7 @@ from app.models import (
     PurchaseOrder, PurchaseOrderItem,
     GoodsReceiptNote, GRNItem,
     WarehouseInventory, MaterialTransaction,
-    Project, User, ApprovalRule, CompanyTeam, LibraryParty
+    Project, User, ApprovalRule, CompanyTeam, LibraryParty, LibraryMaterial
 )
 from app.approvals import (
     find_matching_rule,
@@ -1125,9 +1125,17 @@ def create_grn(req: GRNCreateRequest, db: Session = Depends(get_db), current_use
         if inv:
             inv.on_hand_qty = float(inv.on_hand_qty) + item.received_qty
         else:
+            # Take the category from the Material Library entry of the same name,
+            # otherwise every received material lands in stock as "Uncategorized"
+            # and the category the user set in the library is never seen again.
+            lib = db.query(LibraryMaterial.category).filter(
+                LibraryMaterial.company_id == req.company_id,
+                func.lower(LibraryMaterial.name) == po_item.material_name.strip().lower(),
+            ).first()
             inv = WarehouseInventory(
                 project_id=req.project_id,
                 material_name=po_item.material_name,
+                category=(lib.category if lib and lib.category else "Uncategorized"),
                 on_hand_qty=item.received_qty,
                 reserved_qty=0.0,
                 unit=po_item.unit
