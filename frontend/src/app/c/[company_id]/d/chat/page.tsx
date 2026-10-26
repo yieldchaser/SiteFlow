@@ -273,7 +273,8 @@ export default function ChatPage() {
   }, [activeGroupId]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    // Instant: a smooth scroll can stop short of the newest message.
+    messagesEndRef.current?.scrollIntoView({ block: "end" });
   }, [messages]);
 
   const handleCreateGroupSubmit = async (e: React.FormEvent) => {
