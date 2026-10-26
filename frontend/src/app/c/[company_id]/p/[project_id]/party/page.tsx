@@ -48,7 +48,7 @@ export default function PartyPage() {
   const projectId = params.project_id as string;
 
   const [parties, setParties] = useState<Party[]>([]);
-  const [balances, setBalances] = useState({ advance_paid: 0, to_pay: 0 });
+  const [balances, setBalances] = useState({ advance_paid: 0, to_pay: 0, to_receive: 0, advance_received: 0 });
   const [companyParties, setCompanyParties] = useState<CompanyParty[]>([]);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("All");
@@ -143,7 +143,7 @@ export default function PartyPage() {
       />
       <div className="flex-1 overflow-y-auto">
         <PageShell width="wide">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div className="rounded-lg border border-border-custom bg-card p-4">
           <div className="text-xs uppercase tracking-wider text-success">Advance Paid</div>
           <div className="mt-2 text-3xl font-bold text-success">{fmtINR(balances.advance_paid, currencyDecimalPlaces)}</div>
@@ -151,6 +151,14 @@ export default function PartyPage() {
         <div className="rounded-lg border border-border-custom bg-card p-4">
           <div className="text-xs uppercase tracking-wider text-danger">To Pay</div>
           <div className="mt-2 text-3xl font-bold text-danger">{fmtINR(balances.to_pay, currencyDecimalPlaces)}</div>
+        </div>
+        <div className="rounded-lg border border-border-custom bg-card p-4">
+          <div className="text-xs uppercase tracking-wider text-warning">To Receive</div>
+          <div className="mt-2 text-3xl font-bold text-warning">{fmtINR(balances.to_receive, currencyDecimalPlaces)}</div>
+        </div>
+        <div className="rounded-lg border border-border-custom bg-card p-4">
+          <div className="text-xs uppercase tracking-wider text-muted">Advance Received</div>
+          <div className="mt-2 text-3xl font-bold text-foreground">{fmtINR(balances.advance_received, currencyDecimalPlaces)}</div>
         </div>
       </div>
 

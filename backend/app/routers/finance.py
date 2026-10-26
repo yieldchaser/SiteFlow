@@ -236,6 +236,17 @@ def create_payment(req: PaymentCreateRequest, db: Session = Depends(get_db), cur
     db.add(payment)
     db.flush()
 
+    # A payment to or from a Party Library party on a project puts that party on
+    # the project's Party register, as a bill does (R2-487); otherwise an advance
+    # paid before the first bill never appeared there.
+    if proj_uuid and party_uuid:
+        party_team = db.query(CompanyTeam).filter(
+            CompanyTeam.id == party_uuid, CompanyTeam.company_id == comp_uuid
+        ).first()
+        if party_team and party_team.library_party_id:
+            from app.routers.projects import ensure_project_party_link
+            ensure_project_party_link(db, proj_uuid, party_team.library_party_id)
+
     # R2-100/R2-315: post the movement to the named bank account in-transaction
     # (same commit as the payment row, so one never lands without the other).
     if bank_account:

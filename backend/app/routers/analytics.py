@@ -673,9 +673,12 @@ def get_company_financial_analytics(company_id: uuid.UUID, db: Session = Depends
     # direct expenses or receipts, not advances, and stay out.
     unsettled = (
         db.query(Payment.payment_type, func.coalesce(func.sum(Payment.unsettled_amount), 0))
+        .join(CompanyTeam, CompanyTeam.id == Payment.party_company_user_id)
         .filter(
             Payment.company_id == company_id,
-            Payment.party_company_user_id.isnot(None),
+            # Party Library parties only: P2P cash transfers between team
+            # members are Payment rows too, and are not advances.
+            CompanyTeam.library_party_id.isnot(None),
             Payment.unsettled_amount > 0,
         )
         .group_by(Payment.payment_type)

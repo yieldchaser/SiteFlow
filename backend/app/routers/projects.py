@@ -13,6 +13,7 @@ from app.constants import (
     PROJECT_STATUS_PATTERN,
     REVENUE_INVOICE_TYPES,
     is_expense_invoice_type,
+    is_revenue_invoice_type,
 )
 import uuid
 
@@ -29,11 +30,19 @@ def _to_float(value):
 
 
 def _party_settlement(db, project_id, party_id, opening_adv, opening_pay):
-    """Roll a project party's opening balance + live bill activity into Advance Paid / To Pay.
+    """A project party's balances, from its opening balance and live activity.
 
-    Bridge: a library party links to its billing-side company_team via CompanyTeam.library_party_id
-    (auto-linked by name at startup). Bills reference party_company_user_id = company_team.id.
-    Net ledger: opening advance_paid is +, opening to_pay is -; each bill adds (paid - payable).
+    Bridge: a library party links to its billing-side company_team via
+    CompanyTeam.library_party_id (auto-linked by name at startup). Bills and
+    payments reference party_company_user_id = company_team.id.
+
+    Two ledgers, because one party can be paid by us and pay us:
+    - payable: opening advance (+) / opening to-pay (-), each expense bill adds
+      (paid - payable), and money we paid that settled no bill is an advance.
+    - receivable: each revenue bill adds (payable - paid), and money the party
+      paid us that settled no bill is an advance received.
+    Revenue bills and advances used to be ignored, so a client always showed
+    Rs 0 and a mobilisation advance never appeared.
     """
     team_ids = [
         t.id
@@ -55,25 +64,45 @@ def _party_settlement(db, project_id, party_id, opening_adv, opening_pay):
             )
             team_ids = [t.id for t in teams]
 
-    net = float(opening_adv or 0) - float(opening_pay or 0)
+    pay_net = float(opening_adv or 0) - float(opening_pay or 0)
+    rec_net = 0.0
     if team_ids:
         bills = (
             db.query(models.Bill)
             .filter(
                 models.Bill.project_id == project_id,
                 models.Bill.party_company_user_id.in_(team_ids),
+                models.Bill.status != "Cancelled",
             )
             .all()
         )
         for b in bills:
-            # D3: only expense accruals affect payable ledger; settlement
-            # cash movements and revenue invoices do not.
+            # D3: settlement cash movements are not accruals.
             if is_expense_invoice_type(b.invoice_type):
-                net += (_to_float(b.paid_amount) - _to_float(b.total_payable))
+                pay_net += _to_float(b.paid_amount) - _to_float(b.total_payable)
+            elif is_revenue_invoice_type(b.invoice_type):
+                rec_net += _to_float(b.total_payable) - _to_float(b.paid_amount)
+        for ptype, amt in (
+            db.query(models.Payment.payment_type, func.coalesce(func.sum(models.Payment.unsettled_amount), 0))
+            .filter(
+                models.Payment.project_id == project_id,
+                models.Payment.party_company_user_id.in_(team_ids),
+                models.Payment.unsettled_amount > 0,
+            )
+            .group_by(models.Payment.payment_type)
+            .all()
+        ):
+            if ptype == "out":
+                pay_net += _to_float(amt)
+            elif ptype == "in":
+                rec_net -= _to_float(amt)
 
-    advance_paid = round(max(0.0, net), 2)
-    to_pay = round(max(0.0, -net), 2)
-    return advance_paid, to_pay
+    return {
+        "advance_paid": round(max(0.0, pay_net), 2),
+        "to_pay": round(max(0.0, -pay_net), 2),
+        "to_receive": round(max(0.0, rec_net), 2),
+        "advance_received": round(max(0.0, -rec_net), 2),
+    }
 
 
 def ensure_project_party_link(db: Session, project_id, party_id) -> None:
@@ -660,14 +689,14 @@ def list_project_parties(project_id: uuid.UUID, db: Session = Depends(get_db), _
         party = db.query(models.LibraryParty).filter(models.LibraryParty.id == link.party_id).first()
         if not party:
             continue
-        adv, pay = _party_settlement(db, project_id, link.party_id, link.advance_paid, link.to_pay)
+        led = _party_settlement(db, project_id, link.party_id, link.advance_paid, link.to_pay)
         result.append({
             "party_id": str(party.id),
             "name": party.name,
             "party_type": party.party_type,
-            "balance": round(adv - pay, 2),
-            "advance_paid": adv,
-            "to_pay": pay,
+            # Positive: in our favour (advance we paid, money owed to us).
+            "balance": round(led["advance_paid"] + led["to_receive"] - led["to_pay"] - led["advance_received"], 2),
+            **led,
             "status": link.status or "-",
         })
     return result
@@ -761,13 +790,11 @@ def set_project_party_status(
 @router.get("/{project_id}/parties/balances")
 def project_party_balances(project_id: uuid.UUID, db: Session = Depends(get_db), _: None = Depends(verify_project_access)):
     links = db.query(models.ProjectParty).filter(models.ProjectParty.project_id == project_id).all()
-    advance_paid = 0.0
-    to_pay = 0.0
+    totals = {"advance_paid": 0.0, "to_pay": 0.0, "to_receive": 0.0, "advance_received": 0.0}
     for l in links:
-        adv, pay = _party_settlement(db, project_id, l.party_id, l.advance_paid, l.to_pay)
-        advance_paid += adv
-        to_pay += pay
-    return {"advance_paid": round(advance_paid, 2), "to_pay": round(to_pay, 2)}
+        for k, v in _party_settlement(db, project_id, l.party_id, l.advance_paid, l.to_pay).items():
+            totals[k] += v
+    return {k: round(v, 2) for k, v in totals.items()}
 
 
 @router.delete("/{project_id}/parties/{party_id}")

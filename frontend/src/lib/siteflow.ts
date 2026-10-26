@@ -79,10 +79,14 @@ export const fmtINR = (
   decimalPlaces: number = 0
 ): string => {
   const value = n || 0;
+  // Sign goes before the rupee symbol: "-₹1,200", never "₹-1,200".
+  const sign = value < 0 ? "-" : "";
+  const abs = Math.abs(value);
   if (decimalPlaces <= 0) {
-    return `₹${Math.round(value).toLocaleString("en-IN")}`;
+    const rounded = Math.round(abs);
+    return `${rounded === 0 ? "" : sign}₹${rounded.toLocaleString("en-IN")}`;
   }
-  return `₹${value.toLocaleString("en-IN", {
+  return `${sign}₹${abs.toLocaleString("en-IN", {
     minimumFractionDigits: decimalPlaces,
     maximumFractionDigits: decimalPlaces,
   })}`;

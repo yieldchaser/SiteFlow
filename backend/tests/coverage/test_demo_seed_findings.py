@@ -223,14 +223,25 @@ def test_dashboard_reports_unsettled_party_payments_as_advances(
     )
     hdr = auth_headers(user, comp)
     project = models.Project(id=_uuid.uuid4(), company_id=comp.id, name="S", state="Maharashtra")
-    db.add(project)
+    nhai = models.LibraryParty(id=_uuid.uuid4(), company_id=comp.id, name="NHAI PIU Pune", party_type="Client")
+    elec = models.LibraryParty(id=_uuid.uuid4(), company_id=comp.id, name="Shree Electricals", party_type="Subcontractor")
+    db.add_all([project, nhai, elec])
     db.commit()
-    for ptype, amt in (("in", 500000), ("out", 120000)):
+    ids = {}
+    for party in (nhai, elec):
+        r = client.post(f"/apis/v3/projects/{project.id}/parties", json={"party_id": str(party.id)}, headers=hdr)
+        ids[party.name] = r.json()["company_team_id"]
+    # The last row is a cash hand-over to a staff member, not a party advance.
+    for party_team, ptype, amt in (
+        (ids["NHAI PIU Pune"], "in", 500000),
+        (ids["Shree Electricals"], "out", 120000),
+        (str(team.id), "out", 9000),
+    ):
         res = client.post(
             "/apis/v3/finance/payments",
             json={
                 "company_id": str(comp.id), "project_id": str(project.id),
-                "party_company_user_id": str(team.id), "payment_type": ptype,
+                "party_company_user_id": party_team, "payment_type": ptype,
                 "amount": amt, "payment_method": "Bank Transfer",
                 "payment_date": "2026-10-20", "description": "Mobilisation advance",
             },
@@ -369,3 +380,62 @@ def test_document_and_report_pdfs_have_reachable_pages():
 
     report = generate_client_report_pdf(title="Monthly Report", summary="Progress on track.", metrics={"Progress": "46%"})
     assert b"Monthly Report" in b"".join(_walk_pdf(report))
+
+
+def test_project_party_register_shows_client_dues_and_advances(client, db, make_tenant, auth_headers):
+    """Observed on the project Party page: the client showed Rs 0 balance with
+    Rs 4 Cr of its invoices unpaid, Advance Paid showed Rs 0 after a Rs 7.5 L
+    advance to a subcontractor, and that subcontractor was not on the list at
+    all. Only expense bills fed the ledger, and a payment never linked its party
+    to the project."""
+    from app import models
+
+    sfx = _uuid.uuid4().hex[:8]
+    comp, user, _team = make_tenant(
+        company_name=f"PPL-{sfx}", user_name=f"UPPL-{sfx}", mobile=f"+9186{sfx}", email=f"ppl-{sfx}@test.com",
+    )
+    hdr = auth_headers(user, comp)
+    project = models.Project(id=_uuid.uuid4(), company_id=comp.id, name="Shivalik Heights", state="Maharashtra")
+    kolte = models.LibraryParty(id=_uuid.uuid4(), company_id=comp.id, name="Kolte Patil", party_type="Client")
+    elec = models.LibraryParty(id=_uuid.uuid4(), company_id=comp.id, name="Shree Electricals", party_type="Subcontractor")
+    db.add_all([project, kolte, elec])
+    db.commit()
+    kolte_team = client.post(
+        f"/apis/v3/projects/{project.id}/parties", json={"party_id": str(kolte.id)}, headers=hdr
+    ).json()["company_team_id"]
+
+    bill = client.post(
+        "/apis/v3/billing/bills",
+        json={
+            "company_id": str(comp.id), "project_id": str(project.id),
+            "party_company_user_id": kolte_team, "invoice_number": f"INV-{sfx}",
+            "invoice_date": "2026-10-01T00:00:00Z", "invoice_type": "sale", "subtotal": 1000000, "gst_pct": 18,
+            "items_json": '[{"desc": "RA-1 civil works", "hsn_sac": "995411", "qty": 1, "rate": 1000000}]',
+        },
+        headers=hdr,
+    )
+    assert bill.status_code == 201, bill.text
+
+    # Shree Electricals is paid an advance before it is ever added to the project.
+    from app.routers.procurement import _company_team_id_for_party
+    elec_team = _company_team_id_for_party(db, comp.id, elec.id)
+    db.commit()
+    res = client.post(
+        "/apis/v3/finance/payments",
+        json={
+            "company_id": str(comp.id), "project_id": str(project.id),
+            "party_company_user_id": str(elec_team), "payment_type": "out", "amount": 75000,
+            "payment_method": "Bank Transfer", "payment_date": "2026-10-05", "description": "Mobilisation advance",
+        },
+        headers=hdr,
+    )
+    assert res.status_code in (200, 201), res.text
+
+    rows = {r["name"]: r for r in client.get(f"/apis/v3/projects/{project.id}/parties", headers=hdr).json()}
+    assert "Shree Electricals" in rows, f"a party paid on the project is missing from its register: {list(rows)}"
+    assert rows["Shree Electricals"]["advance_paid"] == 75000, rows["Shree Electricals"]
+    assert rows["Kolte Patil"]["to_receive"] == 1180000, rows["Kolte Patil"]
+    assert rows["Kolte Patil"]["balance"] == 1180000
+
+    totals = client.get(f"/apis/v3/projects/{project.id}/parties/balances", headers=hdr).json()
+    assert totals["advance_paid"] == 75000 and totals["to_receive"] == 1180000, totals
