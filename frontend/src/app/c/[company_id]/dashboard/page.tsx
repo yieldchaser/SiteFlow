@@ -520,11 +520,11 @@ export default function DashboardPage() {
                             className="bg-input border border-border-custom rounded-lg px-3 py-1.5 text-xs text-foreground focus:outline-none min-w-[150px] transition-all"
                           >
                             <option value="All">All</option>
+                            <option value="Planning">Not Started</option>
                             <option value="Ongoing">Ongoing</option>
                             <option value="On Hold">On Hold</option>
                             <option value="Completed">Completed</option>
                             <option value="Cancelled">Cancelled</option>
-                            <option value="Planning">Planning</option>
                           </select>
                         </div>
 
@@ -1191,7 +1191,7 @@ export default function DashboardPage() {
                                   {p.project_health === "-" ? (
                                     <span className="text-muted font-bold font-sans">-</span>
                                   ) : (
-                                    <Badge tone={p.project_health === "Healthy" ? "success" : p.project_health === "Warning" ? "warning" : "danger"} className="font-bold">{p.project_health}</Badge>
+                                    <Badge tone={p.project_health === "Healthy" ? "success" : p.project_health === "Warning" || p.project_health === "Onhold" ? "warning" : p.project_health === "Completed" || p.project_health === "Cancelled" ? "neutral" : "danger"} className="font-bold">{p.project_health === "Onhold" ? "On Hold" : p.project_health}</Badge>
                                   )}
                                 </td>
                                 <td className="px-4 py-3 text-right border-r border-border-custom font-semibold text-muted">
