@@ -224,7 +224,8 @@ export default function LabourPage() {
               {reliability.length === 0 && (
                 <EmptyState
                   title="No reliability data yet"
-                  description="Contractor reliability scores will calculate automatically based on on-time delivery, billing accuracy, and quality."
+                  description="Scores come from each subcontractor's work orders, bills and disputes. Calculate them on the Scorecards page for the period you want."
+                  action={{ label: "Open Scorecards", href: `/c/${companyId}/d/subcon/scorecards` }}
                 />
               )}
             </div>

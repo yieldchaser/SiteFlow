@@ -521,3 +521,53 @@ def test_inspection_register_names_the_inspector(client, db, make_tenant, auth_h
     db.commit()
     rows = client.get(f"/apis/v3/quality/inspections/{project.id}", headers=auth_headers(user, comp)).json()
     assert rows[0]["inspected_by_name"] == f"Sneha Deshpande {sfx}", rows[0]
+
+
+def test_sales_deduction_report_names_the_client_and_skips_subcontract_bills(
+    client, db, make_tenant, auth_headers
+):
+    """Observed on the Sales Deduction / Retention report: every row was a
+    subcontractor RA bill and Party Name was blank. The report took deductions
+    from every bill type, and its party lookup only knew login users, so no
+    Party Library party (every client, vendor and subcontractor) had a name on
+    any report."""
+    from app import models
+    from app.routers.reports import _rep_sales_deduction_retention
+
+    sfx = _uuid.uuid4().hex[:8]
+    comp, user, _team = make_tenant(
+        company_name=f"SDR-{sfx}", user_name=f"USDR-{sfx}", mobile=f"+9185{sfx}", email=f"sdr-{sfx}@test.com",
+    )
+    hdr = auth_headers(user, comp)
+    project = models.Project(id=_uuid.uuid4(), company_id=comp.id, name="Shivalik Heights", state="Maharashtra")
+    kolte = models.LibraryParty(id=_uuid.uuid4(), company_id=comp.id, name="Kolte Patil", party_type="Client")
+    ganesh = models.LibraryParty(id=_uuid.uuid4(), company_id=comp.id, name="Ganesh Constructions", party_type="Subcontractor")
+    db.add_all([project, kolte, ganesh])
+    db.commit()
+    team = {
+        p.name: client.post(f"/apis/v3/projects/{project.id}/parties", json={"party_id": str(p.id)}, headers=hdr).json()["company_team_id"]
+        for p in (kolte, ganesh)
+    }
+
+    bill_ids = {}
+    for name, inv_type in (("Kolte Patil", "sale"), ("Ganesh Constructions", "subcon")):
+        res = client.post(
+            "/apis/v3/billing/bills",
+            json={
+                "company_id": str(comp.id), "project_id": str(project.id),
+                "party_company_user_id": team[name], "invoice_number": f"{inv_type}-{sfx}",
+                "invoice_date": "2026-10-01T00:00:00Z", "invoice_type": inv_type, "subtotal": 100000, "gst_pct": 18,
+                "items_json": '[{"desc": "RA-1", "hsn_sac": "995411", "qty": 1, "rate": 100000}]',
+            },
+            headers=hdr,
+        )
+        assert res.status_code == 201, res.text
+        bill_ids[name] = res.json()["id"]
+        db.add(models.TransactionDeduction(
+            id=_uuid.uuid4(), bill_id=_uuid.UUID(bill_ids[name]), deduction_type="Retention", amount=5000,
+        ))
+    db.commit()
+
+    rows = _rep_sales_deduction_retention(db, comp.id, project.id)
+    assert [r["Invoice Number"] for r in rows] == [f"sale-{sfx}"], rows
+    assert rows[0]["Party Name"] == "Kolte Patil", rows

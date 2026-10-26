@@ -244,7 +244,7 @@ def test_reports_surface_retention_and_due_date(client, db, make_tenant, auth_he
     assert float(sale_row["Retention Amount"]) == pytest.approx(2500.0)
 
     ded_rep = client.get(
-        f"/apis/v3/reports/data/sales-deduction-retention?company_id={comp.id}&project_id={project.id}",
+        f"/apis/v3/reports/data/subcon-deduction-retention?company_id={comp.id}&project_id={project.id}",
         headers=hdr,
     )
     assert ded_rep.status_code == 200, ded_rep.text

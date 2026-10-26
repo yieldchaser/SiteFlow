@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { getApiHost } from "@/lib/api";
-import { authHeaders, formatDateTime } from "@/lib/siteflow";
+import { authHeaders, formatDate, formatDateTime } from "@/lib/siteflow";
 import Icon from "@/components/marketing/Icon";
 import PageShell from "@/components/layout/PageShell";
 import PageHeader from "@/components/PageHeader";
@@ -530,6 +530,22 @@ const REPORT_METADATA: Record<string, ReportMeta> = {
     columns: ['Asset Code', 'Asset Name', 'Asset Type', 'Total Qty', 'Available Qty', 'Assigned Qty', 'In Repair Qty', 'Damaged Qty', 'Asset Value', 'Created by', 'Creation Date', 'Last Assigned To', 'Last Assigned Time']
   }
 };
+
+// The API sends raw ISO timestamps and bare numbers; the export path already
+// formats them, the on-screen table printed them as-is.
+const NON_GROUPED_COL = /year|number|\bno\.?$|code|\bpin\b|phone|mobile|gstin|\bpan\b|\bhsn\b|\bsac\b|%|percent/i;
+function formatReportCell(col: string, value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") {
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) return formatDateTime(value, value);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return formatDate(value, value);
+    return value;
+  }
+  if (typeof value === "number" && !NON_GROUPED_COL.test(col)) {
+    return value.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+  }
+  return String(value);
+}
 
 export default function DynamicReportViewPage() {
   const params = useParams();
@@ -1250,7 +1266,7 @@ export default function DynamicReportViewPage() {
                         <td className="px-3 py-2.5 text-muted">{i + 1}</td>
                         {meta.columns.map(col => (
                           <td key={col} className="px-3 py-2.5 text-foreground whitespace-nowrap">
-                            {row[col] ?? ""}
+                            {formatReportCell(col, row[col])}
                           </td>
                         ))}
                       </tr>

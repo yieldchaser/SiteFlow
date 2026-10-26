@@ -46,6 +46,7 @@ from app.models import (
 )
 from app.utils.pdf_generator import generate_client_report_pdf
 from app.utils.document_pdf import resolve_supplier_tax_details
+from app.party_names import resolve_party_name, resolve_party_names_batch
 
 router = APIRouter(prefix="/reports", tags=["Client Reports Portal"], dependencies=[Depends(get_current_user)])
 
@@ -605,34 +606,17 @@ def _rep_payment_request(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
 # ─── Shared helpers for new report handlers ──────────────────────────────────
 
 def _team_user_name(db: Session, company_user_id):
-    if not company_user_id:
-        return ""
+    # Party Library parties are login-less CompanyTeam rows; their name lives on
+    # LibraryParty, so a users-only lookup printed a blank party on every report.
     try:
-        tm = db.query(CompanyTeam).filter(CompanyTeam.id == company_user_id).first()
-        if tm and tm.user_id:
-            u = db.query(User).filter(User.id == tm.user_id).first()
-            if u:
-                return u.name
+        return resolve_party_name(db, company_user_id, fallback="")
     except Exception:
         return ""
-    return ""
 
 
 def _team_user_names_batch(db: Session, company_user_ids):
-    ids = [cid for cid in set(company_user_ids) if cid]
-    if not ids:
-        return {}
     try:
-        tms = db.query(CompanyTeam).filter(CompanyTeam.id.in_(ids)).all()
-        user_ids = [tm.user_id for tm in tms if tm.user_id]
-        user_map = {}
-        if user_ids:
-            users = db.query(User).filter(User.id.in_(set(user_ids))).all()
-            user_map = {u.id: u.name for u in users if u.name}
-        result = {}
-        for tm in tms:
-            result[tm.id] = user_map.get(tm.user_id, "")
-        return result
+        return resolve_party_names_batch(db, company_user_ids, fallback="")
     except Exception:
         return {}
 
@@ -1311,8 +1295,12 @@ def _rep_sales_deduction_retention(db: Session, cid: uuid.UUID, pid: Optional[uu
         rows = []
         for d in q.all():
             b = db.query(Bill).filter(Bill.id == d.bill_id).first()
-            proj = db.query(Project).filter(Project.id == b.project_id).first() if b and b.project_id else None
-            party = _team_user_name(db, b.party_company_user_id) if b else ""
+            # Sales report: deductions on revenue invoices only. Subcontractor
+            # and purchase bill deductions belong to the expense-side reports.
+            if not b or not is_revenue_invoice_type(b.invoice_type):
+                continue
+            proj = db.query(Project).filter(Project.id == b.project_id).first() if b.project_id else None
+            party = _team_user_name(db, b.party_company_user_id)
             rows.append({
                 "Amount": _clean(d.amount),
                 "Project Name": proj.name if proj else "",
@@ -2411,7 +2399,8 @@ def _rep_subcon_deduction_retention(db: Session, cid: uuid.UUID, pid: Optional[u
                 "Creator Name": "",
                 "Type": d.deduction_type,
                 "Entry Creation Date": _clean(d.created_at),
-                "Due Date": _clean(bill.due_date) if bill else "",
+                # R2-377: a retention falls due on its own release date, not the bill's.
+                "Due Date": _clean(d.release_due_date or (bill.due_date if bill else None)),
             })
         return rows
     except Exception:
