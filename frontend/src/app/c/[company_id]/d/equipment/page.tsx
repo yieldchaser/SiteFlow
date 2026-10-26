@@ -486,14 +486,14 @@ export default function EquipmentTrackingPage() {
                                   onClick={() => { setActiveStoppingEq(eq); setStopMeterVal(""); setIsStopPhotoCaptured(false); }}
                                   className="text-[10px] bg-danger/10 hover:bg-danger/10 border border-danger/20 text-danger px-3 py-1.5 rounded-md transition-all font-bold inline-flex items-center gap-1"
                                 >
-                                  <Icon name="close" className="w-3 h-3" /> Stop Wizard
+                                  <Icon name="close" className="w-3 h-3" /> Return from Site
                                 </button>
                               ) : (
                                 <button
                                   onClick={() => { setActiveDeployingEq(eq); setStartMeterVal(""); setIsStartPhotoCaptured(false); }}
                                   className="text-[10px] bg-success/10 hover:bg-success/10 border border-success/20 text-success px-3 py-1.5 rounded-md transition-all font-bold inline-flex items-center gap-1"
                                 >
-                                  <Icon name="chevron_right" className="w-3 h-3" /> Start Wizard
+                                  <Icon name="chevron_right" className="w-3 h-3" /> Deploy to Site
                                 </button>
                               )}
 
@@ -632,7 +632,7 @@ export default function EquipmentTrackingPage() {
                               <td colSpan={8} className="p-8">
                                 <EmptyState
                                   title="No completed runs yet"
-                                  description="Deploy fleet assets and log stop meters using the Start/Stop wizard on equipment cards."
+                                  description="Add a machine, then use Deploy to Site and Return from Site on its card to log meter readings."
                                 />
                               </td>
                             </tr>
@@ -834,7 +834,7 @@ export default function EquipmentTrackingPage() {
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-background border border-border-custom rounded-lg w-full max-w-md shadow-2xl p-6 space-y-4">
             <div className="flex justify-between items-center border-b border-border-custom pb-2">
-              <h3 className="text-xs font-extrabold text-foreground">Start Deployment: {activeDeployingEq.name}</h3>
+              <h3 className="text-xs font-extrabold text-foreground">Deploy to Site: {activeDeployingEq.name}</h3>
               <button onClick={() => setActiveDeployingEq(null)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>
             </div>
             
@@ -891,7 +891,7 @@ export default function EquipmentTrackingPage() {
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-background border border-border-custom rounded-lg w-full max-w-md shadow-2xl p-6 space-y-4">
             <div className="flex justify-between items-center border-b border-border-custom pb-2">
-              <h3 className="text-xs font-extrabold text-foreground">Stop Deployment: {activeStoppingEq.name}</h3>
+              <h3 className="text-xs font-extrabold text-foreground">Return from Site: {activeStoppingEq.name}</h3>
               <button onClick={() => setActiveStoppingEq(null)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>
             </div>
 

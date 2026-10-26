@@ -64,6 +64,22 @@ def get_vendor_performance(project_id: UUID, db: Session = Depends(get_db), _: N
     return mapped
 
 
+def _vendor_display_name(db: Session, vendor_id) -> str:
+    # A vendor is a company_team row: a Party Library supplier (library_party_id)
+    # or a user with a login. CompanyTeam has no ORM relationships, so look both up.
+    from app.models import LibraryParty, User
+    team_member = db.query(CompanyTeam).filter(CompanyTeam.id == vendor_id).first() if vendor_id else None
+    if team_member and team_member.library_party_id:
+        party = db.query(LibraryParty).filter(LibraryParty.id == team_member.library_party_id).first()
+        if party and party.name:
+            return party.name
+    if team_member and team_member.user_id:
+        user = db.query(User).filter(User.id == team_member.user_id).first()
+        if user and user.name:
+            return user.name
+    return f"Vendor-{str(vendor_id)[:8]}" if vendor_id else "Unassigned vendor"
+
+
 def refresh_vendor_performance(db: Session, project_id: UUID, company_id: UUID):
     from app.models import PurchaseOrder, GoodsReceiptNote, PurchaseOrderItem, NCR
     pos = db.query(PurchaseOrder).filter(
@@ -74,8 +90,7 @@ def refresh_vendor_performance(db: Session, project_id: UUID, company_id: UUID):
     vendor_map = {}
     for po in pos:
         vendor_id = po.vendor_id
-        team_member = db.query(CompanyTeam).filter(CompanyTeam.id == vendor_id).first()
-        vendor_name = team_member.user.name if team_member and team_member.user else f"Vendor-{str(vendor_id)[:8]}"
+        vendor_name = _vendor_display_name(db, vendor_id)
         if vendor_id not in vendor_map:
             vendor_map[vendor_id] = {
                 "company_id": company_id,

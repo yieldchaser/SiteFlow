@@ -35,6 +35,7 @@ from app.models import (
     CompanyTeam,
     LibraryParty,
     NCR,
+    Payment,
     Project,
     ProjectBudget,
     PurchaseOrder,
@@ -631,14 +632,32 @@ def get_company_financial_analytics(company_id: uuid.UUID, db: Session = Depends
         val = _to_float(b.total_payable) - _to_float(b.paid_amount)
         if is_revenue_invoice_type(b.invoice_type):
             to_receive += max(0.0, val)
-            if b.status == "Paid" and _to_float(b.total_payable) == 0:
-                advance_received += _to_float(b.paid_amount)
         elif is_expense_invoice_type(b.invoice_type):
             to_pay += max(0.0, val)
-            if b.status == "Paid" and _to_float(b.total_payable) == 0:
-                advance_paid += _to_float(b.paid_amount)
         # settlement and movement bills do not contribute to payable/receivable
         # totals - they are cash movements, not accruals (D3)
+
+    # An advance is money that moved to or from a party ahead of any bill it
+    # could settle against: the unsettled balance the FIFO engine in
+    # finance.create_payment leaves on a party payment. This used to count
+    # "Paid" bills with a total of zero, which can never carry a paid amount,
+    # so both cards read empty for every company. Payments with no party are
+    # direct expenses or receipts, not advances, and stay out.
+    unsettled = (
+        db.query(Payment.payment_type, func.coalesce(func.sum(Payment.unsettled_amount), 0))
+        .filter(
+            Payment.company_id == company_id,
+            Payment.party_company_user_id.isnot(None),
+            Payment.unsettled_amount > 0,
+        )
+        .group_by(Payment.payment_type)
+        .all()
+    )
+    for ptype, amt in unsettled:
+        if ptype == "in":
+            advance_received += _to_float(amt)
+        elif ptype == "out":
+            advance_paid += _to_float(amt)
 
     project_summaries = []
     monthly_sales = defaultdict(float)

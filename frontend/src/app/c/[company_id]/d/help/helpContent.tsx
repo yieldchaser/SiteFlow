@@ -925,7 +925,7 @@ export function getHelpCategories(companyId: string): HelpCategory[] {
                 <Link className="help-link" href={c(companyId, "/d/equipment")}>
                   "Equipment"
                 </Link>
-                , select the asset, and click "Start Wizard".
+                , select the asset, and click "Deploy to Site".
               </p>
               <p className="mt-2">
                 Select the target project and deployment start date, with optional operator name and initial odometer reading.

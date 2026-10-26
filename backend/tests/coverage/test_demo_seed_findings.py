@@ -74,6 +74,14 @@ def test_received_stock_takes_its_category_from_the_material_library(
         f"received stock ignored the library category; got {inv.category!r}"
     )
 
+    # Same GRN: vendor performance refresh crashed on CompanyTeam.user (no such
+    # relationship), was swallowed, and the vendor scorecard stayed empty.
+    perf = client.get(f"/apis/v3/procurement/vendors/performance/{project.id}", headers=hdr)
+    assert perf.status_code == 200, perf.text
+    names = [v["vendor_name"] for v in perf.json()]
+    assert names == ["Balaji Steels"], f"vendor scorecard not built after a GRN: {names}"
+    assert perf.json()[0]["total_grns"] == 1
+
 
 def test_payment_request_stale_users_fk_has_a_migration():
     """Observed: POST /finance/payment-requests returned 409 'violates foreign key
@@ -192,3 +200,41 @@ def test_a_pre_tax_bill_reports_itself_as_pre_tax(client, db, make_tenant, auth_
     )
     assert res.status_code == 201, res.text
     assert res.json()["pre_tax_deductions"] is True
+
+
+def test_dashboard_reports_unsettled_party_payments_as_advances(
+    client, db, make_tenant, auth_headers
+):
+    """Observed: Advance Paid and Advance Received were always zero on the company
+    financial dashboard. They were computed from bills marked Paid with nothing
+    payable, which never happens; an advance is a payment with no bill to settle
+    against, held in Payment.unsettled_amount."""
+    from app import models
+
+    sfx = _uuid.uuid4().hex[:8]
+    comp, user, team = make_tenant(
+        company_name=f"Adv-{sfx}", user_name=f"UAdv-{sfx}",
+        mobile=f"+9190{sfx}", email=f"adv-{sfx}@test.com",
+    )
+    hdr = auth_headers(user, comp)
+    project = models.Project(id=_uuid.uuid4(), company_id=comp.id, name="S", state="Maharashtra")
+    db.add(project)
+    db.commit()
+    for ptype, amt in (("in", 500000), ("out", 120000)):
+        res = client.post(
+            "/apis/v3/finance/payments",
+            json={
+                "company_id": str(comp.id), "project_id": str(project.id),
+                "party_company_user_id": str(team.id), "payment_type": ptype,
+                "amount": amt, "payment_method": "Bank Transfer",
+                "payment_date": "2026-10-20", "description": "Mobilisation advance",
+            },
+            headers=hdr,
+        )
+        assert res.status_code in (200, 201), res.text
+
+    fin = client.get(f"/apis/v3/analytics/company/{comp.id}/financial", headers=hdr)
+    assert fin.status_code == 200, fin.text
+    body = fin.json()
+    assert body["advance_received"] == 500000, body
+    assert body["advance_paid"] == 120000, body

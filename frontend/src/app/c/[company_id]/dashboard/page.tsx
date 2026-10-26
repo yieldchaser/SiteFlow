@@ -4,19 +4,29 @@ import Badge, { type BadgeTone } from "@/components/ui/Badge";
 import React, { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { getApiHost, readErrorDetail } from "@/lib/api";
-import { authHeaders, formatDate, formatLabel, todayLocalISO } from "@/lib/siteflow";
+import { authHeaders, fmtINR, formatDate, formatLabel, todayLocalISO } from "@/lib/siteflow";
 import Icon from "@/components/marketing/Icon";
 import PageShell from "@/components/layout/PageShell";
 import PageHeader from "@/components/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { GST_STATES } from "@/lib/gstStates";
 
+/** Indian compact money: 2.45 Cr, 18.6 L, 42.5K. Sign is preserved. */
+const compactINR = (val: number): string => {
+  const a = Math.abs(val || 0);
+  const sign = val < 0 ? "-" : "";
+  if (a >= 1e7) return `${sign}${(a / 1e7).toFixed(2)} Cr`;
+  if (a >= 1e5) return `${sign}${(a / 1e5).toFixed(2)} L`;
+  if (a >= 1e3) return `${sign}${(a / 1e3).toFixed(1)}K`;
+  return `${sign}${Math.round(a)}`;
+};
+
 export default function DashboardPage() {
   const params = useParams();
   const companyId = params?.company_id as string;
 
   const [activeProject, setActiveProject] = useState("d0000000-0000-0000-0000-000000000001");
-  const [tallySyncStatus, setTallySyncStatus] = useState("Unknown");
+  const [tallySyncStatus, setTallySyncStatus] = useState("Not synced yet");
   const [isSyncing, setIsSyncing] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [overviewTab, setOverviewTab] = useState<"operational" | "financial">("operational");
@@ -32,21 +42,7 @@ export default function DashboardPage() {
     margin_series: [0.0],
     expense_by_type: [],
     party_balances: [],
-    project_summaries: [
-      {
-        project_name: "MP SITE",
-        project_status: "Ongoing",
-        project_health: "-",
-        project_budget: 0,
-        total_expense: 0,
-        budget_remaining: 0,
-        total_sales: 0,
-        project_margin: 0,
-        payment_in: 0,
-        payment_out: 0,
-        cash_balance: 0
-      }
-    ]
+    project_summaries: []
   });
   const [workforceEmployees, setWorkforceEmployees] = useState<any[]>([]);
   const [workforceLibraries, setWorkforceLibraries] = useState<any[]>([]);
@@ -299,8 +295,7 @@ export default function DashboardPage() {
         headers: { "Content-Type": "application/json", ...(authHeaders() || {}) }
       });
       if (res.ok) {
-        const data = await res.json();
-        setTallySyncStatus(`Synced ${data.message || "—"}`);
+        setTallySyncStatus("Synced");
       } else {
         setTallySyncStatus("Sync Failed");
       }
@@ -340,17 +335,13 @@ export default function DashboardPage() {
   };
 
   // Balance calculations
-  const advPaid = financialData?.advance_paid ?? 12169221.0;
-  const toPay = financialData?.to_pay ?? 12121221.0;
-  const toReceive = financialData?.to_receive ?? 128788.0;
+  const advPaid = financialData?.advance_paid ?? 0;
+  const toPay = financialData?.to_pay ?? 0;
+  const toReceive = financialData?.to_receive ?? 0;
   const advReceived = financialData?.advance_received ?? 0.0;
   const totalBalance = advPaid + toPay + toReceive;
 
-  const formatCompact = (val: number) => {
-    if (val >= 1000000) return `${(val / 1000000).toFixed(2)}M`;
-    if (val >= 1000) return `${(val / 1000).toFixed(2)}K`;
-    return val.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  };
+  const formatCompact = (val: number) => compactINR(val);
 
   const advPaidPct = totalBalance > 0 ? advPaid / totalBalance : 0.5;
   const toPayPct = totalBalance > 0 ? toPay / totalBalance : 0.5;
@@ -389,8 +380,8 @@ export default function DashboardPage() {
           <div className="flex items-center gap-3">
             {/* Tally Connection status dot */}
             <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-elevated border border-border-custom text-xs text-muted">
-              <span className={`h-2 w-2 rounded-full ${tallySyncStatus === "Connected" ? "bg-success" : "bg-muted"}`} />
-              <span>Tally Agent: {tallySyncStatus}</span>
+              <span className={`h-2 w-2 rounded-full ${tallySyncStatus === "Synced" ? "bg-success" : "bg-muted"}`} />
+              <span>Tally: {tallySyncStatus}</span>
             </div>
 
             <button
@@ -548,7 +539,7 @@ export default function DashboardPage() {
                         <span className="text-2xl font-bold text-foreground">{ongoingCount}</span>
                       </div>
                       <div className="rounded-md border border-border-custom bg-card p-5 flex flex-col justify-center items-center text-center transition-all">
-                        <span className="text-[11px] font-bold text-warning [.light-theme_&]:text-warning uppercase tracking-wider block mb-1">Onhold Projects</span>
+                        <span className="text-[11px] font-bold text-warning [.light-theme_&]:text-warning uppercase tracking-wider block mb-1">On Hold Projects</span>
                         <span className="text-2xl font-bold text-foreground">{onHoldCount}</span>
                       </div>
                       <div className="rounded-md border border-border-custom bg-card p-5 flex flex-col justify-center items-center text-center transition-all">
@@ -1114,7 +1105,7 @@ export default function DashboardPage() {
                       <div className="bg-success/10 border border-success/10 [.light-theme_&]:bg-success/10 [.light-theme_&]:border-success rounded-lg p-3 flex flex-col items-center justify-center transition-all">
                         <span className="text-[10px] font-bold text-success [.light-theme_&]:text-success uppercase tracking-wider block text-center">Advance Paid</span>
                         <strong className="text-md font-bold text-success [.light-theme_&]:text-success mt-1 block text-center">
-                          {advPaid > 0 ? advPaid.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}
+                          {advPaid > 0 ? fmtINR(advPaid, 2) : "-"}
                         </strong>
                       </div>
 
@@ -1122,7 +1113,7 @@ export default function DashboardPage() {
                       <div className="bg-danger/10 border border-danger/10 [.light-theme_&]:bg-danger/10 [.light-theme_&]:border-danger rounded-lg p-3 flex flex-col items-center justify-center transition-all">
                         <span className="text-[10px] font-bold text-danger [.light-theme_&]:text-danger uppercase tracking-wider block text-center">To Pay</span>
                         <strong className="text-md font-bold text-danger [.light-theme_&]:text-danger mt-1 block text-center">
-                          {toPay > 0 ? toPay.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}
+                          {toPay > 0 ? fmtINR(toPay, 2) : "-"}
                         </strong>
                       </div>
 
@@ -1130,7 +1121,7 @@ export default function DashboardPage() {
                       <div className="bg-danger/10 border border-danger/10 [.light-theme_&]:bg-danger/10 [.light-theme_&]:border-danger rounded-lg p-3 flex flex-col items-center justify-center transition-all">
                         <span className="text-[10px] font-bold text-danger [.light-theme_&]:text-danger uppercase tracking-wider block text-center">To Receive</span>
                         <strong className="text-md font-bold text-danger [.light-theme_&]:text-danger mt-1 block text-center">
-                          {toReceive > 0 ? toReceive.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}
+                          {toReceive > 0 ? fmtINR(toReceive, 2) : "-"}
                         </strong>
                       </div>
 
@@ -1138,7 +1129,7 @@ export default function DashboardPage() {
                       <div className="bg-elevated border border-border-custom rounded-lg p-3 flex flex-col items-center justify-center transition-all">
                         <span className="text-[10px] font-bold text-muted uppercase tracking-wider block text-center">Advance Received</span>
                         <strong className="text-md font-bold text-foreground mt-1 block text-center">
-                          {advReceived > 0 ? advReceived.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-"}
+                          {advReceived > 0 ? fmtINR(advReceived, 2) : "-"}
                         </strong>
                       </div>
                     </div>
@@ -1188,28 +1179,28 @@ export default function DashboardPage() {
                                   )}
                                 </td>
                                 <td className="px-4 py-3 text-right border-r border-border-custom font-semibold text-muted">
-                                  {p.project_budget ? p.project_budget.toLocaleString("en-US") : "0"}
+                                  {fmtINR(p.project_budget)}
                                 </td>
                                 <td className="px-4 py-3 text-right border-r border-border-custom font-semibold text-muted">
-                                  {p.total_expense ? p.total_expense.toLocaleString("en-US") : "0"}
+                                  {fmtINR(p.total_expense)}
                                 </td>
                                 <td className="px-4 py-3 text-right border-r border-border-custom font-semibold text-muted">
-                                  {p.budget_remaining ? p.budget_remaining.toLocaleString("en-US") : "0"}
+                                  {fmtINR(p.budget_remaining)}
                                 </td>
                                 <td className="px-4 py-3 text-right border-r border-border-custom font-semibold text-muted">
-                                  {p.total_sales ? p.total_sales.toLocaleString("en-US") : "0"}
+                                  {fmtINR(p.total_sales)}
                                 </td>
                                 <td className="px-4 py-3 text-right border-r border-border-custom font-semibold text-muted">
-                                  {p.project_margin ? p.project_margin.toLocaleString("en-US") : "0"}
+                                  {fmtINR(p.project_margin)}
                                 </td>
                                 <td className="px-4 py-3 text-right border-r border-border-custom font-semibold text-muted">
-                                  {p.payment_in ? p.payment_in.toLocaleString("en-US") : "0"}
+                                  {fmtINR(p.payment_in)}
                                 </td>
                                 <td className="px-4 py-3 text-right border-r border-border-custom font-semibold text-muted">
-                                  {p.payment_out ? p.payment_out.toLocaleString("en-US") : "0"}
+                                  {fmtINR(p.payment_out)}
                                 </td>
                                 <td className="px-4 py-3 text-right font-bold text-muted">
-                                  {p.cash_balance ? p.cash_balance.toLocaleString("en-US") : "0"}
+                                  {fmtINR(p.cash_balance)}
                                 </td>
                               </tr>
                             ))
@@ -1247,7 +1238,7 @@ export default function DashboardPage() {
                                 <line x1="20" y1="40" x2="180" y2="40" stroke="var(--border)" strokeWidth="1" />
                                 <line x1="20" y1="90" x2="180" y2="90" stroke="var(--border)" strokeWidth="1" strokeDasharray="3" />
                                 <text x="15" y="43" fill="var(--muted)" fontSize="8" textAnchor="end">0</text>
-                                <text x="15" y="93" fill="var(--muted)" fontSize="8" textAnchor="end">-{maxVal >= 1000000 ? `${(maxVal/1000000).toFixed(1)}M` : `${Math.round(maxVal/1000)}K`}</text>
+                                <text x="15" y="93" fill="var(--muted)" fontSize="8" textAnchor="end">-{compactINR(maxVal)}</text>
 
                                 {series.map((val: number, idx: number) => {
                                   const x = series.length === 1 ? 85 : 45 + idx * 70;
@@ -1260,7 +1251,7 @@ export default function DashboardPage() {
                                     <g key={idx}>
                                       <rect x={x} y={y} width={width} height={height || 2} fill="var(--success)" rx="2" className="transition-all hover:opacity-90" />
                                       <text x={x + 15} y={val < 0 ? y + height + 10 : y - 4} fill="var(--success)" fontSize="8" fontWeight="bold" textAnchor="middle">
-                                        {val === 0 ? "0" : val >= 1000000 || val <= -1000000 ? `${(val / 1000000).toFixed(2)}M` : `${(val / 1000).toFixed(1)}K`}
+                                        {val === 0 ? "0" : compactINR(val)}
                                       </text>
                                       <text x={x + 15} y="112" fill="var(--muted)" fontSize="7" textAnchor="middle" transform={`rotate(-15 ${x + 15} 112)`}>
                                         {months[idx] || ""}
@@ -1314,7 +1305,7 @@ export default function DashboardPage() {
                                 <line x1="20" y1="40" x2="180" y2="40" stroke="var(--border)" strokeWidth="1" />
                                 <line x1="20" y1="90" x2="180" y2="90" stroke="var(--border)" strokeWidth="1" strokeDasharray="3" />
                                 <text x="15" y="43" fill="var(--muted)" fontSize="8" textAnchor="end">0</text>
-                                <text x="15" y="93" fill="var(--muted)" fontSize="8" textAnchor="end">-{maxVal >= 1000000 ? `${(maxVal/1000000).toFixed(1)}M` : `${Math.round(maxVal/1000)}K`}</text>
+                                <text x="15" y="93" fill="var(--muted)" fontSize="8" textAnchor="end">-{compactINR(maxVal)}</text>
 
                                 {series.map((val: number, idx: number) => {
                                   const x = series.length === 1 ? 85 : 45 + idx * 70;
@@ -1327,7 +1318,7 @@ export default function DashboardPage() {
                                     <g key={idx}>
                                       <rect x={x} y={y} width={width} height={height || 2} fill="var(--danger)" rx="2" className="transition-all hover:opacity-90" />
                                       <text x={x + 15} y={y + height + 10} fill="var(--danger)" fontSize="8" fontWeight="bold" textAnchor="middle">
-                                        {val === 0 ? "0" : `-${val >= 1000000 ? `${(val / 1000000).toFixed(2)}M` : `${(val / 1000).toFixed(1)}K`}`}
+                                        {val === 0 ? "0" : `-${compactINR(val)}`}
                                       </text>
                                       <text x={x + 15} y="112" fill="var(--muted)" fontSize="7" textAnchor="middle" transform={`rotate(-15 ${x + 15} 112)`}>
                                         {months[idx] || ""}
@@ -1379,7 +1370,7 @@ export default function DashboardPage() {
                                 <line x1="20" y1="40" x2="180" y2="40" stroke="var(--border)" strokeWidth="1" />
                                 <line x1="20" y1="90" x2="180" y2="90" stroke="var(--border)" strokeWidth="1" strokeDasharray="3" />
                                 <text x="15" y="43" fill="var(--muted)" fontSize="8" textAnchor="end">0</text>
-                                <text x="15" y="93" fill="var(--muted)" fontSize="8" textAnchor="end">-{maxVal >= 1000000 ? `${(maxVal/1000000).toFixed(1)}M` : `${Math.round(maxVal/1000)}K`}</text>
+                                <text x="15" y="93" fill="var(--muted)" fontSize="8" textAnchor="end">-{compactINR(maxVal)}</text>
 
                                 {series.map((val: number, idx: number) => {
                                   const x = series.length === 1 ? 85 : 45 + idx * 70;
@@ -1393,7 +1384,7 @@ export default function DashboardPage() {
                                     <g key={idx}>
                                       <rect x={x} y={y} width={width} height={height || 2} fill={color} rx="2" className="transition-all hover:opacity-90" />
                                       <text x={x + 15} y={val < 0 ? y + height + 10 : y - 4} fill={color} fontSize="8" fontWeight="bold" textAnchor="middle">
-                                        {val === 0 ? "0" : val >= 1000000 || val <= -1000000 ? `${(val / 1000000).toFixed(2)}M` : `${(val / 1000).toFixed(1)}K`}
+                                        {val === 0 ? "0" : compactINR(val)}
                                       </text>
                                       <text x={x + 15} y="112" fill="var(--muted)" fontSize="7" textAnchor="middle" transform={`rotate(-15 ${x + 15} 112)`}>
                                         {months[idx] || ""}
@@ -1453,14 +1444,14 @@ export default function DashboardPage() {
                                 {/* Payments In Bar */}
                                 <rect x="60" y={90 - bar1Height} width="40" height={bar1Height} fill="var(--success)" rx="2" className="transition-all hover:opacity-90" />
                                 <text x="80" y={90 - bar1Height - 5} fill="var(--success)" fontSize="8" fontWeight="bold" textAnchor="middle">
-                                  {totalPaymentIn >= 1000000 ? `${(totalPaymentIn / 1000000).toFixed(2)}M` : totalPaymentIn.toLocaleString()}
+                                  {compactINR(totalPaymentIn)}
                                 </text>
                                 <text x="80" y="105" fill="var(--muted)" fontSize="8" textAnchor="middle">Inflow</text>
 
                                 {/* Payments Out Bar */}
                                 <rect x="140" y={90 - bar2Height} width="40" height={bar2Height} fill="var(--danger)" rx="2" className="transition-all hover:opacity-90" />
                                 <text x="160" y={90 - bar2Height - 5} fill="var(--danger)" fontSize="8" fontWeight="bold" textAnchor="middle">
-                                  {totalPaymentOut >= 1000000 ? `${(totalPaymentOut / 1000000).toFixed(2)}M` : totalPaymentOut.toLocaleString()}
+                                  {compactINR(totalPaymentOut)}
                                 </text>
                                 <text x="160" y="105" fill="var(--muted)" fontSize="8" textAnchor="middle">Outflow</text>
                               </svg>
@@ -1916,7 +1907,7 @@ export default function DashboardPage() {
                 }}
                 className="px-5 py-2 rounded-lg bg-primary hover:opacity-90 text-xs font-bold text-white transition-all cursor-pointer"
               >
-                {wizardStep === 1 ? "Continue" : "Complete & Launch"}
+                {wizardStep === 1 ? "Continue" : "Create Project"}
               </button>
             </div>
           </div>
