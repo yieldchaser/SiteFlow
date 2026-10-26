@@ -3,6 +3,7 @@ import Badge, { type BadgeTone } from "@/components/ui/Badge";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { usePermissions } from "@/context/PermissionsContext";
 import { getApiHost, detailToMessage } from "@/lib/api";
 import { CustomFieldsSection, useCustomFields } from "@/components/CustomFieldsSection";
 import Icon from "@/components/marketing/Icon";
@@ -108,7 +109,6 @@ export default function ProjectsPage() {
     materials_pending: 0,
     todos_pending: 0,
   });
-  const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("All");
@@ -119,27 +119,24 @@ export default function ProjectsPage() {
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const [deleteConfirmName, setDeleteConfirmName] = useState("");
 
-  const isViewer = role
-    ? /viewer/i.test(role)
-    : false;
+  // What a member sees here follows their role's permissions, not its name.
+  const { can } = usePermissions();
+  const canEditProjects = can("projects:edit");
+  const seesFinance = can("finance:view");
+  const seesIndents = can("procurement:view");
 
   const load = useCallback(async () => {
     if (!companyId || companyId === "e0000000-0000-0000-0000-000000000000") return;
     setLoading(true);
     try {
-      const [pRes, sRes, meRes] = await Promise.all([
+      const [pRes, sRes] = await Promise.all([
         fetch(api(`/projects/company/${companyId}`), { headers: authHeaders() }),
         fetch(api(`/projects/company/${companyId}/summary`), {
           headers: authHeaders(),
         }),
-        fetch(api(`/auth/me`), { headers: authHeaders() }),
       ]);
       if (pRes.ok) setProjects(await pRes.json());
       if (sRes.ok) setSummary(await sRes.json());
-      if (meRes.ok) {
-        const me = await meRes.json();
-        setRole(me.role || null);
-      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -246,7 +243,7 @@ export default function ProjectsPage() {
           >
             Export CSV
           </button>
-          {!isViewer && (
+          {canEditProjects && (
             <button
               onClick={() => setCreateOpen(true)}
               className="rounded-md bg-primary px-3.5 py-1.5 text-xs font-bold text-white hover:opacity-90 transition-all cursor-pointer"
@@ -261,7 +258,7 @@ export default function ProjectsPage() {
 
       {/* KPI cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-        {(!isViewer) && (
+        {seesFinance && (
           <KpiCard
             label="Approval (Pending)"
             value={summary.approvals_pending}
@@ -269,7 +266,7 @@ export default function ProjectsPage() {
             onClick={() => router.push(`/c/${companyId}/d/payment-approval`)}
           />
         )}
-        {(!isViewer) && (
+        {seesIndents && (
           <KpiCard
             label="Material (Pending)"
             value={summary.materials_pending}
@@ -330,12 +327,10 @@ export default function ProjectsPage() {
             <tr>
               <th className="text-left px-4 py-3 font-medium">Name</th>
               <th className="text-left px-4 py-3 font-medium">Progress</th>
-              {!isViewer && (
+              {seesFinance && (
                 <th className="text-left px-4 py-3 font-medium">In / Out</th>
               )}
-              {!isViewer && (
-                <th className="text-left px-4 py-3 font-medium">To Do</th>
-              )}
+              <th className="text-left px-4 py-3 font-medium">To Do</th>
               <th className="text-right px-4 py-3 font-medium">Actions</th>
             </tr>
           </thead>
@@ -353,7 +348,7 @@ export default function ProjectsPage() {
                   <EmptyState
                     title="No projects found"
                     description={search ? "No projects match your search query." : "Get started by creating your first construction project."}
-                    action={!search && !isViewer ? { label: "New Project", onClick: () => setCreateOpen(true) } : undefined}
+                    action={!search && canEditProjects ? { label: "New Project", onClick: () => setCreateOpen(true) } : undefined}
                   />
                 </td>
               </tr>
@@ -389,17 +384,15 @@ export default function ProjectsPage() {
                       </span>
                     </div>
                   </td>
-                  {!isViewer && (
+                  {seesFinance && (
                     <td className="px-4 py-3 text-xs">
                       <div className="text-success">{fmt(p.cash_in)}</div>
                       <div className="text-danger">{fmt(p.cash_out)}</div>
                     </td>
                   )}
-                  {!isViewer && (
-                    <td className="px-4 py-3">
-                      <Badge tone="primary">{p.todo_pending ?? 0}</Badge>
-                    </td>
-                  )}
+                  <td className="px-4 py-3">
+                    <Badge tone="primary">{p.todo_pending ?? 0}</Badge>
+                  </td>
                   <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-2">
                       <button
@@ -416,7 +409,7 @@ export default function ProjectsPage() {
                       >
                         <Icon name="settings" className="w-4 h-4" />
                       </button>
-                      {!isViewer && (
+                      {canEditProjects && (
                         <button
                           title="Delete"
                           onClick={() => {

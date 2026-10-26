@@ -65,6 +65,15 @@ def _aware_utc(dt: datetime) -> datetime:
 _IST = timezone(timedelta(hours=5, minutes=30))
 
 
+def _ist_day_bounds(day: date):
+    """Aware-UTC [start, end) of an Indian calendar day. Punches store the real
+    instant, so a 02:00 IST punch is 20:30Z the day before; reading days in UTC
+    put every punch before 05:30 IST on the wrong date. Manual marks are pinned
+    at 00:00Z of their day, which also falls inside this window."""
+    start = datetime(day.year, day.month, day.day, tzinfo=_IST).astimezone(timezone.utc)
+    return start, start + timedelta(days=1)
+
+
 def _utc_midnight(dt: datetime) -> datetime:
     # R2-753: If the datetime carries a timezone offset (or was converted to UTC from local browser time),
     # convert it to IST so that an evening UTC instant (e.g. 14 Aug 18:30Z) correctly maps to the intended
@@ -160,21 +169,53 @@ class EmployeeResponse(BaseModel):
     designation: Optional[str]
     department: Optional[str]
     mobile: Optional[str]
-    basic_salary: float
-    hra: float
-    other_allowances: float
-    pf_employee_pct: float
-    pf_employer_pct: float
-    esi_employee_pct: float
-    esi_employer_pct: float
-    tds_monthly: float
-    is_esi_applicable: bool
+    # Pay fields are None for callers without payroll access (see _staff_list).
+    basic_salary: Optional[float]
+    hra: Optional[float]
+    other_allowances: Optional[float]
+    pf_employee_pct: Optional[float]
+    pf_employer_pct: Optional[float]
+    esi_employee_pct: Optional[float]
+    esi_employer_pct: Optional[float]
+    tds_monthly: Optional[float]
+    is_esi_applicable: Optional[bool]
     status: str
     date_of_joining: Optional[datetime]
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+_PAY_FIELDS = (
+    "uan", "basic_salary", "hra", "other_allowances", "pf_employee_pct", "pf_employer_pct",
+    "esi_employee_pct", "esi_employer_pct", "tds_monthly", "is_esi_applicable",
+)
+
+
+def _has_module_view(db: Session, user: User, company_id: uuid.UUID, module: str) -> bool:
+    try:
+        require_module_view(db, user, company_id, module)
+        return True
+    except HTTPException:
+        return False
+
+
+def _staff_list(db: Session, user: User, company_id: uuid.UUID, employees: list) -> list:
+    """The staff roster for attendance and payroll screens.
+
+    Whoever marks attendance (attendance access) needs the names; only payroll
+    access sees pay, UAN and statutory rates. Anyone else gets a 403.
+    """
+    sees_pay = _has_module_view(db, user, company_id, "payroll")
+    if not sees_pay and not _has_module_view(db, user, company_id, "attendance"):
+        raise HTTPException(status_code=403, detail="You do not have access to view staff.")
+    rows = [EmployeeResponse.model_validate(e).model_dump() for e in employees]
+    if not sees_pay:
+        for row in rows:
+            for field in _PAY_FIELDS:
+                row[field] = None
+    return rows
 
 
 class PunchRequest(BaseModel):
@@ -391,11 +432,13 @@ def create_employee(payload: EmployeeCreate, db: Session = Depends(get_db), curr
 
 
 @router.get("/employees/{project_id}", response_model=List[EmployeeResponse])
-def list_employees(project_id: uuid.UUID, db: Session = Depends(get_db), _: None = Depends(verify_project_access)):
-    return db.query(StaffEmployee).filter(
+def list_employees(project_id: uuid.UUID, db: Session = Depends(get_db), _: None = Depends(verify_project_access), current_user: User = Depends(get_current_user)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    employees = db.query(StaffEmployee).filter(
         StaffEmployee.project_id == project_id,
         StaffEmployee.status == "active"
     ).all()
+    return _staff_list(db, current_user, project.company_id, employees)
 
 
 # ─── Attendance / Geofence ───────────────────────────────────────────────────
@@ -406,6 +449,9 @@ def punch(payload: PunchRequest, db: Session = Depends(get_db), current_user: Us
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     get_company_membership(db, current_user, project.company_id)
+    # Punches feed payroll days, so marking someone present is an attendance edit
+    # (Supervisor, Site Engineer, HR), not something any member may do.
+    require_permission(db, current_user, project.company_id, "attendance:edit")
 
     employee = db.query(StaffEmployee).filter(StaffEmployee.id == payload.employee_id).first()
     if not employee:
@@ -458,8 +504,7 @@ def punch(payload: PunchRequest, db: Session = Depends(get_db), current_user: Us
     else:
         punch_time = now
 
-    today_start = punch_time.replace(hour=0, minute=0, second=0, microsecond=0)
-    today_end = today_start + timedelta(days=1)
+    today_start, today_end = _ist_day_bounds(punch_time.astimezone(_IST).date())
 
     if payload.punch_type == "in":
         # Check if already punched in today
@@ -563,12 +608,12 @@ def mark_attendance_manually(
     if target > datetime.now(timezone.utc) + timedelta(days=1):
         raise HTTPException(status_code=400, detail="attendance_date cannot be in the future")
 
-    next_day = target + timedelta(days=1)
+    day_start, day_end = _ist_day_bounds(target.date())
     log = db.query(AttendanceLog).filter(
         AttendanceLog.employee_id == payload.employee_id,
         AttendanceLog.project_id == payload.project_id,
-        AttendanceLog.attendance_date >= target,
-        AttendanceLog.attendance_date < next_day,
+        AttendanceLog.attendance_date >= day_start,
+        AttendanceLog.attendance_date < day_end,
     ).first()
 
     if log is None:
@@ -599,11 +644,11 @@ def daily_attendance(project_id: uuid.UUID, date_str: str, db: Session = Depends
         target = datetime.strptime(date_str, "%Y-%m-%d")
     except ValueError:
         raise HTTPException(status_code=400, detail="date_str must be YYYY-MM-DD")
-    next_day = target + timedelta(days=1)
+    day_start, day_end = _ist_day_bounds(target.date())
     return db.query(AttendanceLog).filter(
         AttendanceLog.project_id == project_id,
-        AttendanceLog.attendance_date >= target,
-        AttendanceLog.attendance_date < next_day
+        AttendanceLog.attendance_date >= day_start,
+        AttendanceLog.attendance_date < day_end
     ).all()
 
 
@@ -949,6 +994,9 @@ def run_payroll(payload: PayrollRunCreate, db: Session = Depends(get_db), curren
     year, month = map(int, payload.payroll_month.split("-"))
     month_start = datetime(year, month, 1, tzinfo=timezone.utc)
     month_end = datetime(year, month + 1, 1, tzinfo=timezone.utc) if month < 12 else datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+    # Attendance is counted by Indian calendar day (see _ist_day_bounds).
+    att_start = _ist_day_bounds(month_start.date())[0]
+    att_end = _ist_day_bounds(month_end.date())[0]
 
     # R2-481: resolve the denominator server-side. An explicitly supplied
     # days_in_month wins; otherwise the real month length minus the company's
@@ -1021,16 +1069,16 @@ def run_payroll(payload: PayrollRunCreate, db: Session = Depends(get_db), curren
         # Count attendance days this month
         att_count = db.query(AttendanceLog).filter(
             AttendanceLog.employee_id == emp.id,
-            AttendanceLog.attendance_date >= month_start,
-            AttendanceLog.attendance_date < month_end,
+            AttendanceLog.attendance_date >= att_start,
+            AttendanceLog.attendance_date < att_end,
             AttendanceLog.status.in_(["Present", "Present (Off-Site)"])
         ).count()
 
         # Sum overtime hours this month
         total_ot = db.query(func.sum(AttendanceLog.overtime_hours)).filter(
             AttendanceLog.employee_id == emp.id,
-            AttendanceLog.attendance_date >= month_start,
-            AttendanceLog.attendance_date < month_end
+            AttendanceLog.attendance_date >= att_start,
+            AttendanceLog.attendance_date < att_end
         ).scalar() or 0.0
 
         # Handle joining mid-month
@@ -1521,12 +1569,13 @@ class EmployeeUpdate(BaseModel):
 
 @router.get("/company/employees/{company_id}", response_model=List[EmployeeResponse])
 def list_company_employees(company_id: uuid.UUID, db: Session = Depends(get_db), _: None = Depends(verify_company_access), current_user: User = Depends(get_current_user)):
-    """Company-wide active employee list (Payroll → People tab)."""
-    require_module_view(db, current_user, company_id, "payroll")
-    return db.query(StaffEmployee).filter(
+    """Company-wide active employee list (Payroll → People tab, and the
+    attendance screen's staff picker)."""
+    employees = db.query(StaffEmployee).filter(
         StaffEmployee.company_id == company_id,
         StaffEmployee.status == "active"
     ).all()
+    return _staff_list(db, current_user, company_id, employees)
 
 
 @router.put("/employees/{employee_id}", response_model=EmployeeResponse)
@@ -2036,14 +2085,14 @@ def company_attendance(company_id: uuid.UUID, date_str: str, db: Session = Depen
         target = datetime.strptime(date_str, "%Y-%m-%d")
     except ValueError:
         raise HTTPException(status_code=400, detail="date_str must be YYYY-MM-DD")
-    next_day = target + timedelta(days=1)
+    day_start, day_end = _ist_day_bounds(target.date())
     results = (
         db.query(AttendanceLog, StaffEmployee.name.label("employee_name"))
         .join(StaffEmployee, AttendanceLog.employee_id == StaffEmployee.id)
         .filter(
             StaffEmployee.company_id == company_id,
-            AttendanceLog.attendance_date >= target,
-            AttendanceLog.attendance_date < next_day,
+            AttendanceLog.attendance_date >= day_start,
+            AttendanceLog.attendance_date < day_end,
         )
         .order_by(StaffEmployee.name)
         .all()

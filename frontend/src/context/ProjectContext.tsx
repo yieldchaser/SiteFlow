@@ -237,8 +237,13 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
             const storedCandidate = getStoredProjectForCompany(activeCompanyUuid) || getStoredProjectForCompany(companyId);
             const candidateProjectId = validRouteProjectId || queryProjectId || storedCandidate || "";
 
-            // Validate ownership: candidate MUST belong to this company's project list
-            const matched = candidateProjectId ? list.find((p) => p?.id === candidateProjectId) : undefined;
+            // Validate ownership: candidate MUST belong to this company's project list.
+            // With nothing remembered (a new device, a newly added member) pick the
+            // first project, which is also what the sidebar picker shows; otherwise
+            // project-scoped screens such as Attendance open with no project at all.
+            const matched =
+              (candidateProjectId ? list.find((p) => p?.id === candidateProjectId) : undefined) ||
+              list.find((p) => isValidUuid(p?.id));
 
             if (matched && matched.id) {
               setStoredProjectForCompany(companyId, matched.id, activeCompanyUuid);

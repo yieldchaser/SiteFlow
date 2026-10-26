@@ -5,6 +5,7 @@ import { authHeaders, todayLocalISO } from "@/lib/siteflow";
 
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
+import { usePermissions } from "@/context/PermissionsContext";
 import Icon, { type IconName } from "@/components/marketing/Icon";
 import SegmentedTabs from "@/components/ui/Tabs";
 import PageShell from "@/components/layout/PageShell";
@@ -115,6 +116,8 @@ export default function AttendancePage() {
   const params = useParams();
   const projectId = (params?.project_id as string) || "d0000000-0000-0000-0000-000000000001";
   const companyId = params?.company_id as string;
+  const { can, loaded: permsLoaded } = usePermissions();
+  const seesPayroll = permsLoaded && can("payroll:view");
 
   const [exportMsg, setExportMsg] = useState<string | null>(null);
   const showExportMsg = (msg: string) => {
@@ -398,9 +401,9 @@ export default function AttendancePage() {
   useEffect(() => {
     if (companyId) {
       fetchSubcontractors();
-      fetchPayrollCompilation();
+      if (seesPayroll) fetchPayrollCompilation();
     }
-  }, [companyId, fetchSubcontractors, fetchPayrollCompilation]);
+  }, [companyId, seesPayroll, fetchSubcontractors, fetchPayrollCompilation]);
 
   useEffect(() => {
     if (isSettingsModalOpen && settingsTab === "members") {
@@ -680,7 +683,7 @@ export default function AttendancePage() {
         <SegmentedTabs
           tabs={[
             { id: "today", label: strings.todayTab, icon: <Icon name="calendar" className="w-3.5 h-3.5" /> },
-            { id: "payroll", label: strings.payrollTab, icon: <Icon name="banknote" className="w-3.5 h-3.5" /> },
+            ...(seesPayroll ? [{ id: "payroll", label: strings.payrollTab, icon: <Icon name="banknote" className="w-3.5 h-3.5" /> }] : []),
           ]}
           activeTab={tab}
           onChange={(t) => setTab(t as any)}

@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { getApiHost, readErrorDetail, detailToMessage} from "@/lib/api";
 import { formatDate, formatLabel } from "@/lib/siteflow";
 import { useProject } from "@/context/ProjectContext";
+import { usePermissions } from "@/context/PermissionsContext";
 import Icon from "@/components/marketing/Icon";
 import PageShell from "@/components/layout/PageShell";
 import PageHeader from "@/components/PageHeader";
@@ -118,6 +119,13 @@ export default function ProjectsHomePage() {
   const params = useParams();
   const companyId = params.company_id as string;
   const { setActiveProjectId } = useProject();
+  const { can } = usePermissions();
+  // Money and leave approvals only show to roles that can act on them.
+  const seesLeaves = can("payroll:edit");
+  const seesFinance = can("finance:view");
+  const seesIndents = can("procurement:view");
+  const canEditProjects = can("projects:edit");
+  const kpiCols = 1 + (seesFinance ? 1 : 0) + (seesIndents ? 1 : 0);
   const accessToken = typeof window !== "undefined" ? localStorage.getItem("access_token") : "";
 
   const [projects, setProjects] = useState<Project[]>([]);
@@ -318,7 +326,7 @@ export default function ProjectsHomePage() {
         title="Project Hub"
         subtitle="Central project status and navigation hub"
         action={
-          <button
+          canEditProjects && <button
             onClick={() => setIsNewProjectOpen(true)}
             className="flex items-center gap-1 px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-md text-xs font-medium transition-all cursor-pointer"
           >
@@ -330,6 +338,7 @@ export default function ProjectsHomePage() {
         <PageShell width="wide">
         <div className="space-y-6">
           {/* Leave Management Banner */}
+      {seesLeaves && (
       <div className="rounded-lg bg-card border border-border-custom p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
@@ -350,10 +359,12 @@ export default function ProjectsHomePage() {
           Open Leave Manager
         </button>
       </div>
+      )}
 
       {/* KPI Cards Hub */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className={`grid grid-cols-1 gap-6 ${kpiCols === 3 ? "md:grid-cols-3" : kpiCols === 2 ? "md:grid-cols-2" : ""}`}>
         {/* Approvals */}
+        {seesFinance && (
         <Link
           href={`/c/${companyId}/d/payment-approval`}
           className="rounded-lg bg-card border border-border-custom p-5 hover:border-primary/35 transition-all flex flex-col justify-between"
@@ -367,8 +378,10 @@ export default function ProjectsHomePage() {
             <span className="text-xs text-muted font-normal">requests</span>
           </div>
         </Link>
+        )}
 
         {/* Material Request */}
+        {seesIndents && (
         <div
           onClick={() => setIsMaterialDrawerOpen(true)}
           className="rounded-lg bg-card border border-border-custom p-5 hover:border-primary/35 transition-all flex flex-col justify-between cursor-pointer"
@@ -382,6 +395,7 @@ export default function ProjectsHomePage() {
             <span className="text-xs text-muted font-normal">indents</span>
           </div>
         </div>
+        )}
 
         {/* To Do */}
         <Link
@@ -493,15 +507,15 @@ export default function ProjectsHomePage() {
                 <th className="px-6 py-3.5">Project Address</th>
                 <th className="px-6 py-3.5">Project Health</th>
                 <th className="px-6 py-3.5">Progress</th>
-                <th className="px-6 py-3.5 text-right">Cash Flow In / Out</th>
+                {seesFinance && <th className="px-6 py-3.5 text-right">Cash Flow In / Out</th>}
                 <th className="px-6 py-3.5 text-center">Project Tasks</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border-custom">
               {filteredProjects.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-muted font-medium">
-                    No active projects. Click "+ New Project" to create one.
+                  <td colSpan={seesFinance ? 7 : 6} className="px-6 py-12 text-center text-muted font-medium">
+                    {canEditProjects ? 'No active projects. Click "+ New Project" to create one.' : "No active projects yet."}
                   </td>
                 </tr>
               ) : (
@@ -539,10 +553,12 @@ export default function ProjectsHomePage() {
                         <span className="text-xs font-medium text-muted">{p.progress || 0}%</span>
                       </div>
                     </td>
+                    {seesFinance && (
                     <td className="px-6 py-4 text-right">
                       <div className="text-success font-semibold text-sm">₹{(p.cashflow_in || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</div>
                       <div className="text-danger font-medium text-xs mt-0.5">₹{(p.cashflow_out || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</div>
                     </td>
+                    )}
                     <td className="px-6 py-4 text-center">
                       <div className="flex items-center justify-center gap-2">
                         <Link

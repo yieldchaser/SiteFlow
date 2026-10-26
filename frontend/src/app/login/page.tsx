@@ -32,7 +32,7 @@ interface AuthResponse {
   onboarding?: boolean;
   needs_company_selection?: boolean;
   user?: { id?: string; name?: string };
-  company?: { id?: string; name?: string } | null;
+  company?: { id?: string; name?: string; priority_type?: string } | null;
   companies?: AuthCompany[];
 }
 
@@ -128,10 +128,11 @@ export default function LoginPage() {
       window.location.href = "/onboarding";
       return;
     }
-    // Preserve the existing behaviour: send new companies through the segment
-    // questionnaire, otherwise straight to the console.
-    let shouldOnboard = true;
-    try {
+    // Send a new company's owner through the segment questionnaire. Staff who
+    // join someone else's company go straight in: the questionnaire renames the
+    // company and is not theirs to fill.
+    let shouldOnboard = data.company?.priority_type === "partner";
+    if (shouldOnboard) try {
       const r = await fetch(`${getApiHost()}/apis/v3/settings/company/${companyId}`, {
         headers: { Authorization: `Bearer ${data.access_token}` },
       });
@@ -906,6 +907,16 @@ export default function LoginPage() {
           {/* Invisible reCAPTCHA host for Firebase Phone Auth (no-op when the
               MSG91 fallback is active). */}
           <div id="firebase-recaptcha" />
+
+          {stage === "input" && (
+            <button
+              type="button"
+              onClick={() => { setStage("invite"); setError(""); setMessage(""); }}
+              className="w-full text-xs font-medium text-alx-primary hover:text-alx-on-surface"
+            >
+              Added by your company? Have an invite code?
+            </button>
+          )}
 
           <p className="flex items-center justify-center gap-1.5 pt-1 text-center text-xs text-alx-on-surface-variant/70">
             <svg className="h-3.5 w-3.5 flex-shrink-0" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

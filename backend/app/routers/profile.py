@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models
-from app.auth import get_current_user, get_company_membership
+from app.auth import get_current_user, get_company_membership, require_permission
 import uuid
 
 router = APIRouter(prefix="/profile", tags=["Profile & Onboarding"], dependencies=[Depends(get_current_user)])
@@ -29,6 +29,9 @@ def update_onboarding(
     # Multi-tenant: the caller must belong to the company they are updating.
     # Without this any authenticated user could rename an arbitrary company by id.
     get_company_membership(db, current_user, co_uuid)
+    # It renames the company, so it is a company setting, not something a
+    # Supervisor or Client who just joined may do.
+    require_permission(db, current_user, co_uuid, "settings:manage")
 
     company = db.query(models.Company).filter(models.Company.id == co_uuid).first()
     if not company:

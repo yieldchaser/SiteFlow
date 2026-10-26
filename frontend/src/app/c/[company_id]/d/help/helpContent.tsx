@@ -140,31 +140,66 @@ export function getHelpCategories(companyId: string): HelpCategory[] {
           a: (
             <>
               <p>
-                You will need permission to manage team members or hold the owner role.
+                The owner, an Admin or a Manager can add people.
               </p>
               <p className="mt-2">
-                Open the sidebar, navigate to "Setup & Config", select{" "}
-                <Link className="help-link" href={c(companyId, "/settings")}>
-                  "Settings"
+                The first time, open{" "}
+                <Link className="help-link" href={c(companyId, "/settings?tab=roles")}>
+                  Settings
                 </Link>
-                , and choose the "Team" tab.
+                , choose "Roles & Access" and press "Add standard roles". This adds the usual roles, such as Manager, Site Engineer, Supervisor and Accountant. You only do this once.
               </p>
               <p className="mt-2">
-                Provide the member's full name, mobile number or email address, and their assigned role, with optional designation and project assignments.
+                Then choose the "Team" tab and press "+ Add person". Type their name and email, pick a role, and press "Send invite". The form tells you in one line what that role can do.
               </p>
               <p className="mt-2">
-                Saving sends an invitation link and adds the member to your workspace roster.
+                They get an email with a code. Until they use it, the list shows "Invite pending" next to their name, and you can press "Resend invite" if they lost the email.
               </p>
               <p className="mt-2">
-                The invited member can sign in immediately to access assigned projects under their permissions.
+                Site workers whose attendance you mark do not need a login at all. Add them as staff under HR instead.
               </p>
             </>
           ),
-          text: "add team members invite user staff assign role permissions mobile email company team",
+          text: "add team members invite user staff assign role email code invite pending resend add person standard roles supervisor engineer accountant",
           sources: [
-            "frontend/src/components/Sidebar.tsx:378",
-            "frontend/src/app/c/[company_id]/settings/page.tsx:1",
+            "frontend/src/components/rbac/TeamSection.tsx:230",
+            "frontend/src/app/c/[company_id]/settings/page.tsx:1588",
             "POST /apis/v3/auth/team/invite",
+            "POST /apis/v3/settings/roles/seed/{company_id}",
+          ],
+        },
+        {
+          q: "What can each role do?",
+          a: (
+            <>
+              <p>
+                Owner and Admin: everything, including company settings. Only the owner or an Admin can make someone else an Admin.
+              </p>
+              <p className="mt-2">
+                Manager: runs projects end to end, approves, and adds people. Sees payroll but cannot run it. Project partner is the same, without adding people.
+              </p>
+              <p className="mt-2">
+                Accountant: accounts, bills and budgets, with approvals. Associate HR: staff records, attendance and payroll.
+              </p>
+              <p className="mt-2">
+                Site Engineer: progress, quality, safety, drawings, attendance and materials. Sees the BOQ and bills, not accounts or payroll.
+              </p>
+              <p className="mt-2">
+                Supervisor: marks attendance and logs progress, quality and safety. No money pages, and staff salaries stay hidden.
+              </p>
+              <p className="mt-2">
+                Client and Sub Contractor: can look at projects, reports and drawings, and change nothing. Viewer: can look at everything and change nothing.
+              </p>
+              <p className="mt-2">
+                Pages outside someone&apos;s role are hidden from their menu. If they open one from a saved link, they see a short note saying it is not part of their role.
+              </p>
+            </>
+          ),
+          text: "what can each role do owner admin manager accountant site engineer supervisor client sub contractor viewer associate hr project partner permissions access pages",
+          sources: [
+            "frontend/src/components/rbac/TeamSection.tsx:32",
+            "frontend/src/components/rbac/PageAccessGuard.tsx:30",
+            "backend/app/permissions.py:170",
           ],
         },
         {
@@ -172,31 +207,97 @@ export function getHelpCategories(companyId: string): HelpCategory[] {
           a: (
             <>
               <p>
-                You will need permission to manage settings or hold the owner role to configure custom roles.
+                Each person has one role, and the role decides which pages they see and what they can change.
               </p>
               <p className="mt-2">
-                Open the sidebar, navigate to "Setup & Config", select{" "}
-                <Link className="help-link" href={c(companyId, "/settings")}>
-                  "Settings"
+                To change someone&apos;s role, open{" "}
+                <Link className="help-link" href={c(companyId, "/settings?tab=team")}>
+                  Settings
                 </Link>
-                , and choose the "Roles & Access" tab.
+                , choose "Team" and pick a new role next to their name. It applies the next time their screen loads.
               </p>
               <p className="mt-2">
-                Enter a role name, description, and select the specific module permissions you want to grant or restrict.
+                To make your own role, open "Roles & Access", add a role and tick what it may see, change and approve in each area. A role you made yourself can be deleted.
               </p>
               <p className="mt-2">
-                Saving updates the permission policy and applies access controls across all features immediately.
-              </p>
-              <p className="mt-2">
-                Assign your configured roles to teammates from the "Team" tab.
+                A Manager can add people and change roles, but cannot give anyone full access, and cannot change or remove the owner or an Admin.
               </p>
             </>
           ),
-          text: "roles permissions rbac access control manage settings fail closed grant revoke custom roles",
+          text: "roles permissions access control custom role change role team admin manager delete role",
           sources: [
-            "frontend/src/components/Sidebar.tsx:378",
-            "frontend/src/app/c/[company_id]/settings/page.tsx:1",
+            "frontend/src/app/c/[company_id]/settings/page.tsx:181",
+            "frontend/src/components/rbac/TeamSection.tsx:93",
+            "PUT /apis/v3/settings/team/{member_id}/role",
             "POST /apis/v3/settings/roles/{company_id}",
+          ],
+        },
+        {
+          q: "How does an invited person sign in?",
+          a: (
+            <>
+              <p>
+                They open the SiteFlow sign-in page and press "Added by your company? Have an invite code?" under the sign-in box. The link in the invite email opens the same screen.
+              </p>
+              <p className="mt-2">
+                They enter the email the invite went to, the code from the email, and choose a password. The code works for 7 days.
+              </p>
+              <p className="mt-2">
+                From then on they sign in with that email and password and land straight in your company with their role. They are not asked to set up a company of their own.
+              </p>
+              <p className="mt-2">
+                If the code runs out, press "Resend invite" next to their name in the Team list and a fresh code goes out.
+              </p>
+            </>
+          ),
+          text: "invited person sign in invite code accept invitation password first login expired code resend",
+          sources: [
+            "frontend/src/app/login/page.tsx:917",
+            "frontend/src/components/rbac/TeamSection.tsx:359",
+            "POST /apis/v3/auth/team/invite/accept",
+          ],
+        },
+        {
+          q: "How do I remove someone?",
+          a: (
+            <>
+              <p>
+                Open{" "}
+                <Link className="help-link" href={c(companyId, "/settings?tab=team")}>
+                  Settings
+                </Link>
+                , choose "Team", press "Remove" next to their name and confirm.
+              </p>
+              <p className="mt-2">
+                They can no longer open the company. What they recorded, such as attendance, progress reports and photos, stays.
+              </p>
+              <p className="mt-2">
+                You cannot remove yourself or the owner. Only the owner or an Admin can remove an Admin.
+              </p>
+            </>
+          ),
+          text: "remove team member delete user revoke access leave company left",
+          sources: [
+            "frontend/src/components/rbac/TeamSection.tsx:365",
+            "DELETE /apis/v3/settings/team/{member_id}",
+          ],
+        },
+        {
+          q: "Can I limit someone to certain projects?",
+          a: (
+            <>
+              <p>
+                Not yet. Everyone in your company can open every project. Their role controls which pages they see and what they can change, not which projects.
+              </p>
+              <p className="mt-2">
+                If someone outside the company, such as a client, should only look, give them a look-only role like Client or Viewer so they cannot change anything.
+              </p>
+            </>
+          ),
+          text: "limit restrict person to project site only one project access per project client",
+          sources: [
+            "frontend/src/components/rbac/TeamSection.tsx:41",
+            "frontend/src/app/c/[company_id]/settings/page.tsx:182",
           ],
         },
       ],
@@ -742,6 +843,36 @@ export function getHelpCategories(companyId: string): HelpCategory[] {
             "frontend/src/components/Sidebar.tsx:300",
             "frontend/src/app/c/[company_id]/d/hr/page.tsx:1",
             "POST /apis/v3/hr/employees",
+          ],
+        },
+        {
+          q: "How does a supervisor mark attendance?",
+          a: (
+            <>
+              <p>
+                Workers do not need a login. Add each worker once as staff under HR, with the project they work on.
+              </p>
+              <p className="mt-2">
+                Give the person who marks attendance the Supervisor or Site Engineer role. On their phone they open{" "}
+                <Link className="help-link" href={c(companyId, "/d/attendance")}>
+                  Attendance
+                </Link>
+                , make sure the right project is picked at the bottom of the menu, choose the worker under "Select Staff / Labor Employee" and press "Clock Punch In". At the end of the day they press "Clock Punch Out".
+              </p>
+              <p className="mt-2">
+                The phone must allow SiteFlow to use its location, or the punch is not saved. If the project has map coordinates, a punch from outside the site boundary is saved as Off-Site so you can check it.
+              </p>
+              <p className="mt-2">
+                Supervisors see names and trades only, never salaries. Each punch counts on the Indian calendar day it was made, even just after midnight, and feeds the monthly payroll.
+              </p>
+            </>
+          ),
+          text: "supervisor mark attendance worker punch in punch out labour daily site staff who can mark attendance phone location",
+          sources: [
+            "frontend/src/app/c/[company_id]/d/attendance/page.tsx:691",
+            "frontend/src/app/c/[company_id]/d/attendance/page.tsx:1384",
+            "POST /apis/v3/hr/attendance/punch",
+            "GET /apis/v3/hr/employees/{project_id}",
           ],
         },
         {

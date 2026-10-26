@@ -393,6 +393,7 @@ export default function Sidebar() {
           label: "Enterprise",
           href: `/c/${companyId}/enterprise`,
           iconName: "building",
+          permission: "finance:view",
           activePattern: "/enterprise",
         },
         {

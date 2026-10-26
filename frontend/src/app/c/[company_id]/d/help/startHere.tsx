@@ -90,11 +90,15 @@ export function startHereCategory(companyId: string): HelpCategory {
             </p>
             <Steps>
               <li>
-                Create a role for each kind of person, for example Site Engineer, Store Keeper, Accountant. Tick
-                only the modules that role needs. Anything not ticked stays hidden.
+                Press &quot;Add standard roles&quot; to get the usual set: Manager, Accountant, Site Engineer, Supervisor
+                and more. If you need something different, add your own role and tick only what it needs. Anything
+                not ticked stays hidden.
               </li>
-              <li>Go to the Team tab and add each person with their name, mobile number or email, and their role.</li>
-              <li>Pick which projects they work on. They only see the projects you give them.</li>
+              <li>
+                Go to the Team tab, press &quot;+ Add person&quot;, and enter their name, email and role. They get an
+                email with a code to sign in.
+              </li>
+              <li>Everyone you add can open every project. Their role decides what they can see and change there.</li>
             </Steps>
             <p className="mt-2">
               These are people who log in to SiteFlow. Site workers who never log in are added as employees or

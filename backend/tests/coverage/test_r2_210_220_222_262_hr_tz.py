@@ -150,8 +150,10 @@ def test_payroll_month_filter_does_not_leak_across_boundary(client, db, make_ten
     project = _project(db, comp)
     emp = _employee(db, comp, project, f"WB{_SUFFIX}")
 
-    jan_last = datetime(2026, 1, 31, 23, 30, tzinfo=timezone.utc)
-    feb_first = datetime(2026, 2, 1, 0, 30, tzinfo=timezone.utc)
+    # Days are Indian calendar days: 19:30Z on 31 Jan is 01:00 IST on 1 Feb, so it
+    # belongs to February (a UTC-day reading put it in January).
+    jan_last = datetime(2026, 1, 31, 12, 0, tzinfo=timezone.utc)
+    feb_first = datetime(2026, 1, 31, 19, 30, tzinfo=timezone.utc)
     for dt, ot in ((jan_last, "1.5"), (feb_first, "4.0")):
         db.add(models.AttendanceLog(
             id=uuid.uuid4(), employee_id=emp.id, project_id=project.id,

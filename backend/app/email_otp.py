@@ -35,7 +35,23 @@ def _subject_and_body(code: str) -> tuple[str, str]:
     return "Your SiteFlow login code", body
 
 
-def send_otp_email(email: str, code: str) -> None:
+def invite_subject_and_body(code: str, company_name: str, inviter: str, role_name: str, claim_url: str) -> tuple[str, str]:
+    """The team-invite email: says who added them, as what, and exactly how to get in."""
+    where = (
+        f"Open {claim_url} and enter this email address, the code, and a password of your choice."
+        if claim_url
+        else "Open the SiteFlow sign-in page, choose \"Have an invite code?\", and enter this email address, the code, and a password of your choice."
+    )
+    body = (
+        f"{inviter} has added you to {company_name} on SiteFlow as {role_name}.\n\n"
+        f"Your invite code is {code}. It works for 7 days.\n\n"
+        f"{where}\n\n"
+        "If you were not expecting this, you can ignore this email."
+    )
+    return f"You have been added to {company_name} on SiteFlow", body
+
+
+def send_otp_email(email: str, code: str, content: tuple[str, str] | None = None) -> None:
     """Deliver the given code to the email address.
 
     Delegates transport selection to app.mailer (Brevo API preferred, SMTP
@@ -46,5 +62,5 @@ def send_otp_email(email: str, code: str) -> None:
     if not to_addr:
         raise RuntimeError("Missing email address")
 
-    subject, body = _subject_and_body(code)
+    subject, body = content or _subject_and_body(code)
     mailer.send_email(to_addr, subject, body)

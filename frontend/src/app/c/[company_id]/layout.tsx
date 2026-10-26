@@ -7,6 +7,7 @@ import { ProjectProvider } from "@/context/ProjectContext";
 import { CompanySettingsProvider } from "@/context/CompanySettingsContext";
 import { PermissionsProvider } from "@/context/PermissionsContext";
 import Sidebar from "@/components/Sidebar";
+import PageAccessGuard from "@/components/rbac/PageAccessGuard";
 import { SidebarProvider } from "@/context/SidebarContext";
 import { isMissingOrDemoTenant } from "@/lib/company-guard";
 
@@ -85,7 +86,7 @@ export default function CompanyLayout({ children }: { children: React.ReactNode 
 
               {/* Main Workspace Area */}
               <main className="flex-1 flex flex-col h-full overflow-hidden relative">
-                {children}
+                <PageAccessGuard>{children}</PageAccessGuard>
               </main>
             </div>
           </SidebarProvider>

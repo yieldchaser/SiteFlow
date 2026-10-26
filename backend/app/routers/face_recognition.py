@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from collections import defaultdict
 from app.database import get_db
-from app.auth import get_current_user, verify_company_access, get_company_membership, verify_project_in_company
+from app.auth import get_current_user, verify_company_access, get_company_membership, verify_project_in_company, require_permission
 # R2-751: face_punch now takes the current user, so the model is needed here.
 from app.models import FaceRecognitionLog, StaffEmployee, User
 
@@ -85,6 +85,7 @@ def face_punch(
     # two findings cancelling each other's severity by accident. Fixing R2-593
     # without this would connect an unguarded cross-tenant write to payroll.
     get_company_membership(db, current_user, payload.company_id)
+    require_permission(db, current_user, payload.company_id, "attendance:edit")
     verify_project_in_company(db, payload.project_id, payload.company_id)
 
     log = FaceRecognitionLog(**payload.model_dump())

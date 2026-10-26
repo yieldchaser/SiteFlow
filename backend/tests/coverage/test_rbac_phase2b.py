@@ -130,9 +130,29 @@ def test_create_leave_request_allows_view_only_self_service(client, db, make_ten
     assert r.status_code != 403
 
 
-def test_punch_allows_view_only_self_service(client, db, make_tenant, auth_headers):
+def test_punch_denies_view_only(client, db, make_tenant, auth_headers):
+    # A punch names any employee and feeds payroll days; staff records are not
+    # linked to logins, so it was never self-service. It needs attendance:edit.
     comp, _, _ = make_tenant(company_name="A", user_name="UA", mobile="+919888803002", email="ls2@t.com")
-    _, _, hdr = _make_employee(db, comp, {"payroll:view": True}, auth_headers)
+    _, _, hdr = _make_employee(db, comp, {"payroll:view": True, "attendance:view": True}, auth_headers)
+    project = _make_project(db, comp)
+    r = client.post(
+        "/apis/v3/hr/attendance/punch",
+        json={
+            "employee_id": str(uuid.uuid4()),
+            "project_id": str(project.id),
+            "lat": 12.0,
+            "lng": 77.0,
+            "punch_type": "in",
+        },
+        headers=hdr,
+    )
+    assert r.status_code == 403
+
+
+def test_punch_allows_attendance_edit(client, db, make_tenant, auth_headers):
+    comp, _, _ = make_tenant(company_name="A", user_name="UA", mobile="+919888803012", email="ls3@t.com")
+    _, _, hdr = _make_employee(db, comp, {"attendance:view": True, "attendance:edit": True}, auth_headers)
     project = _make_project(db, comp)
     r = client.post(
         "/apis/v3/hr/attendance/punch",

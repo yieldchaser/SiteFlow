@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File,
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field, field_validator, model_validator
 from app.database import get_db
-from app.auth import get_current_user, verify_company_access, get_company_membership, require_permission
+from app.auth import get_current_user, verify_company_access, get_company_membership, require_permission, is_owner_equivalent, role_grants_full_access, invite_never_claimed
 from app import models, supabase_storage
 from app.models import (
     Company, CompanyBranch, ApprovalRule, CompanyFile, CompanyRole, CompanyTeam,
@@ -488,10 +488,17 @@ def create_role(company_id: uuid.UUID, role_data: RoleCreate, db: Session = Depe
 @router.post("/roles/seed/{company_id}", response_model=List[RoleResponse])
 def seed_default_roles(company_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user), _: None = Depends(verify_company_access)):
     require_permission(db, current_user, company_id, "settings:manage")
-    if db.query(CompanyRole).filter(CompanyRole.company_id == company_id).count() > 0:
-        raise HTTPException(status_code=409, detail="Roles already exist for this company")
+    # Every company is born with an Owner role, so "no roles yet" never happens.
+    # Add whichever standard roles are missing and leave existing ones untouched.
+    existing = {
+        (r.role_name or "").strip().lower()
+        for r in db.query(CompanyRole).filter(CompanyRole.company_id == company_id).all()
+    }
+    missing = [name for name in DEFAULT_ROLES if name.lower() not in existing]
+    if not missing:
+        raise HTTPException(status_code=409, detail="The standard roles are already added for this company")
     created = []
-    for name in DEFAULT_ROLES:
+    for name in missing:
         # Seed with the real preset (not {}); fall back to read-only for any
         # role name without a preset.
         preset = DEFAULT_ROLE_PRESETS.get(name, default_view_permissions())
@@ -611,9 +618,16 @@ class TeamMemberResponse(BaseModel):
     role_id: Optional[uuid.UUID] = None
     role_name: Optional[str] = None
     priority_type: str
+    # Invited but has not yet set a password with the emailed code.
+    invite_pending: bool = False
+    is_me: bool = False
 
     class Config:
         from_attributes = True
+
+
+def _invite_pending(user: Optional[User]) -> bool:
+    return invite_never_claimed(user)
 
 
 class TeamMemberRoleUpdate(BaseModel):
@@ -646,6 +660,8 @@ def list_team_members(
             role_id=t.role_id,
             role_name=r.role_name if r else None,
             priority_type=t.priority_type,
+            invite_pending=_invite_pending(u),
+            is_me=u.id == current_user.id,
         )
         for t, u, r in rows
     ]
@@ -667,8 +683,21 @@ def assign_member_role(
     member = db.query(CompanyTeam).filter(CompanyTeam.id == member_id).first()
     if not member:
         raise HTTPException(status_code=404, detail="Team member not found")
-    get_company_membership(db, current_user, member.company_id)
+    caller = get_company_membership(db, current_user, member.company_id)
     require_permission(db, current_user, member.company_id, "team:manage")
+    caller_is_owner = is_owner_equivalent(db, caller)
+
+    current_role = (
+        db.query(CompanyRole).filter(CompanyRole.id == member.role_id).first()
+        if member.role_id else None
+    )
+    # Full access is handed out, or taken away, only by an owner-equivalent
+    # member. Otherwise a Manager could promote themselves to Admin.
+    if role_grants_full_access(current_role) and not caller_is_owner:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the owner or an admin can change the role of someone with full access.",
+        )
 
     if payload.role_id is not None:
         role = db.query(CompanyRole).filter(CompanyRole.id == payload.role_id).first()
@@ -679,8 +708,17 @@ def assign_member_role(
                 status_code=400,
                 detail="Role does not belong to this company",
             )
+        if role_grants_full_access(role) and not caller_is_owner:
+            raise HTTPException(
+                status_code=403,
+                detail="Only the owner or an admin can give someone full access.",
+            )
         member.role_id = role.id
     else:
+        # A member with no role is not limited at all, so only the owner's own
+        # partner seat may go without one.
+        if member.priority_type != "partner":
+            raise HTTPException(status_code=400, detail="Pick a role for this member.")
         member.role_id = None
 
     db.commit()
@@ -700,7 +738,53 @@ def assign_member_role(
         role_id=member.role_id,
         role_name=role.role_name if role else None,
         priority_type=member.priority_type,
+        invite_pending=_invite_pending(user),
+        is_me=bool(user is not None and user.id == current_user.id),
     )
+
+
+@router.delete("/team/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_team_member(
+    member_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Take someone out of the company. Their login stays (they may belong to
+    other companies); they simply stop seeing this one.
+
+    The team row is unlinked from the login rather than deleted: approvals,
+    stock receipts and other records point at it, and a delete would either
+    fail on those references or cascade away real history. Every access check
+    looks the member up by login, so an unlinked row grants nothing."""
+    member = db.query(CompanyTeam).filter(CompanyTeam.id == member_id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Team member not found")
+    caller = get_company_membership(db, current_user, member.company_id)
+    require_permission(db, current_user, member.company_id, "team:manage")
+    if member.user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="You cannot remove yourself from the company.")
+    if member.priority_type == "partner":
+        raise HTTPException(status_code=400, detail="The company owner cannot be removed.")
+    role = db.query(CompanyRole).filter(CompanyRole.id == member.role_id).first() if member.role_id else None
+    if role_grants_full_access(role) and not is_owner_equivalent(db, caller):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the owner or an admin can remove someone with full access.",
+        )
+    db.query(models.ProjectMember).filter(models.ProjectMember.company_team_id == member.id).delete(
+        synchronize_session=False
+    )
+    user = db.query(User).filter(User.id == member.user_id).first()
+    from app.routers.delete_logs import log_deletion
+    log_deletion(
+        db, member.company_id, "team_member", member.id,
+        f"Team member: {user.name if user else 'Unknown'} ({role.role_name if role else 'no role'})",
+        deleted_by=current_user.name,
+    )
+    member.user_id = None
+    member.role_id = None
+    member.priority_type = "removed"
+    db.commit()
 
 
 # ─── Payroll Settings (company-level default statutory rates) ───────────────

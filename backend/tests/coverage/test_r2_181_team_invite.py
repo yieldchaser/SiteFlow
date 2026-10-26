@@ -119,6 +119,9 @@ def test_accept_claims_account_and_logs_into_the_company(client, db, make_tenant
 
 
 def test_duplicate_invite_is_rejected(client, db, make_tenant, auth_headers, monkeypatch):
+    """Inviting someone who already signed in is a 409. Inviting someone who
+    never claimed their invite sends a fresh code instead (their first one may
+    have lapsed), and still adds no second membership."""
     invitee_email = "twice@example.com"
     monkeypatch.setattr(settings, "EMAIL_OTP_DEMO_ALLOWLIST", invitee_email)
     monkeypatch.setattr(settings, "OTP_DEMO_CODE", "654321")
@@ -129,7 +132,14 @@ def test_duplicate_invite_is_rejected(client, db, make_tenant, auth_headers, mon
     first = client.post(INVITE_URL, headers=headers, json=payload)
     assert first.status_code == 200, first.text
     second = client.post(INVITE_URL, headers=headers, json=payload)
-    assert second.status_code == 409, second.text
+    assert second.status_code == 200, second.text
+    assert second.json()["status"] == "resent"
+    assert second.json()["member_id"] == first.json()["member_id"]
+
+    claim = client.post(ACCEPT_URL, json={"email": invitee_email, "code": "654321", "password": STRONG_PASSWORD})
+    assert claim.status_code == 200, claim.text
+    third = client.post(INVITE_URL, headers=headers, json=payload)
+    assert third.status_code == 409, third.text
 
 
 def test_existing_account_is_attached_without_claim_code(client, db, make_tenant, auth_headers):

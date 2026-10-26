@@ -5,7 +5,9 @@ import { authHeaders, formatLabel, todayLocalISO } from "@/lib/siteflow";
 
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { useProject } from "@/context/ProjectContext";
+import { usePermissions } from "@/context/PermissionsContext";
 import PwaControls from "@/components/pwa/PwaControls";
 import Icon, { type IconName } from "@/components/marketing/Icon";
 import PageShell from "@/components/layout/PageShell";
@@ -118,6 +120,9 @@ export default function AttendancePage() {
   const companyId = params?.company_id as string;
   const { activeProjectId } = useProject();
   const projectId = activeProjectId;
+  // Supervisors mark attendance; only payroll roles see the pay runs.
+  const { can, loaded: permsLoaded } = usePermissions();
+  const seesPayroll = permsLoaded && can("payroll:view");
   
   const [tab, setTab] = useState<"today" | "payroll">("today");
   const [subTab, setSubTab] = useState<"staff" | "subcon">("staff");
@@ -357,9 +362,9 @@ export default function AttendancePage() {
   useEffect(() => {
     if (companyId) {
       fetchSubcontractors();
-      fetchPayrollCompilation();
+      if (seesPayroll) fetchPayrollCompilation();
     }
-  }, [companyId, fetchSubcontractors, fetchPayrollCompilation]);
+  }, [companyId, fetchSubcontractors, fetchPayrollCompilation, seesPayroll]);
 
   useEffect(() => {
     if (isSettingsModalOpen && settingsTab === "members" && companyId) {
@@ -638,7 +643,7 @@ export default function AttendancePage() {
         <SegmentedTabs
           tabs={[
             { id: "today", label: strings.todayTab, icon: <Icon name="calendar" className="w-3.5 h-3.5" /> },
-            { id: "payroll", label: strings.payrollTab, icon: <Icon name="banknote" className="w-3.5 h-3.5" /> },
+            ...(seesPayroll ? [{ id: "payroll", label: strings.payrollTab, icon: <Icon name="banknote" className="w-3.5 h-3.5" /> }] : []),
           ]}
           activeTab={tab}
           onChange={(t) => setTab(t as any)}
@@ -1376,20 +1381,18 @@ export default function AttendancePage() {
               {settingsTab === "members" && (
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
-                    <span className="text-[10px] text-muted font-bold uppercase tracking-wider">Authorized Team Members</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const name = prompt("Enter new team member name:");
-                        if (name && name.trim()) {
-                          setTeamMembers(prev => [...prev, { id: `m-${Date.now()}`, name: name.trim(), role_name: "Authorized Supervisor" }]);
-                        }
-                      }}
-                      className="bg-primary hover:bg-primary/95 text-white font-bold text-[10px] px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                    <span className="text-[10px] text-muted font-bold uppercase tracking-wider">Who can mark attendance</span>
+                    <Link
+                      href={`/c/${companyId}/settings?tab=team`}
+                      className="bg-primary hover:bg-primary/95 text-white font-bold text-[10px] px-3 py-1.5 rounded-lg transition-all"
                     >
-                      + Add Member
-                    </button>
+                      Manage in Settings, Team
+                    </Link>
                   </div>
+                  <p className="text-[11px] text-muted">
+                    Anyone whose role can edit attendance (Supervisor, Site Engineer, Associate HR, Manager, Admin) can mark it.
+                    Add people and change roles in Settings, Team.
+                  </p>
                    <div className="divide-y divide-border-custom/50 bg-elevated/20 border border-border-custom rounded-xl p-3 text-xs">
                      {teamMembers.length === 0 ? (
                        <EmptyState

@@ -238,6 +238,48 @@ def require_permission(db: Session, current_user: models.User, company_id: uuid.
         raise _reject(permission_key)
 
 
+def require_any_permission(db: Session, current_user: models.User, company_id: uuid.UUID, *permission_keys: str) -> None:
+    """require_permission, passing when the caller holds any one of the keys."""
+    for key in permission_keys[:-1]:
+        try:
+            require_permission(db, current_user, company_id, key)
+            return
+        except HTTPException:
+            continue
+    require_permission(db, current_user, company_id, permission_keys[-1])
+
+
+def is_owner_equivalent(db: Session, membership: models.CompanyTeam) -> bool:
+    """True for a partner or a member whose role carries the `all` flag.
+
+    Only these members may hand out full access (Owner / Admin or any role with
+    `all`), so a Manager holding team:manage cannot promote themselves.
+    """
+    if membership.priority_type == "partner":
+        return True
+    if membership.role_id is None:
+        return False
+    role = db.query(models.CompanyRole).filter(models.CompanyRole.id == membership.role_id).first()
+    return bool(role is not None and (role.permissions or {}).get("all") is True)
+
+
+def invite_never_claimed(user: Optional[models.User]) -> bool:
+    """An account created by a team invite that has never been signed in to:
+    no password, no verified email, no phone and no sign-in method on record.
+    Phone-login accounts always carry a mobile, so they never match."""
+    return bool(
+        user is not None
+        and not (user.password_hash or "").strip()
+        and not user.email_verified
+        and not user.mobile
+        and not (user.auth_providers or "").strip()
+    )
+
+
+def role_grants_full_access(role: Optional[models.CompanyRole]) -> bool:
+    return bool(role is not None and (role.permissions or {}).get("all") is True)
+
+
 def require_module_view(
     db: Session, current_user: models.User, company_id: uuid.UUID, module: str
 ) -> None:

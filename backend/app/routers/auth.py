@@ -18,8 +18,11 @@ from app.auth import (
     get_company_membership,
     get_current_active_company_user,
     get_current_user,
+    invite_never_claimed,
+    is_owner_equivalent,
     oauth2_scheme,
     require_permission,
+    role_grants_full_access,
 )
 from app.permissions import effective_permissions
 from app.config import settings
@@ -92,7 +95,7 @@ def _aware(dt: datetime) -> datetime:
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
 
 
-def _issue_otp(db: Session, identifier: str, channel: str, code: str, purpose: str = "login") -> None:
+def _issue_otp(db: Session, identifier: str, channel: str, code: str, purpose: str = "login", ttl_seconds: Optional[int] = None) -> None:
     """Invalidate earlier unconsumed codes for this identifier+purpose, then store
     the new one hashed with a TTL and a fresh attempt counter. Shared by both
     channels so there is a single, hardened OTP implementation."""
@@ -108,7 +111,7 @@ def _issue_otp(db: Session, identifier: str, channel: str, code: str, purpose: s
         identifier=identifier,
         purpose=purpose,
         code_hash=_hash_otp(identifier, code),
-        expires_at=datetime.now(timezone.utc) + timedelta(seconds=settings.OTP_TTL_SECONDS),
+        expires_at=datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds or settings.OTP_TTL_SECONDS),
         attempts=0,
         consumed=False,
     )
@@ -475,9 +478,11 @@ def _normalize_email(email: str) -> str:
     return (email or "").strip().lower()
 
 
-def _deliver_email_code(db: Session, email: str, purpose: str) -> dict:
+def _deliver_email_code(db: Session, email: str, purpose: str, invite: Optional[dict] = None) -> dict:
     """Shared email-OTP send: configured -> real SMTP; else demo-allowlist only.
-    Returns a response dict (never contains the code except demo convenience)."""
+    Returns a response dict (never contains the code except demo convenience).
+    `invite` (company_name, inviter, role_name, claim_url) switches to the team
+    invite email and a 7-day code, since people open those hours later."""
     provider_ready = email_otp.is_configured()
     is_demo = email in settings.email_demo_allowlist
 
@@ -494,12 +499,14 @@ def _deliver_email_code(db: Session, email: str, purpose: str) -> dict:
             detail="Demo OTP code is not configured on this server.",
         )
     code = settings.OTP_DEMO_CODE if use_demo_code else _generate_otp_code()
-    _issue_otp(db, email, channel="email", code=code, purpose=purpose)
+    _issue_otp(db, email, channel="email", code=code, purpose=purpose,
+               ttl_seconds=INVITE_CODE_TTL_SECONDS if invite else None)
 
     response = {"success": True, "message": f"Verification code sent to {email}"}
     if provider_ready:
         try:
-            email_otp.send_otp_email(email, code)
+            content = email_otp.invite_subject_and_body(code, **invite) if invite else None
+            email_otp.send_otp_email(email, code, content)
         except Exception as exc:
             logger.error("Email OTP send failed for %s: %s", email, exc)
             db.query(models.OTPCode).filter(
@@ -960,6 +967,20 @@ def switch_company(
 #      sets the password, marks the email verified, and mints the session.
 # The OTP machinery (hashed codes, TTL, attempt caps, single use) is shared.
 
+# People open invite emails hours or days later; a 5-minute login code is useless there.
+INVITE_CODE_TTL_SECONDS = 7 * 24 * 3600
+
+
+def _invite_claim_url(request: Request) -> str:
+    """Sign-in page link for the invite email: the app the inviter is using,
+    if it is one of ours, else the configured frontend address."""
+    origin = (request.headers.get("origin") or "").strip().rstrip("/")
+    if origin and origin in settings.allowed_origins_list:
+        return f"{origin}/login?mode=invite"
+    base = (settings.FRONTEND_URL or "").split(",")[0].strip().rstrip("/")
+    return f"{base}/login?mode=invite" if base else ""
+
+
 class InviteMemberRequest(BaseModel):
     email: EmailStr
     name: str = Field(..., min_length=1)
@@ -991,7 +1012,9 @@ def invite_member(
     # R2-746: prefer an explicitly-named target. The claim is only a default,
     # and it is the one that goes stale across a company switch.
     company_id = payload.company_id or ctx["company_id"]
-    require_permission(db, user, company_id, "settings:manage")
+    # team:manage is the "add / remove members, assign roles" key.
+    require_permission(db, user, company_id, "team:manage")
+    caller = get_company_membership(db, user, company_id)
 
     email = _normalize_email(payload.email)
     if not email:
@@ -1007,6 +1030,19 @@ def invite_member(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Role not found in this company.",
         )
+    if role_grants_full_access(role) and not is_owner_equivalent(db, caller):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the owner or an admin can add someone with full access.",
+        )
+
+    company = db.query(models.Company).filter(models.Company.id == company_id).first()
+    invite = {
+        "company_name": company.name if company else "your company",
+        "inviter": user.name or "Your company",
+        "role_name": role.role_name,
+        "claim_url": _invite_claim_url(request),
+    }
 
     existing_member = (
         db.query(models.CompanyTeam)
@@ -1017,31 +1053,49 @@ def invite_member(
         )
         .first()
     )
-    if existing_member:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="This person is already a member of the company.",
-        )
-
     invitee = db.query(models.User).filter(func.lower(models.User.email) == email).first()
-    if invitee:
+    never_claimed = invite_never_claimed(invitee)
+
+    if existing_member:
+        if not never_claimed:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This person is already a member of the company.",
+            )
+        # Invited earlier but never signed in (the code may have lapsed):
+        # send a fresh code. Their role stays as it is.
+        delivery = _deliver_email_code(db, email, purpose="team_invite", invite=invite)
+        response = {
+            "success": True,
+            "status": "resent",
+            "member_id": str(existing_member.id),
+            "email": email,
+            "message": "A new invite code has been emailed.",
+        }
+        if delivery.get("demo_mode"):
+            response["demo_mode"] = True
+            response["mock_code"] = delivery["mock_code"]
+        return response
+
+    delivery = {}
+    if invitee and not never_claimed:
         # An existing account just gains the membership; it logs in with its own
         # credentials, so no claim code is needed (and none is sent).
         invited_status = "attached"
-        delivery = {}
     else:
         invited_status = "invited"
         # Deliver BEFORE writing anything so undeliverable invites are clean 503s.
-        delivery = _deliver_email_code(db, email, purpose="team_invite")
-        invitee = models.User(
-            id=uuid.uuid4(),
-            name=(payload.name or "").strip() or email.split("@")[0],
-            email=email,
-            password_hash=None,
-            email_verified=False,
-            auth_providers="",
-        )
-        db.add(invitee)
+        delivery = _deliver_email_code(db, email, purpose="team_invite", invite=invite)
+        if invitee is None:
+            invitee = models.User(
+                id=uuid.uuid4(),
+                name=(payload.name or "").strip() or email.split("@")[0],
+                email=email,
+                password_hash=None,
+                email_verified=False,
+                auth_providers="",
+            )
+            db.add(invitee)
 
     membership = models.CompanyTeam(
         id=uuid.uuid4(),

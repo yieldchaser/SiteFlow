@@ -185,12 +185,17 @@ def _accountant_grants() -> list:
     return g
 
 
+# Salaries, the company's books and the sales pipeline are not site work.
+_OFFICE_ONLY_MODULES = {"finance", "payroll", "crm"}
+
+
 def _site_engineer_grants() -> list:
-    g = [f"{m}:view" for m in MODULES]
+    # Sees BOQ and RA bills (budgeting/billing) to measure against, but not the
+    # accounts, payroll or CRM.
+    g = [f"{m}:view" for m in MODULES if m not in _OFFICE_ONLY_MODULES]
     for m in ("projects", "production", "quality", "safety", "drawings",
               "attendance", "planning", "procurement"):
         g.append(f"{m}:edit")
-    # Note: finance/billing/budgeting/payroll stay view-only (no edit/approve).
     return g
 
 
@@ -202,8 +207,15 @@ def _associate_hr_grants() -> list:
 
 
 def _supervisor_grants() -> list:
-    g = [f"{m}:view" for m in MODULES]
-    for m in ("production", "quality", "safety", "attendance", "planning", "projects"):
+    # Site work only: no money modules (accounts, bills, budgets, payroll, CRM)
+    # and no company reports, which carry the financial summaries.
+    site = ("dashboard", "projects", "planning", "drawings", "quality", "safety",
+            "attendance", "equipment", "production", "procurement", "library",
+            "subcontractor")
+    g = [f"{m}:view" for m in site]
+    # No projects:edit: a Supervisor files daily reports (planning:edit) but
+    # does not create, rename or delete projects.
+    for m in ("production", "quality", "safety", "attendance", "planning"):
         g.append(f"{m}:edit")
     return g
 

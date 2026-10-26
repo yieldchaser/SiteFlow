@@ -8,7 +8,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useState, useRef, useCallback } from "react";
 import PwaControls from "@/components/pwa/PwaControls";
 import RolePermissionsModal, { RoleForEditor } from "@/components/rbac/RolePermissionsModal";
-import TeamSection from "@/components/rbac/TeamSection";
+import TeamSection, { ROLE_SUMMARIES } from "@/components/rbac/TeamSection";
 import { usePermissions } from "@/context/PermissionsContext";
 import { LOCKED_ROLES } from "@/lib/rbac";
 import PageShell from "@/components/layout/PageShell";
@@ -206,7 +206,25 @@ export default function CompanySettingsPage() {
   const { can } = usePermissions();
   const [settings, setSettings] = useState<CompanySettings | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
+  // Someone who can manage the team but not company settings (a Project Manager)
+  // sees only their own profile and the Team list.
+  const managesSettings = can("settings:manage");
+  const visibleSections = SECTIONS.filter((s) =>
+    s.id === "team" ? can("team:manage") : managesSettings || s.id === "profile",
+  );
   const [activeSection, setActiveSection] = useState<SectionId>("company");
+  // Links such as Help and Attendance open a section directly with ?tab=team.
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get("tab");
+    const ids = visibleSections.map((s) => s.id);
+    if (wanted && ids.includes(wanted as SectionId)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setActiveSection(wanted as SectionId);
+    } else if (!ids.includes(activeSection)) {
+      setActiveSection(ids.includes("team") ? "team" : "profile");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [managesSettings]);
   const [companyTab, setCompanyTab] = useState<"details" | "branches" | "business">("details");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -963,15 +981,33 @@ export default function CompanySettingsPage() {
       const res = await fetch(`${apiHost}/apis/v3/settings/roles/seed/${company_id}`, { method: "POST", headers: authHeaders() });
       if (res.ok) {
         const created = await res.json();
-        setRoles(created);
-        setRoleMsg({ type: "ok", text: `Seeded ${created.length} default roles` });
+        loadRoles();
+        setRoleMsg({ type: "ok", text: `Added ${created.length} standard role${created.length === 1 ? "" : "s"}` });
       } else if (res.status === 409) {
-        setRoleMsg({ type: "err", text: "Default roles already added for this company" });
+        setRoleMsg({ type: "err", text: "The standard roles are already added" });
       } else {
-        setRoleMsg({ type: "err", text: "Failed to seed roles" });
+        setRoleMsg({ type: "err", text: "Could not add the standard roles" });
       }
     } catch {
-      setRoleMsg({ type: "err", text: "Failed to seed roles" });
+      setRoleMsg({ type: "err", text: "Could not add the standard roles" });
+    } finally {
+      setRoleBusy(false);
+    }
+  };
+
+  const deleteRole = async (r: { id: string; role_name: string }) => {
+    if (!confirm(`Delete the role "${r.role_name}"?`)) return;
+    setRoleBusy(true); setRoleMsg(null);
+    try {
+      const res = await fetch(`${apiHost}/apis/v3/settings/roles/${r.id}`, { method: "DELETE", headers: authHeaders() });
+      if (res.ok) {
+        setRoles((prev) => prev.filter((x) => x.id !== r.id));
+        setRoleMsg({ type: "ok", text: `Deleted ${r.role_name}` });
+      } else {
+        setRoleMsg({ type: "err", text: (await readErrorDetail(res)) || "Could not delete the role" });
+      }
+    } catch {
+      setRoleMsg({ type: "err", text: "Could not delete the role" });
     } finally {
       setRoleBusy(false);
     }
@@ -1253,7 +1289,7 @@ export default function CompanySettingsPage() {
       <aside className="w-60 shrink-0 border-r border-border-custom bg-card p-4 overflow-y-auto">
         <div className="px-2 pb-4 text-[10px] uppercase tracking-[0.2em] text-muted font-bold">Settings</div>
         <nav className="space-y-1">
-          {SECTIONS.filter((s) => s.id !== "team" || can("team:manage")).map((s) => (
+          {visibleSections.map((s) => (
             <button
               key={s.id}
               onClick={() => setActiveSection(s.id)}
@@ -1544,12 +1580,12 @@ export default function CompanySettingsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-sm font-bold text-foreground uppercase tracking-wider text-muted">Company Roles</h2>
-                  <p className="mt-1 text-xs text-muted">Flat list of access roles for this organization. {roles.length} role{roles.length === 1 ? "" : "s"} configured.</p>
+                  <p className="mt-1 text-xs text-muted">A role decides which pages someone sees and what they can change. Give people a role in the Team tab. {roles.length} role{roles.length === 1 ? "" : "s"} set up.</p>
                 </div>
                 <div className="flex gap-2">
-                  {can("settings:manage") && roles.length === 0 && (
+                  {can("settings:manage") && DEFAULT_ROLES.some((d) => !roles.some((r) => r.role_name.toLowerCase() === d.toLowerCase())) && (
                     <button onClick={seedRoles} disabled={roleBusy} className="bg-elevated text-foreground text-xs font-bold px-4 py-2.5 rounded-md border border-border-custom hover:border-primary/50 disabled:opacity-50">
-                      Seed 10 Defaults
+                      Add standard roles
                     </button>
                   )}
                   {can("settings:manage") && (
@@ -1573,7 +1609,7 @@ export default function CompanySettingsPage() {
 
               {roles.length === 0 ? (
                 <div className="col-span-full text-center p-8 border border-dashed border-border-custom rounded-md text-muted text-xs">
-                  No roles configured. Click <span className="text-primary font-bold">Seed 10 Defaults</span> to add the standard set, or add a role manually.
+                  No roles yet. Press <span className="text-primary font-bold">Add standard roles</span> to add the usual set, or add your own.
                 </div>
               ) : (
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -1592,7 +1628,19 @@ export default function CompanySettingsPage() {
                             <Badge tone="success" className="font-bold">Full access</Badge>
                           )}
                         </div>
+                        {ROLE_SUMMARIES[r.role_name] && (
+                          <p className="mt-1.5 text-[11px] text-muted leading-snug">{ROLE_SUMMARIES[r.role_name]}</p>
+                        )}
                       </div>
+                      {can("settings:manage") && !DEFAULT_ROLES.includes(r.role_name) && !LOCKED_ROLES.has(r.role_name) && (
+                        <button
+                          onClick={() => deleteRole(r)}
+                          disabled={roleBusy}
+                          className="shrink-0 text-[10px] text-danger border border-danger/20 bg-danger/10 px-3 py-1.5 rounded-md hover:bg-danger/20 disabled:opacity-50"
+                        >
+                          Delete
+                        </button>
+                      )}
                       {can("settings:manage") && (
                         <button
                           onClick={() => setPermRole({ id: r.id, role_name: r.role_name, permissions: r.permissions })}
@@ -2773,7 +2821,7 @@ export default function CompanySettingsPage() {
           )}
 
           {/* ════════════════ Placeholder for not-yet-built sections ════════════════ */}
-          {activeSection !== "company" && activeSection !== "roles" && activeSection !== "payroll" && activeSection !== "holiday" && activeSection !== "workflow" && activeSection !== "docfields" && activeSection !== "approval" && activeSection !== "integrations" && activeSection !== "subscription" && (
+          {activeSection !== "company" && activeSection !== "roles" && activeSection !== "team" && activeSection !== "profile" && activeSection !== "payroll" && activeSection !== "holiday" && activeSection !== "workflow" && activeSection !== "docfields" && activeSection !== "approval" && activeSection !== "integrations" && activeSection !== "subscription" && (
             <Placeholder section={SECTIONS.find((s) => s.id === activeSection)?.label ?? ""} />
           )}
         </div>

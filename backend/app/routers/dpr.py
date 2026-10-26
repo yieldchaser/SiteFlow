@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Response
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.auth import get_current_user, verify_project_access, get_company_membership, require_permission, require_module_view
+from app.auth import get_current_user, verify_project_access, get_company_membership, require_any_permission, require_module_view
 from app.models import DailyProgressReport, Task, WarehouseInventory, MaterialTransaction, Project, User
 from app.workflow_controls import enforce_entry_creation_window, enforce_entry_editing_window, enforce_stock_availability, get_company
 from app.inventory_reservation import release_reservation, rereserve_reservation
@@ -65,7 +65,9 @@ def create_dpr(req: DPRCreateRequest, db: Session = Depends(get_db), current_use
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     get_company_membership(db, current_user, project.company_id)
-    require_permission(db, current_user, project.company_id, "projects:edit")
+    # A daily report is site progress: Planning edit (Supervisor, Site Engineer)
+    # is enough, without the right to create or change projects.
+    require_any_permission(db, current_user, project.company_id, "planning:edit", "projects:edit")
 
     # Workflow Controls: Entry Controls (creation date window)
     enforce_entry_creation_window(db, project.company_id, req.dpr_date)
@@ -404,7 +406,9 @@ def delete_dpr(dpr_id: uuid.UUID, db: Session = Depends(get_db), current_user: U
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     get_company_membership(db, current_user, project.company_id)
-    require_permission(db, current_user, project.company_id, "projects:edit")
+    # A daily report is site progress: Planning edit (Supervisor, Site Engineer)
+    # is enough, without the right to create or change projects.
+    require_any_permission(db, current_user, project.company_id, "planning:edit", "projects:edit")
     enforce_entry_editing_window(db, project.company_id, dpr.dpr_date)
 
     if dpr.materials_consumed:

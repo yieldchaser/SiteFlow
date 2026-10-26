@@ -6,6 +6,8 @@ import { useParams, usePathname, useRouter } from "next/navigation";
 import { getApi, authHeaders } from "@/lib/siteflow";
 import { useProject } from "@/context/ProjectContext";
 import Icon from "@/components/marketing/Icon";
+import { usePermissions } from "@/context/PermissionsContext";
+import { canOpen } from "@/lib/routeAccess";
 
 const TABS = [
   { label: "Dashboard", slug: "dashboard" },
@@ -84,6 +86,7 @@ export default function ProjectDetailLayout({ children }: { children: React.Reac
   const projectId = params.project_id as string;
 
   const { projects, setActiveProjectId } = useProject();
+  const { can } = usePermissions();
 
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [status, setStatus] = useState("Ongoing");
@@ -193,7 +196,7 @@ export default function ProjectDetailLayout({ children }: { children: React.Reac
 
       {/* 11-sub-tab nav bar */}
       <div className="flex items-center gap-1 px-4 py-2 border-b border-border-custom bg-background/40 overflow-x-auto">
-        {TABS.map((t) => {
+        {TABS.filter((t) => canOpen(`${base}/${t.slug}`, can)).map((t) => {
           const href = `${base}/${t.slug}`;
           const active = pathname === href;
           return (
@@ -232,7 +235,7 @@ export default function ProjectDetailLayout({ children }: { children: React.Reac
                 aria-hidden="true"
               />
               <div className="absolute right-0 top-full mt-1 z-50 w-[26rem] max-h-80 overflow-y-auto rounded-md border border-border-custom bg-card shadow-xl p-2 grid grid-cols-1 md:grid-cols-2 gap-1">
-                {MORE_TABS.map((m) => (
+                {MORE_TABS.filter((m) => canOpen(`/c/${companyId}${m.path}`, can)).map((m) => (
                   <Link
                     key={m.path}
                     href={`/c/${companyId}${m.path}${m.withProject ? `?project=${projectId}` : ""}`}
