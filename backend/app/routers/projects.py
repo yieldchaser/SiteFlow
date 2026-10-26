@@ -679,6 +679,22 @@ def add_project_party(project_id: uuid.UUID, payload: ProjectPartyCreate, db: Se
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
     require_permission(db, current_user, p.company_id, "projects:edit")
+
+    # A party added to a project must be billable on it. Every bill, credit note
+    # and payment names its counterparty by company_team id, and the project's
+    # transaction screen offers only project members. A client registered in the
+    # Party Library had neither, so no sales invoice could ever be raised to a
+    # client. Resolve (or create) the party's login-less team row, which also
+    # 404s a party from another company, and make it a project member.
+    from app.routers.procurement import _company_team_id_for_party
+    team_id = _company_team_id_for_party(db, p.company_id, payload.party_id)
+    if not db.query(models.ProjectMember).filter(
+        models.ProjectMember.project_id == project_id,
+        models.ProjectMember.company_team_id == team_id,
+    ).first():
+        db.add(models.ProjectMember(project_id=project_id, company_team_id=team_id))
+    db.commit()
+
     existing = db.query(models.ProjectParty).filter(
         models.ProjectParty.project_id == project_id,
         models.ProjectParty.party_id == payload.party_id
@@ -711,6 +727,7 @@ def add_project_party(project_id: uuid.UUID, payload: ProjectPartyCreate, db: Se
         db.refresh(existing)
     return {
         "party_id": str(existing.party_id),
+        "company_team_id": str(team_id),
         "balance": float(existing.balance),
         "advance_paid": float(existing.advance_paid),
         "to_pay": float(existing.to_pay),
