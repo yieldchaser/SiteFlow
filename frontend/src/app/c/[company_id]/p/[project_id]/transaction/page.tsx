@@ -99,6 +99,7 @@ type PRequest = {
   id: string;
   project_id?: string | null;
   party_company_user_id: string;
+  party_name?: string | null;
   amount: number;
   details: string | null;
   status: string;
@@ -321,7 +322,7 @@ export default function TransactionPage() {
     for (const n of credits)
       rows.push({ id: n.id, date: n.created_at, type: "credit_note", party: memberName(n.party_company_user_id), amount: Number(n.total_amount) || 0, direction: "in", kind: "Credit Note", ref: n.reference_number || "—", status: "—" });
     for (const r of requests)
-      rows.push({ id: r.id, date: r.created_at, type: TAXONOMY.some((t) => t.key === r.request_type) ? r.request_type : "payment_request", party: memberName(r.party_company_user_id), amount: Number(r.amount) || 0, direction: "out", kind: "Payment Request", ref: "—", status: r.approval_status });
+      rows.push({ id: r.id, date: r.created_at, type: TAXONOMY.some((t) => t.key === r.request_type) ? r.request_type : "payment_request", party: r.party_name || memberName(r.party_company_user_id), amount: Number(r.amount) || 0, direction: "out", kind: "Payment Request", ref: "—", status: r.approval_status });
     // Recorded payments: they fed the cash tiles but were never listed.
     for (const r of feedRows) {
       if (r.type !== "Payment In" && r.type !== "Payment Out") continue;
