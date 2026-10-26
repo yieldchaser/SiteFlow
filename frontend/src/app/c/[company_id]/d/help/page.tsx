@@ -20,7 +20,7 @@ export default function HelpPage() {
   }, [companyId]);
 
   const [query, setQuery] = useState("");
-  const [openCats, setOpenCats] = useState<Record<string, boolean>>({});
+  const [openCats, setOpenCats] = useState<Record<string, boolean>>({ "start-here": true });
   const [openItems, setOpenItems] = useState<Record<string, boolean>>({});
 
   const categories: FaqCategory[] = useMemo(

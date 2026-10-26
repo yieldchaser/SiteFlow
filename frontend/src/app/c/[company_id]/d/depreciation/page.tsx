@@ -218,7 +218,7 @@ export default function DepreciationPage() {
                     <tr key={s.id} className="hover:bg-elevated transition-colors">
                       <td className="px-6 py-4">{formatLabel(s.method)}</td>
                       <td className="px-6 py-4">{s.useful_life_years}</td>
-                      <td className="px-6 py-4">₹{Number(s.salvage_value).toLocaleString()}</td>
+                      <td className="px-6 py-4">₹{Number(s.salvage_value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
                       <td className="px-6 py-4">{s.depreciation_pct}%</td>
                       <td className="px-6 py-4">{formatDate(s.start_date)}</td>
                       <td className="px-6 py-4">
@@ -264,9 +264,9 @@ export default function DepreciationPage() {
                   entries.map((e) => (
                     <tr key={e.id} className="hover:bg-elevated transition-colors">
                       <td className="px-6 py-4">{formatDate(e.entry_date)}</td>
-                      <td className="px-6 py-4">₹{Number(e.depreciation_amount).toLocaleString()}</td>
-                      <td className="px-6 py-4">₹{Number(e.accumulated_depreciation).toLocaleString()}</td>
-                      <td className="px-6 py-4">₹{Number(e.book_value).toLocaleString()}</td>
+                      <td className="px-6 py-4">₹{Number(e.depreciation_amount).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
+                      <td className="px-6 py-4">₹{Number(e.accumulated_depreciation).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
+                      <td className="px-6 py-4">₹{Number(e.book_value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
                       <td className="px-6 py-4 text-muted">{e.notes || "-"}</td>
                     </tr>
                   ))

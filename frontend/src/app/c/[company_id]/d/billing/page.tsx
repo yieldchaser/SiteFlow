@@ -1444,7 +1444,7 @@ export default function SubcontractorBillingPage() {
                 {newBillAdvanceRecovery > 0 && (
                   <div className="flex justify-between text-muted">
                     <span>Advance Recovery:</span>
-                    <span className="font-sans text-danger">-₹{newBillAdvanceRecovery.toLocaleString()}</span>
+                    <span className="font-sans text-danger">-₹{newBillAdvanceRecovery.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
                   </div>
                 )}
 

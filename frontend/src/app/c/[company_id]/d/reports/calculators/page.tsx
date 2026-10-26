@@ -1806,7 +1806,7 @@ export default function CalculatorsPage() {
                         Bricks Required
                       </span>
                       <strong className="text-3xl font-black text-success mt-1 block">
-                        {bricksNeeded.toLocaleString()} nos
+                        {bricksNeeded.toLocaleString("en-IN", { maximumFractionDigits: 2 })} nos
                       </strong>
                       <span className="text-[10px] text-muted block mt-1">
                         Includes {brickWastage}% cutting wastage buffer

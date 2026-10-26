@@ -3,6 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { type IconName } from "@/components/marketing/Icon";
+import { startHereCategory } from "./startHere";
 
 export interface FaqItem {
   q: string;
@@ -64,6 +65,7 @@ function c(companyId: string, path: string): string {
 
 export function getHelpCategories(companyId: string): HelpCategory[] {
   return [
+    startHereCategory(companyId),
     {
       id: "getting-started",
       title: "Getting Started",
@@ -210,23 +212,20 @@ export function getHelpCategories(companyId: string): HelpCategory[] {
           a: (
             <>
               <p>
-                You will need an active project selected and permission to edit budgets.
+                You will need a project open and permission to edit budgets.
               </p>
               <p className="mt-2">
-                Open the sidebar, select{" "}
-                <Link className="help-link" href={c(companyId, "/d/budget")}>
-                  "Budget"
+                Open the project from{" "}
+                <Link className="help-link" href={c(companyId, "/projects")}>
+                  "Projects"
                 </Link>
-                , and click the "Import Excel" button.
+                , go to its BOQ tab and press "+ BOQ". Give the BOQ a title and choose the client.
               </p>
               <p className="mt-2">
-                Provide an Excel spreadsheet with columns for item description, quantity, unit, and rate (or supply and installation rates), along with optional section names and cost codes.
+                Open the BOQ you created and use "Import Excel items into this BOQ" to upload a .xlsx or .xlsm sheet with columns for item description, quantity, unit and rate (or supply and installation rates), with optional section names and cost codes. You can also type lines one by one with "+ Add Item".
               </p>
               <p className="mt-2">
-                Uploading parses each row, checks cost codes against your library, and creates your bill of quantities line items.
-              </p>
-              <p className="mt-2">
-                From there you can link items directly to tasks in the Gantt chart or track execution progress against them.
+                The import checks each cost code against your library and tells you how many lines were imported and which were skipped.
               </p>
             </>
           ),

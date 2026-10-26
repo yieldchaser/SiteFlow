@@ -236,7 +236,7 @@ export default function PaymentApprovalPage() {
               <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end border-t border-border-custom md:border-t-0 pt-4 md:pt-0">
                 <div className="text-right">
                   <span className="text-[10px] font-semibold uppercase tracking-wider text-muted block">Requested Amount</span>
-                  <span className="text-lg font-semibold text-foreground">₹{r.amount.toLocaleString()}</span>
+                  <span className="text-lg font-semibold text-foreground">₹{r.amount.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
                 </div>
 
                 {r.status === "Pending" && (

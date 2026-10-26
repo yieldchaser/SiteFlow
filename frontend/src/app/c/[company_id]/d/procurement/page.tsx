@@ -1240,7 +1240,7 @@ export default function ProcurementPage() {
                 <div className="bg-input border border-border-custom rounded-md p-4">
                   <span className="text-[9px] uppercase text-muted tracking-wider block">Unbilled Value (est.)</span>
                   <strong className={`text-xl font-extrabold mt-1 block font-sans ${unbilledGRNs.length > 0 ? "text-warning" : "text-success"}`}>
-                    ₹{unbilledGRNs.reduce((s, g) => s + g.items.reduce((a, i) => a + i.qty * i.rate, 0), 0).toLocaleString()}
+                    ₹{unbilledGRNs.reduce((s, g) => s + g.items.reduce((a, i) => a + i.qty * i.rate, 0), 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                   </strong>
                 </div>
                 <div className="bg-input border border-border-custom rounded-md p-4">
@@ -1264,7 +1264,7 @@ export default function ProcurementPage() {
                       </div>
                       <div className="text-right">
                         <span className="text-[9px] text-muted block">Est. Unbilled Value</span>
-                        <strong className="text-sm font-extrabold text-warning font-sans">₹{group.totalValue.toLocaleString()}</strong>
+                        <strong className="text-sm font-extrabold text-warning font-sans">₹{group.totalValue.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</strong>
                       </div>
                     </div>
 
@@ -1294,7 +1294,7 @@ export default function ProcurementPage() {
                               <td className="px-5 py-3">
                                 {grn.items.map((item, i) => (
                                   <div key={i} className="text-muted">
-                                    {item.name}: <span className="font-sans font-bold">{item.qty} {item.unit}</span> @ ₹{item.rate.toLocaleString()}
+                                    {item.name}: <span className="font-sans font-bold">{item.qty} {item.unit}</span> @ ₹{item.rate.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                                   </div>
                                 ))}
                               </td>

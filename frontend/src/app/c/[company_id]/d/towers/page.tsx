@@ -148,7 +148,7 @@ export default function TowersPage() {
     setShowForm(true);
   };
 
-  const fmt = (v: number) => Number(v || 0).toLocaleString();
+  const fmt = (v: number) => Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden font-sans">

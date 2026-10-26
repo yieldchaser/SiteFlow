@@ -147,7 +147,7 @@ export default function FaceRecognitionPage() {
                 ) : (
                   logs.map((log) => (
                     <tr key={log.id} className="hover:bg-elevated transition-colors">
-                      <td className="px-6 py-4">{new Date(log.created_at).toLocaleString()}</td>
+                      <td className="px-6 py-4">{new Date(log.created_at).toLocaleString("en-IN")}</td>
                       <td className="px-6 py-4">{log.employee_id.slice(0, 8)}...</td>
                       <td className="px-6 py-4 capitalize">{log.punch_type}</td>
                       <td className="px-6 py-4">

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
 from app.database import get_db
 from app.auth import get_current_user, get_company_membership, require_permission
-from app.models import SafetyIncident, ToolboxTalk, PPECheck, Project, AttendanceLog, User
+from app.models import SafetyIncident, ToolboxTalk, PPECheck, Project, AttendanceLog, User, DailyProgressReport
 from app.routers.delete_logs import log_deletion
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
@@ -230,7 +230,19 @@ def get_safety_stats(
     # AttendanceLog data or the caller-supplied fallback (so the UI can show
     # "(estimated)" instead of presenting a fallback number as precise).
     manhours_from_attendance = bool(actual_hours and float(actual_hours) > 0)
-    manhours = float(actual_hours) if manhours_from_attendance else total_manhours
+    # Sites that log labour on the DPR rather than attendance still have a
+    # real headcount: workers deployed per day at an 8 hour shift.
+    dpr_worker_days = 0
+    if not manhours_from_attendance:
+        dpr_worker_days = db.query(sqlfunc.sum(DailyProgressReport.workers_deployed)).filter(
+            DailyProgressReport.project_id == proj_uuid
+        ).scalar() or 0
+    if manhours_from_attendance:
+        manhours, manhours_source = float(actual_hours), "attendance"
+    elif dpr_worker_days > 0:
+        manhours, manhours_source = float(dpr_worker_days) * 8.0, "dpr"
+    else:
+        manhours, manhours_source = total_manhours, "fallback"
 
     total_incidents = len(incidents)
     lti_incidents = [i for i in incidents if _is_lost_time_type(i.incident_type)]
@@ -260,7 +272,7 @@ def get_safety_stats(
         "type_breakdown": type_breakdown,
         "severity_breakdown": severity_breakdown,
         "total_manhours_used": manhours,
-        "manhours_source": "attendance" if manhours_from_attendance else "fallback",
+        "manhours_source": manhours_source,
     }
 
 

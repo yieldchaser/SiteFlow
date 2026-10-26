@@ -174,11 +174,11 @@ export default function WastagePage() {
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-muted">Quantity</span>
-                    <span className="text-foreground font-medium">{Number(r.quantity).toLocaleString()}</span>
+                    <span className="text-foreground font-medium">{Number(r.quantity).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted">Est. Value</span>
-                    <span className="text-foreground font-medium">₹{Number(r.estimated_value).toLocaleString()}</span>
+                    <span className="text-foreground font-medium">₹{Number(r.estimated_value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
                   </div>
                   {r.reason && (
                     <div>

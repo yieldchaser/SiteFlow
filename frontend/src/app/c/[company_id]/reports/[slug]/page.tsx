@@ -811,7 +811,7 @@ export default function DynamicReportViewPage() {
           </head>
           <body>
             <h2>${meta.title}</h2>
-            <p>Generated on: ${new Date().toLocaleString()}</p>
+            <p>Generated on: ${new Date().toLocaleString("en-IN")}</p>
             <table>
               <thead>
                 <tr>

@@ -918,9 +918,9 @@ export default function FinancePage() {
         const logs = await logRes.json();
         setTallySyncLogs(logs);
         const exportedTimes = (logs as any[]).filter((l) => l.exported_at).map((l) => new Date(l.exported_at).getTime());
-        if (exportedTimes.length > 0) setTallyLastExport(new Date(Math.max(...exportedTimes)).toLocaleString());
+        if (exportedTimes.length > 0) setTallyLastExport(new Date(Math.max(...exportedTimes)).toLocaleString("en-IN"));
         const markedTimes = (logs as any[]).filter((l) => l.marked_synced_at).map((l) => new Date(l.marked_synced_at).getTime());
-        if (markedTimes.length > 0) setTallyLastMarked(new Date(Math.max(...markedTimes)).toLocaleString());
+        if (markedTimes.length > 0) setTallyLastMarked(new Date(Math.max(...markedTimes)).toLocaleString("en-IN"));
       }
     } catch (e) {
       console.error("Failed to load Tally data", e);
@@ -1022,7 +1022,7 @@ export default function FinancePage() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      setTallyLastExport(new Date().toLocaleString());
+      setTallyLastExport(new Date().toLocaleString("en-IN"));
       setTallyMsg({ type: "ok", text: "Tally XML downloaded. Import it in Tally Prime, then mark as imported below." });
     } catch (e: any) {
       setTallyMsg({ type: "err", text: e?.message || "Export failed." });
@@ -1049,7 +1049,7 @@ export default function FinancePage() {
       });
       if (res.ok) {
         const data = await res.json();
-        setTallyLastMarked(new Date(data.marked_synced_at || Date.now()).toLocaleString());
+        setTallyLastMarked(new Date(data.marked_synced_at || Date.now()).toLocaleString("en-IN"));
         setTallyMsg({ type: "ok", text: `Marked ${data.marked_bills} bill(s) and ${data.marked_payments} payment(s) as synced.` });
         await fetchTallyData();
       } else {
@@ -2563,7 +2563,7 @@ export default function FinancePage() {
                     {tallySyncLogs.map((log) => (
                       <div key={log.id} className="flex items-center justify-between text-xs text-muted">
                         <span>Marked {log.voucher_count} voucher(s) synced</span>
-                        <span>{log.marked_synced_at ? new Date(log.marked_synced_at).toLocaleString() : "—"}</span>
+                        <span>{log.marked_synced_at ? new Date(log.marked_synced_at).toLocaleString("en-IN") : "—"}</span>
                       </div>
                     ))}
                   </div>
@@ -2618,10 +2618,10 @@ export default function FinancePage() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   {[
-                    { label: "Total Budget", value: `₹${totalBudget.toLocaleString()}`, color: "text-foreground" },
-                    { label: "Actual Spend", value: `₹${totalActual.toLocaleString()}`, color: "text-primary" },
-                    { label: "Variance", value: `₹${totalVariance.toLocaleString()}`, color: totalVariance >= 0 ? "text-success" : "text-danger" },
-                    { label: "EAC (at 60%)", value: `₹${Math.round(totalEAC).toLocaleString()}`, color: totalEAC > totalBudget ? "text-danger" : "text-success" },
+                    { label: "Total Budget", value: `₹${totalBudget.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`, color: "text-foreground" },
+                    { label: "Actual Spend", value: `₹${totalActual.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`, color: "text-primary" },
+                    { label: "Variance", value: `₹${totalVariance.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`, color: totalVariance >= 0 ? "text-success" : "text-danger" },
+                    { label: "EAC (at 60%)", value: `₹${Math.round(totalEAC).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`, color: totalEAC > totalBudget ? "text-danger" : "text-success" },
                   ].map(kpi => (
                     <div key={kpi.label} className="bg-input border border-border-custom rounded-md p-4">
                       <span className="text-[9px] uppercase text-muted tracking-wider block">{kpi.label}</span>
@@ -2654,16 +2654,16 @@ export default function FinancePage() {
                           <tr key={row.code} className={`border-b border-white/[0.03] hover:bg-elevated transition-all ${isOver ? "bg-danger/[0.02]" : ""}`}>
                             <td className="px-5 py-3 font-sans text-muted">{row.code}</td>
                             <td className="px-5 py-3 font-semibold text-foreground">{row.head}</td>
-                            <td className="px-5 py-3 text-right font-sans text-muted">₹{row.budget.toLocaleString()}</td>
-                            <td className="px-5 py-3 text-right font-sans font-bold text-foreground">₹{row.actual.toLocaleString()}</td>
+                            <td className="px-5 py-3 text-right font-sans text-muted">₹{row.budget.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
+                            <td className="px-5 py-3 text-right font-sans font-bold text-foreground">₹{row.actual.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
                             <td className={`px-5 py-3 text-right font-sans font-bold ${isOver ? "text-danger" : "text-success"}`}>
-                              {row.variance >= 0 ? "+" : ""}₹{row.variance.toLocaleString()}
+                              {row.variance >= 0 ? "+" : ""}₹{row.variance.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                             </td>
                             <td className={`px-5 py-3 text-right font-sans ${isOver ? "text-danger" : isWarn ? "text-warning" : "text-success"}`}>
                               {row.variancePct.toFixed(1)}%
                             </td>
                             <td className={`px-5 py-3 text-right font-sans ${row.eac > row.budget ? "text-danger" : "text-muted"}`}>
-                              ₹{Math.round(row.eac).toLocaleString()}
+                              ₹{Math.round(row.eac).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                             </td>
                             <td className="px-5 py-3 text-center">
                               <Badge tone={statusTone} className="font-bold">{statusLabel}</Badge>
@@ -3372,7 +3372,7 @@ export default function FinancePage() {
                               <span className="font-semibold text-foreground block">{item.name}</span>
                               <span className="text-[10px] text-muted">{item.qty} {item.unit} × ₹{item.rate}</span>
                             </div>
-                            <span className="font-sans text-foreground font-bold">₹{(item.qty * item.rate).toLocaleString()}</span>
+                            <span className="font-sans text-foreground font-bold">₹{(item.qty * item.rate).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
                           </div>
                         ))}
                       </div>
@@ -3382,11 +3382,11 @@ export default function FinancePage() {
                   <div className="space-y-2 border-t border-border-custom/50 pt-3 font-sans">
                     <div className="flex justify-between">
                       <span className="text-muted">Item Subtotal</span>
-                      <span className="font-sans text-foreground">₹{Number(amount || 0).toLocaleString()}</span>
+                      <span className="font-sans text-foreground">₹{Number(amount || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted">Tax (GST {gstPercent}%)</span>
-                      <span className="font-sans text-foreground">₹{(Number(amount || 0) * (Number(gstPercent) / 100)).toLocaleString()}</span>
+                      <span className="font-sans text-foreground">₹{(Number(amount || 0) * (Number(gstPercent) / 100)).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
                     </div>
                   </div>
 
@@ -3772,7 +3772,7 @@ export default function FinancePage() {
 
                   <div className="bg-elevated/20 border border-border-custom p-4 rounded-xl flex justify-between items-center">
                     <span className="text-[10px] text-muted uppercase font-bold">Total Amount</span>
-                    <strong className="text-foreground text-base font-sans">₹{Number(amount || 0).toLocaleString()}</strong>
+                    <strong className="text-foreground text-base font-sans">₹{Number(amount || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</strong>
                   </div>
 
                   <div className="flex gap-4">

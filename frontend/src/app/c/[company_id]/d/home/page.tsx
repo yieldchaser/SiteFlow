@@ -158,45 +158,31 @@ export default function ProjectsHomePage() {
     try {
       const authHeaders = { "Authorization": `Bearer ${accessToken}` };
 
-      // 1. Projects
-      const planningProjectsRes = await fetch(`${apiHost}/apis/v3/planning/projects?company_id=${companyId}`, {
-        headers: authHeaders
-      });
+      // The five lists are independent; fetch them together so the hub fills
+      // in one round trip instead of five sequential ones.
+      const [planningProjectsRes, paymentsRes, todoRes, indentsRes, leavesRes] = await Promise.all([
+        fetch(`${apiHost}/apis/v3/planning/projects?company_id=${companyId}`, { headers: authHeaders }),
+        fetch(`${apiHost}/apis/v3/finance/payment-requests/${companyId}`, { headers: authHeaders }),
+        fetch(`${apiHost}/apis/v3/todos/company/${companyId}`, { headers: authHeaders }),
+        fetch(`${apiHost}/apis/v3/procurement/indents?company_id=${companyId}`, { headers: authHeaders }),
+        fetch(`${apiHost}/apis/v3/hr/leaves/${companyId}`, { headers: authHeaders }),
+      ]);
+
       if (planningProjectsRes.ok) {
         setProjects(extractProjects(await planningProjectsRes.json()));
       }
-
-      // 2. Payments / Approvals
-      const paymentsRes = await fetch(`${apiHost}/apis/v3/finance/payment-requests/${companyId}`, {
-        headers: authHeaders
-      });
       if (paymentsRes.ok) {
-        const data = await paymentsRes.json();
-        setPaymentRequests(data);
+        setPaymentRequests(await paymentsRes.json());
       }
-
-      const todoRes = await fetch(`${apiHost}/apis/v3/todos/company/${companyId}`, { headers: authHeaders });
       if (todoRes.ok) {
         const todos = await todoRes.json();
         setTodoCount((todos as any[]).filter((t) => t.status === "pending").length);
       }
-
-      // 3. Indents
-      const indentsRes = await fetch(`${apiHost}/apis/v3/procurement/indents?company_id=${companyId}`, {
-        headers: authHeaders
-      });
       if (indentsRes.ok) {
-        const data = await indentsRes.json();
-        setIndents(data);
+        setIndents(await indentsRes.json());
       }
-
-      // 4. Leaves
-      const leavesRes = await fetch(`${apiHost}/apis/v3/hr/leaves/${companyId}`, {
-        headers: authHeaders
-      });
       if (leavesRes.ok) {
-        const data = await leavesRes.json();
-        setLeaves(data);
+        setLeaves(await leavesRes.json());
       }
     } catch (err) {
       console.error("Error fetching projects dashboard data:", err);
@@ -554,8 +540,8 @@ export default function ProjectsHomePage() {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <div className="text-success font-semibold text-sm">₹{(p.cashflow_in || 0).toLocaleString()}</div>
-                      <div className="text-danger font-medium text-xs mt-0.5">₹{(p.cashflow_out || 0).toLocaleString()}</div>
+                      <div className="text-success font-semibold text-sm">₹{(p.cashflow_in || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</div>
+                      <div className="text-danger font-medium text-xs mt-0.5">₹{(p.cashflow_out || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</div>
                     </td>
                     <td className="px-6 py-4 text-center">
                       <div className="flex items-center justify-center gap-2">

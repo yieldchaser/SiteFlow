@@ -258,7 +258,7 @@ export default function DeleteLogsPage() {
               logs.map((log) => (
                 <tr key={log.id} className="border-t border-border-custom hover:bg-elevated">
                   <td className="px-4 py-3 text-muted">
-                    {log.deleted_at ? new Date(log.deleted_at).toLocaleString() : "-"}
+                    {log.deleted_at ? new Date(log.deleted_at).toLocaleString("en-IN") : "-"}
                   </td>
                   <td className="px-4 py-3">
                     <Badge tone="primary">{formatEntityType(log.entity_type)}</Badge>

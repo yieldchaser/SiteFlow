@@ -571,3 +571,34 @@ def test_sales_deduction_report_names_the_client_and_skips_subcontract_bills(
     rows = _rep_sales_deduction_retention(db, comp.id, project.id)
     assert [r["Invoice Number"] for r in rows] == [f"sale-{sfx}"], rows
     assert rows[0]["Party Name"] == "Kolte Patil", rows
+
+
+def test_ltif_uses_dpr_headcount_when_no_attendance_is_tagged(client, db, make_tenant, auth_headers):
+    """Observed: the safety stats page computed LTIF on a made-up 50,000
+    manhours for a project with fifteen DPRs, because its attendance logs were
+    not tagged to the project. Workers deployed on the DPR are a real headcount."""
+    from datetime import datetime
+    from app import models
+
+    sfx = _uuid.uuid4().hex[:8]
+    comp, user, _team = make_tenant(
+        company_name=f"Ltif-{sfx}", user_name=f"ULtif-{sfx}",
+        mobile=f"+9196{sfx}", email=f"ltif-{sfx}@test.com",
+    )
+    hdr = auth_headers(user, comp)
+    project = models.Project(id=_uuid.uuid4(), company_id=comp.id, name="LTIF Site", state="Maharashtra")
+    db.add(project)
+    db.add_all([
+        models.DailyProgressReport(
+            project_id=project.id, reported_by=str(user.id), dpr_date=datetime(2026, 10, d),
+            weather="Clear", executed_qty=10, workers_deployed=50, materials_consumed=[], photos=[],
+        )
+        for d in (12, 13)
+    ])
+    db.commit()
+
+    r = client.get(f"/apis/v3/safety/stats/{project.id}?total_manhours=50000", headers=hdr)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["total_manhours_used"] == 800.0
+    assert body["manhours_source"] == "dpr"

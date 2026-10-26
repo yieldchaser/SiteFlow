@@ -43,7 +43,7 @@ interface SafetyStats {
   total_manhours_used?: number;
   type_breakdown: Record<string, number>;
   severity_breakdown: Record<string, number>;
-  manhours_source?: "attendance" | "fallback";
+  manhours_source?: "attendance" | "dpr" | "fallback";
 }
 
 interface ToolboxTalk {
@@ -527,7 +527,11 @@ export default function SafetyPage() {
                   Worked · Calculated on{" "}
                   {stats.total_manhours_used ? stats.total_manhours_used.toLocaleString("en-IN") : "50,000"} manhours
                   basis
-                  {stats.manhours_source === "fallback" ? " (estimated: no attendance data)" : ""}.
+                  {stats.manhours_source === "dpr"
+                    ? " (from workers on the daily progress reports at 8 hours a day)"
+                    : stats.manhours_source === "fallback"
+                      ? " (estimated: no attendance or DPR labour recorded)"
+                      : ""}.
                 </span>
               </div>
             </>

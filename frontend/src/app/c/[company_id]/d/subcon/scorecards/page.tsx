@@ -86,7 +86,7 @@ export default function SubconScorecardsPage() {
   }, [projectId]);
 
   const fmt = (v: number) => v.toFixed(1) + "%";
-  const fmtMoney = (v: number) => "₹" + Number(v).toLocaleString();
+  const fmtMoney = (v: number) => "₹" + Number(v).toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden font-sans">

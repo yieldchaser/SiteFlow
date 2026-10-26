@@ -114,7 +114,7 @@ export default function BudgetPage() {
     }
   };
 
-  const fmt = (v: number) => Number(v || 0).toLocaleString();
+  const fmt = (v: number) => Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
   const pct = (used: number, total: number) => total > 0 ? ((used / total) * 100).toFixed(1) : "0.0";
 
   const noBudget = budget ? (budget.total_budget || 0) <= 0 : false;

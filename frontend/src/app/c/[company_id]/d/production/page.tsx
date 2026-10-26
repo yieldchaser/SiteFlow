@@ -543,7 +543,7 @@ export default function ProductionPage() {
                               </Badge>
                             )}
                           </div>
-                          <div className="mt-1 text-[10px] text-muted">{batch.started_at ? new Date(batch.started_at).toLocaleString() : "No start time"}</div>
+                          <div className="mt-1 text-[10px] text-muted">{batch.started_at ? new Date(batch.started_at).toLocaleString("en-IN") : "No start time"}</div>
                         </td>
                         <td className="px-4 py-3 text-muted">
                           <div className="font-semibold text-foreground">{batch.product_name}</div>

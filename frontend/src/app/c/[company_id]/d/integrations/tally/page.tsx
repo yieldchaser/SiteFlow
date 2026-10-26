@@ -531,7 +531,7 @@ export default function TallyIntegrationPage() {
                             </Badge>
                           </td>
                           <td className="px-4 py-3 text-muted">
-                            {ag.created_at ? new Date(ag.created_at).toLocaleString() : "—"}
+                            {ag.created_at ? new Date(ag.created_at).toLocaleString("en-IN") : "—"}
                           </td>
                           <td className="px-4 py-3 text-center">
                             <button
@@ -839,8 +839,8 @@ export default function TallyIntegrationPage() {
                         <tr key={log.id} className="hover:bg-elevated/40">
                           <td className="px-4 py-2 font-semibold text-foreground">Batch Voucher Sync</td>
                           <td className="px-4 py-2 text-right font-sans font-bold text-primary">{log.voucher_count}</td>
-                          <td className="px-4 py-2 text-muted">{log.marked_synced_at ? new Date(log.marked_synced_at).toLocaleString() : "—"}</td>
-                          <td className="px-4 py-2 text-muted">{log.created_at ? new Date(log.created_at).toLocaleString() : "—"}</td>
+                          <td className="px-4 py-2 text-muted">{log.marked_synced_at ? new Date(log.marked_synced_at).toLocaleString("en-IN") : "—"}</td>
+                          <td className="px-4 py-2 text-muted">{log.created_at ? new Date(log.created_at).toLocaleString("en-IN") : "—"}</td>
                         </tr>
                       ))}
                     </tbody>

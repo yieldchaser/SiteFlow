@@ -1201,16 +1201,16 @@ export default function LibraryHubPage() {
                         <td className="px-6 py-4 text-right text-muted font-semibold">
                           {item.unit_cost === null || item.unit_cost === undefined || item.unit_cost === ""
                             ? "-"
-                            : floatVal(item.unit_cost).toLocaleString()}
+                            : floatVal(item.unit_cost).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                         </td>
                         <td className="px-6 py-4 text-right text-muted">
-                          {hasMarkupValue ? floatVal(item.markup_value).toLocaleString() : "-"}
+                          {hasMarkupValue ? floatVal(item.markup_value).toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "-"}
                         </td>
                         <td className="px-6 py-4 text-right text-muted">{formatLibraryCell(item.markup_type)}</td>
                         <td className="px-6 py-4 text-right text-sm font-bold text-success">
                           {item.unit_sale_price === null || item.unit_sale_price === undefined || item.unit_sale_price === ""
                             ? "-"
-                            : floatVal(item.unit_sale_price).toLocaleString()}
+                            : floatVal(item.unit_sale_price).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                         </td>
                         <td className="px-6 py-4 text-muted">
                           {formatDate(item.created_at, "-")}
@@ -1247,11 +1247,11 @@ export default function LibraryHubPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-card border-b border-border-custom">
                   <div className="p-3 bg-elevated rounded-md border border-border-custom">
                     <span className="text-[10px] uppercase font-bold text-muted block">Total Advance Paid</span>
-                    <span className="text-sm font-bold text-foreground font-sans">₹{partyBalancesSummary.advance_paid.toLocaleString()}</span>
+                    <span className="text-sm font-bold text-foreground font-sans">₹{partyBalancesSummary.advance_paid.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
                   </div>
                   <div className="p-3 bg-elevated rounded-md border border-border-custom">
                     <span className="text-[10px] uppercase font-bold text-muted block">Total To Pay</span>
-                    <span className="text-sm font-bold text-foreground font-sans">₹{partyBalancesSummary.to_pay.toLocaleString()}</span>
+                    <span className="text-sm font-bold text-foreground font-sans">₹{partyBalancesSummary.to_pay.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
                   </div>
                 </div>
               )}
@@ -1289,7 +1289,7 @@ export default function LibraryHubPage() {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-right font-bold text-foreground font-sans">
-                          ₹{(item.opening_balance || 0).toLocaleString()}
+                          ₹{(item.opening_balance || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                         </td>
                         <td className="px-5 py-3">
                           <Badge

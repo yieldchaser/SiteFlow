@@ -212,7 +212,7 @@ export default function ClientReportsPage() {
                   <div>
                     <h2 className="text-sm font-bold text-foreground">{selectedReport.report_name}</h2>
                     <p className="text-[10px] text-muted mt-0.5">
-                      Created: {new Date(selectedReport.report_date).toLocaleString()}
+                      Created: {new Date(selectedReport.report_date).toLocaleString("en-IN")}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">

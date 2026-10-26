@@ -580,13 +580,13 @@ export default function RFQPage() {
                                 {row.quantity} {row.unit}
                               </td>
                               <td className="px-4 py-3 text-right font-medium text-foreground">
-                                {row.lowest_rate != null ? `₹${row.lowest_rate.toLocaleString()}` : "—"}
+                                {row.lowest_rate != null ? `₹${row.lowest_rate.toLocaleString("en-IN", { maximumFractionDigits: 2 })}` : "—"}
                               </td>
                               <td className="px-4 py-3 text-right font-medium text-foreground">
-                                {row.highest_rate != null ? `₹${row.highest_rate.toLocaleString()}` : "—"}
+                                {row.highest_rate != null ? `₹${row.highest_rate.toLocaleString("en-IN", { maximumFractionDigits: 2 })}` : "—"}
                               </td>
                               <td className="px-4 py-3 text-right text-muted">
-                                {row.price_spread != null ? `₹${row.price_spread.toLocaleString()}` : "—"}
+                                {row.price_spread != null ? `₹${row.price_spread.toLocaleString("en-IN", { maximumFractionDigits: 2 })}` : "—"}
                               </td>
                               <td className="px-4 py-3">
                                 {row.recommended_vendor_name ? (
@@ -616,7 +616,7 @@ export default function RFQPage() {
                                           quote.is_lowest ? "text-success font-extrabold" : "text-foreground"
                                         }`}
                                       >
-                                        ₹{quote.quoted_rate.toLocaleString()}
+                                        ₹{quote.quoted_rate.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                                       </span>
                                       {quote.delivery_days && (
                                         <span className="text-[10px] text-muted">
@@ -625,7 +625,7 @@ export default function RFQPage() {
                                       )}
                                       {quote.extended_total && (
                                         <span className="text-[9px] text-muted">
-                                          Total: ₹{quote.extended_total.toLocaleString()}
+                                          Total: ₹{quote.extended_total.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                                         </span>
                                       )}
                                     </div>

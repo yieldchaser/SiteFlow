@@ -572,7 +572,7 @@ export default function EquipmentTrackingPage() {
                         { label: "Total Runs", value: completedRuns.length, color: "text-foreground" },
                         { label: "Total Hours", value: completedRuns.reduce((s,r) => s + r.durationHrs, 0).toFixed(1) + " hr", color: "text-primary" },
                         { label: "Total Fuel Used", value: completedRuns.reduce((s,r) => s + r.fuelForRun, 0).toFixed(0) + " L", color: "text-warning" },
-                        { label: "Est. Machine Cost", value: "₹" + completedRuns.reduce((s,r) => s + (r.costForRun || 0), 0).toLocaleString(), color: "text-success" },
+                        { label: "Est. Machine Cost", value: "₹" + completedRuns.reduce((s,r) => s + (r.costForRun || 0), 0).toLocaleString("en-IN", { maximumFractionDigits: 2 }), color: "text-success" },
                       ].map(kpi => (
                         <div key={kpi.label} className="bg-input border border-border-custom rounded-md p-4">
                           <span className="text-[9px] uppercase text-muted tracking-wider block">{kpi.label}</span>
@@ -634,7 +634,7 @@ export default function EquipmentTrackingPage() {
                                   : <span className="text-muted">—</span>}
                               </td>
                               <td className="px-5 py-3 text-right font-sans font-bold text-foreground">
-                                {run.costForRun != null ? `₹${run.costForRun.toLocaleString()}` : <span className="text-muted">—</span>}
+                                {run.costForRun != null ? `₹${run.costForRun.toLocaleString("en-IN", { maximumFractionDigits: 2 })}` : <span className="text-muted">—</span>}
                               </td>
                             </tr>
                           ))}
@@ -690,7 +690,7 @@ export default function EquipmentTrackingPage() {
                                 {formatDate(log.completed_date)}
                               </td>
                               <td className="px-5 py-3 text-right font-sans font-bold text-foreground">
-                                {log.cost > 0 ? `₹${log.cost.toLocaleString()}` : <span className="text-muted">—</span>}
+                                {log.cost > 0 ? `₹${log.cost.toLocaleString("en-IN", { maximumFractionDigits: 2 })}` : <span className="text-muted">—</span>}
                               </td>
                               <td className="px-5 py-3 text-center">
                                 <span className={`text-[9px] font-bold px-2 py-0.5 rounded border ${

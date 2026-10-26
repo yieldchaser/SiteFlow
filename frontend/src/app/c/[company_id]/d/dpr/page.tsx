@@ -58,6 +58,7 @@ interface DPRLog {
   weather: string;
   executed_qty: number;
   workers_deployed: number;
+  task_id?: string | null;
   materials_consumed?: { material_name: string; quantity: number; unit: string }[];
   notes: string;
   issues: string;
@@ -96,6 +97,9 @@ export default function DPRPage() {
     material_used_today: 0
   });
   const [logs, setLogs] = useState<DPRLog[]>([]);
+  // The feed shows its empty state only once the list has actually come back;
+  // a cold API can take most of a minute and "no reports" would be untrue.
+  const [logsLoaded, setLogsLoaded] = useState(false);
 
   // Modal open states
   const [isCreateDPROpen, setIsCreateDPROpen] = useState(false);
@@ -179,11 +183,14 @@ export default function DPRPage() {
       }
     } catch (e) {
       console.error(e);
+    } finally {
+      setLogsLoaded(true);
     }
   };
 
   useEffect(() => {
     if (projectId) {
+      setLogsLoaded(false);
       fetchTasks();
       fetchDPRSummary();
       fetchDPRLogs();
@@ -267,9 +274,9 @@ export default function DPRPage() {
           {/* Dashboard Quick Stats Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { label: "Site Staff Present", value: summary.total_workers_deployed || "—", desc: "Clocked via geofence", color: "border-primary/20 bg-primary/5 text-primary" },
-              { label: "Equipment Used", value: logs.length > 0 ? `${logs.length} Reports` : "0 Active", desc: "DPR reports logged", color: "border-secondary/20 bg-secondary/5 text-secondary" },
-              { label: "Material Received", value: (summary.material_received_today || 0) > 0 ? `${fmtQty(summary.material_received_today)} Units` : "No GRNs today", desc: "Material inward logged", color: "border-warning/20 bg-warning/5 text-warning" },
+              { label: "Workers on Latest DPR", value: logs.length > 0 ? fmtQty(logs[0].workers_deployed) : "—", desc: logs.length > 0 ? `As reported on ${formatDate(logs[0].dpr_date)}` : "No DPR yet", color: "border-primary/20 bg-primary/5 text-primary" },
+              { label: "DPRs Logged", value: summary.activities_tracked || 0, desc: `${summary.issues_flagged || 0} with an issue flagged`, color: "border-secondary/20 bg-secondary/5 text-secondary" },
+              { label: "Material Received Today", value: (summary.material_received_today || 0) > 0 ? `${fmtQty(summary.material_received_today)} Units` : "No GRNs today", desc: "Material inward logged", color: "border-warning/20 bg-warning/5 text-warning" },
               { label: "Material Used Today", value: (summary.material_used_today || 0) > 0 ? `${fmtQty(summary.material_used_today)} Units` : "No consumption logged", desc: "On-site consumption", color: "border-primary/20 bg-primary/5 text-primary" }
             ].map((card, idx) => (
               <div key={idx} className={`p-4 rounded-lg border ${card.color} flex flex-col justify-between h-28`}>
@@ -286,7 +293,13 @@ export default function DPRPage() {
           <div className="bg-card border border-border-custom rounded-lg p-6 space-y-4">
             <h3 className="text-xs font-bold text-muted uppercase tracking-wider">Chronological DPR Activity Feed</h3>
             <div className="space-y-4">
-              {logs.length === 0 ? (
+              {!logsLoaded && projectId ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-20 w-full" />
+                  <Skeleton className="h-20 w-full" />
+                  <Skeleton className="h-20 w-full" />
+                </div>
+              ) : logs.length === 0 ? (
                 <EmptyState
                   icon="task_alt"
                   title="No daily progress logs reported"
@@ -305,7 +318,12 @@ export default function DPRPage() {
                       <span>Weather: <strong className="text-muted">{log.weather}</strong> · {formatDate(log.dpr_date)}</span>
                     </div>
                     <div className="border-l-2 border-border-custom pl-3 my-2 space-y-1">
-                      <p className="text-foreground text-xs font-semibold">Qty Executed: {fmtQty(log.executed_qty)}</p>
+                      {log.task_id && tasks.find((t) => t.id === log.task_id) && (
+                        <p className="text-foreground text-xs font-bold">{tasks.find((t) => t.id === log.task_id)?.name}</p>
+                      )}
+                      <p className="text-foreground text-xs font-semibold">
+                        Qty Executed: {fmtQty(log.executed_qty)} · Workers: {fmtQty(log.workers_deployed)}
+                      </p>
                       {log.materials_consumed && log.materials_consumed.length > 0 && (
                         <div className="flex flex-wrap gap-1.5 pt-1">
                           {log.materials_consumed.map((m, mi) => (

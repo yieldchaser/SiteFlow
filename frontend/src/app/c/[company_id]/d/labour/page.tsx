@@ -245,8 +245,8 @@ export default function LabourPage() {
                         <td className="px-5 py-3.5 text-foreground font-semibold">{r.contractor_name}</td>
                         <td className="px-5 py-3.5 text-muted">{r.month_year}</td>
                         <td className="px-5 py-3.5 text-right font-sans">{r.workers_count}</td>
-                        <td className="px-5 py-3.5 text-right font-sans">₹{r.wages_paid.toLocaleString()}</td>
-                        <td className="px-5 py-3.5 text-right font-sans">₹{r.contribution_amount.toLocaleString()}</td>
+                        <td className="px-5 py-3.5 text-right font-sans">₹{r.wages_paid.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
+                        <td className="px-5 py-3.5 text-right font-sans">₹{r.contribution_amount.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
                         <td className="px-5 py-3.5 text-muted">{r.acknowledgement_number || "—"}</td>
                       </tr>
                     ))}

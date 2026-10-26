@@ -590,7 +590,7 @@ export default function BoqTab() {
                                 <button type="button" onClick={() => { setShowInlineRow(false); setInlineError(null); resetInlineDraft(); }} className="px-3 py-1.5 bg-elevated border border-border-custom text-muted text-xs rounded-lg">
                                   Cancel
                                 </button>
-                                <span className="text-[10px] text-muted">Upload your BOQ spreadsheet (.xlsx or .csv) using the form below.</span>
+                                <span className="text-[10px] text-muted">Upload your BOQ spreadsheet (.xlsx or .xlsm) using the form below.</span>
                               </div>
                             </div>
                           )}

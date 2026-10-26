@@ -718,11 +718,11 @@ export default function StatutoryPage() {
                       </div>
                       <div>
                         <span className="text-muted block text-[10px] uppercase font-bold">Taxable Value</span>
-                        <span className="font-bold text-foreground">₹{gstr1Result.total_taxable_value.toLocaleString()}</span>
+                        <span className="font-bold text-foreground">₹{gstr1Result.total_taxable_value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
                       </div>
                       <div>
                         <span className="text-muted block text-[10px] uppercase font-bold">Total GST Liability</span>
-                        <span className="font-bold text-primary font-sans">₹{gstr1Result.total_gst.toLocaleString()}</span>
+                        <span className="font-bold text-primary font-sans">₹{gstr1Result.total_gst.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
                       </div>
                     </div>
 
@@ -757,11 +757,11 @@ export default function StatutoryPage() {
                             <td className="px-4 py-2.5 text-muted">{r.invoice_date}</td>
                             <td className="px-4 py-2.5 text-foreground">{r.party_name || "—"}</td>
                             <td className="px-4 py-2.5 text-muted font-mono text-[11px]">{r.party_gstin || "—"}</td>
-                            <td className="px-4 py-2.5 text-right font-medium text-foreground">₹{r.taxable_value.toLocaleString()}</td>
-                            <td className="px-4 py-2.5 text-right text-muted">₹{r.cgst.toLocaleString()}</td>
-                            <td className="px-4 py-2.5 text-right text-muted">₹{r.sgst.toLocaleString()}</td>
-                            <td className="px-4 py-2.5 text-right text-muted">₹{r.igst.toLocaleString()}</td>
-                            <td className="px-4 py-2.5 text-right font-bold text-foreground">₹{r.gst_amount.toLocaleString()}</td>
+                            <td className="px-4 py-2.5 text-right font-medium text-foreground">₹{r.taxable_value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
+                            <td className="px-4 py-2.5 text-right text-muted">₹{r.cgst.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
+                            <td className="px-4 py-2.5 text-right text-muted">₹{r.sgst.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
+                            <td className="px-4 py-2.5 text-right text-muted">₹{r.igst.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
+                            <td className="px-4 py-2.5 text-right font-bold text-foreground">₹{r.gst_amount.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
                           </tr>
                         ))}
                         {gstr1Result.records.length === 0 && (
@@ -793,12 +793,12 @@ export default function StatutoryPage() {
                       <div>
                         <span className="text-muted block text-[10px] uppercase font-bold">EE + ER PF</span>
                         <span className="font-bold text-foreground">
-                          ₹{pfEcrResult.total_ee_pf.toLocaleString()} / ₹{pfEcrResult.total_er_pf.toLocaleString()}
+                          ₹{pfEcrResult.total_ee_pf.toLocaleString("en-IN", { maximumFractionDigits: 2 })} / ₹{pfEcrResult.total_er_pf.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                         </span>
                       </div>
                       <div>
                         <span className="text-muted block text-[10px] uppercase font-bold">Total Liability</span>
-                        <span className="font-bold text-primary font-sans">₹{pfEcrResult.total_pf_liability.toLocaleString()}</span>
+                        <span className="font-bold text-primary font-sans">₹{pfEcrResult.total_pf_liability.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
                       </div>
                     </div>
 
@@ -831,11 +831,11 @@ export default function StatutoryPage() {
                             <td className="px-4 py-2.5 font-mono text-[11px] text-foreground">{r.uan || "—"}</td>
                             <td className="px-4 py-2.5 text-muted">{r.employee_code}</td>
                             <td className="px-4 py-2.5 font-medium text-foreground">{r.name}</td>
-                            <td className="px-4 py-2.5 text-right font-medium text-foreground">₹{r.pf_wages.toLocaleString()}</td>
-                            <td className="px-4 py-2.5 text-right text-muted">₹{r.ee_pf_contribution.toLocaleString()}</td>
-                            <td className="px-4 py-2.5 text-right text-muted">₹{r.eps_contribution.toLocaleString()}</td>
-                            <td className="px-4 py-2.5 text-right text-muted">₹{r.epf_contribution.toLocaleString()}</td>
-                            <td className="px-4 py-2.5 text-right font-bold text-foreground">₹{r.total_pf.toLocaleString()}</td>
+                            <td className="px-4 py-2.5 text-right font-medium text-foreground">₹{r.pf_wages.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
+                            <td className="px-4 py-2.5 text-right text-muted">₹{r.ee_pf_contribution.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
+                            <td className="px-4 py-2.5 text-right text-muted">₹{r.eps_contribution.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
+                            <td className="px-4 py-2.5 text-right text-muted">₹{r.epf_contribution.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
+                            <td className="px-4 py-2.5 text-right font-bold text-foreground">₹{r.total_pf.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
                           </tr>
                         ))}
                         {pfEcrResult.ecr_lines.length === 0 && (
@@ -870,7 +870,7 @@ export default function StatutoryPage() {
                       </div>
                       <div>
                         <span className="text-muted block text-[10px] uppercase font-bold">Total TDS Withheld</span>
-                        <span className="font-bold text-primary font-sans">₹{tdsResult.total_tds_liability.toLocaleString()}</span>
+                        <span className="font-bold text-primary font-sans">₹{tdsResult.total_tds_liability.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
                       </div>
                     </div>
 
@@ -907,8 +907,8 @@ export default function StatutoryPage() {
                                 {r.tds_section}
                               </Badge>
                             </td>
-                            <td className="px-4 py-2.5 text-right font-medium text-foreground">₹{r.gross_payment.toLocaleString()}</td>
-                            <td className="px-4 py-2.5 text-right font-bold text-foreground">₹{r.tds_deducted.toLocaleString()}</td>
+                            <td className="px-4 py-2.5 text-right font-medium text-foreground">₹{r.gross_payment.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
+                            <td className="px-4 py-2.5 text-right font-bold text-foreground">₹{r.tds_deducted.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
                             <td className="px-4 py-2.5 text-muted">{r.deduction_date}</td>
                           </tr>
                         ))}
@@ -989,19 +989,19 @@ export default function StatutoryPage() {
                           <td className="px-4 py-3 text-muted">{r.return_period}</td>
                           <td className="px-4 py-3 text-foreground">{r.total_employees}</td>
                           <td className="px-4 py-3 text-right font-medium text-foreground">
-                            ₹{Number(r.total_wages).toLocaleString()}
+                            ₹{Number(r.total_wages).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                           </td>
                           <td className="px-4 py-3 text-right text-muted">
-                            ₹{Number(r.pf_employee_contribution).toLocaleString()} / ₹{Number(r.pf_employer_contribution).toLocaleString()}
+                            ₹{Number(r.pf_employee_contribution).toLocaleString("en-IN", { maximumFractionDigits: 2 })} / ₹{Number(r.pf_employer_contribution).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                           </td>
                           <td className="px-4 py-3 text-right text-muted">
-                            ₹{Number(r.esi_employee_contribution).toLocaleString()} / ₹{Number(r.esi_employer_contribution).toLocaleString()}
+                            ₹{Number(r.esi_employee_contribution).toLocaleString("en-IN", { maximumFractionDigits: 2 })} / ₹{Number(r.esi_employer_contribution).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                           </td>
                           <td className="px-4 py-3 text-right font-medium text-foreground">
-                            ₹{Number(r.bocw_cess).toLocaleString()}
+                            ₹{Number(r.bocw_cess).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                           </td>
                           <td className="px-4 py-3 text-right font-medium text-foreground">
-                            ₹{Number(r.tds_deducted).toLocaleString()}
+                            ₹{Number(r.tds_deducted).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-1.5">
@@ -1043,7 +1043,7 @@ export default function StatutoryPage() {
                   </div>
                   <div>
                     <span className="text-muted">Total Wages:</span>{" "}
-                    <span className="text-foreground font-semibold">₹{Number(penaltyData.total_wages).toLocaleString()}</span>
+                    <span className="text-foreground font-semibold">₹{Number(penaltyData.total_wages).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
                   </div>
                   <div>
                     <span className="text-muted">Due Date:</span>{" "}
@@ -1053,7 +1053,7 @@ export default function StatutoryPage() {
                   </div>
                   <div>
                     <span className="text-muted">Estimated Penalty:</span>{" "}
-                    <span className="text-danger font-bold">₹{Number(penaltyData.estimated_penalty).toLocaleString()}</span>
+                    <span className="text-danger font-bold">₹{Number(penaltyData.estimated_penalty).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
                   </div>
                 </div>
                 <button

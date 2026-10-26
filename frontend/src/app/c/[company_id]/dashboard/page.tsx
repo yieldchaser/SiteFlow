@@ -827,19 +827,9 @@ export default function DashboardPage() {
                       <div className="bg-card border border-border-custom rounded-lg p-5 flex flex-col justify-between transition-all">
                         <div className="space-y-4">
                           <h4 className="text-xs font-bold text-muted uppercase tracking-wider">Last 7 Days Attendance</h4>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-1">
-                              <label className="text-[9px] text-muted uppercase tracking-wider font-bold block">Payroll Type</label>
-                              <select className="bg-input border border-border-custom rounded px-2 py-1 text-[11px] text-foreground focus:outline-none w-full">
-                                <option>All</option>
-                              </select>
-                            </div>
-                            <div className="space-y-1">
-                              <label className="text-[9px] text-muted uppercase tracking-wider font-bold block">Workforce Name</label>
-                              <select className="bg-input border border-border-custom rounded px-2 py-1 text-[11px] text-foreground focus:outline-none w-full">
-                                <option>All</option>
-                              </select>
-                            </div>
+                          <div className="flex items-center gap-4 text-[10px] text-muted">
+                            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-success" />Present</span>
+                            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-danger" />Absent</span>
                           </div>
                           {(() => {
                             const series = operationalData?.attendance_series || [];
@@ -914,20 +904,7 @@ export default function DashboardPage() {
                       <div className="bg-card border border-border-custom rounded-lg p-5 flex flex-col justify-between transition-all">
                         <div className="space-y-4">
                           <h4 className="text-xs font-bold text-muted uppercase tracking-wider">Last 7 Days Material Received</h4>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-1">
-                              <label className="text-[9px] text-muted uppercase tracking-wider font-bold block">Material Name</label>
-                              <select className="bg-input border border-border-custom rounded px-2 py-1 text-[11px] text-foreground focus:outline-none w-full">
-                                <option>All</option>
-                              </select>
-                            </div>
-                            <div className="space-y-1">
-                              <label className="text-[9px] text-muted uppercase tracking-wider font-bold block">Material Category</label>
-                              <select className="bg-input border border-border-custom rounded px-2 py-1 text-[11px] text-foreground focus:outline-none w-full">
-                                <option>All</option>
-                              </select>
-                            </div>
-                          </div>
+                          <p className="text-[10px] text-muted">Material lines received into stock per day, all sites.</p>
                           {(() => {
                             const series = operationalData?.material_series || [];
                             const hasData = series.length > 0 && series.some((day: any) => day.count > 0);
