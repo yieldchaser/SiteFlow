@@ -179,6 +179,16 @@ export default function TransactionPage() {
   const [typeFilter, setTypeFilter] = useState("All");
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  // Finance's "+ New" menu links here as ?new=<type> to open the form on that type.
+  const [startType, setStartType] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get("new");
+    if (wanted && TAXONOMY.some((t) => t.key === wanted)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setStartType(wanted);
+      setAddOpen(true);
+    }
+  }, []);
   const [zatcaBillId, setZatcaBillId] = useState<string | null>(null);
   const [zatcaEnabled, setZatcaEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -511,6 +521,7 @@ export default function TransactionPage() {
 
       {addOpen && (
         <NewTransactionModal
+          initialType={startType}
           companyId={companyId}
           projectId={projectId}
           members={members}
@@ -538,8 +549,9 @@ export default function TransactionPage() {
 
 // ── New Transaction modal (full taxonomy + shared sub-entities) ──────────────
 function NewTransactionModal({
-  companyId, projectId, members, costCodes, bills = [], onClose, onCreated,
+  companyId, projectId, members, costCodes, bills = [], onClose, onCreated, initialType,
 }: {
+  initialType?: string;
   companyId: string;
   projectId: string;
   members: Member[];
@@ -549,7 +561,9 @@ function NewTransactionModal({
   onCreated: () => void;
 }) {
   const { currencyDecimalPlaces } = useCompanySettings();
-  const [typeKey, setTypeKey] = useState<string>(TAXONOMY[0].key);
+  const [typeKey, setTypeKey] = useState<string>(
+    initialType && TAXONOMY.some((t) => t.key === initialType) ? initialType : TAXONOMY[0].key,
+  );
   const cfg = TAXONOMY.find((t) => t.key === typeKey)!;
   const isSalesInvoice = cfg.key === "sales_invoice";
   // R2-211: settlement types are cash movements, not taxable supplies — the

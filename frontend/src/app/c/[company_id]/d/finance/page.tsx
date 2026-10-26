@@ -602,6 +602,42 @@ export default function FinancePage() {
     }
   };
 
+  // Bills, notes and expenses are recorded on the project's Transactions tab,
+  // which saves real bills with line items and the right direction. This menu
+  // used to book every one of them as a plain cash payment out.
+  const PROJECT_TXN_TYPE: Record<string, string> = {
+    "Payment In": "payment_in",
+    "Payment Out": "payment_out",
+    "Debit Note": "debit_note",
+    "Credit Note": "credit_note",
+    "Sales Invoice": "sales_invoice",
+    "Material Sales": "material_sales",
+    "Material Purchase": "material_purchase",
+    "Material Return": "material_return",
+    "Material Transfer": "material_transfer",
+    "Other Expense": "other_expense",
+    "Equipment Expense": "equipment_expense",
+  };
+  const openNewVoucher = (type: string) => {
+    setIsDropdownOpen(false);
+    if (type === "Sub Con Bill") {
+      router.push(`/c/${companyId}/d/subcon`);
+      return;
+    }
+    const key = PROJECT_TXN_TYPE[type];
+    if (key) {
+      if (!activeProjectId) {
+        alert("Pick a project in the menu first. Bills and expenses are recorded against a project.");
+        return;
+      }
+      router.push(`/c/${companyId}/p/${activeProjectId}/transaction?new=${key}`);
+      return;
+    }
+    setSelectedTxnType(type as any);
+    setPartyName("");
+    setShowAddModal(true);
+  };
+
   const handleRecordPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     const amtVal = parseFloat(amount);
@@ -688,7 +724,8 @@ export default function FinancePage() {
     if (!amount || amtVal <= 0 || !partyName.trim()) return;
 
     setSubmitting(true);
-    const paymentType = selectedTxnType === "Receipt" ? "in" : "out";
+    const paymentType = ["Receipt", "Payment In"].includes(selectedTxnType) ? "in" : "out";
+    const reference = refNum || `SF-V-${crypto.randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase()}`;
 
     try {
       const apiHost = getApiHost();
@@ -701,21 +738,29 @@ export default function FinancePage() {
           payment_type: paymentType,
           amount: amtVal,
           payment_method: paymentMethod,
-          reference_number: refNum || `SF-V-${crypto.randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase()}`,
-          description: desc || `Recorded ${selectedTxnType} voucher`,
+          reference_number: reference,
+          description: desc || `Recorded ${selectedTxnType} voucher${partyName ? ` - ${partyName}` : ""}`,
+          cost_code: costCode || undefined,
+          category: selectedTxnType,
           payment_date: txnDate ? (txnDate.includes("T") ? txnDate : `${txnDate}T00:00:00Z`) : new Date().toISOString()
         }),
       });
 
+      if (!res.ok) {
+        // Never show a voucher the server did not keep.
+        alert(`Not saved: ${await readErrorDetail(res)}`);
+        return;
+      }
+      const saved = await res.json();
       const newTxn: Transaction = {
-        id: res.ok ? `TXN-${Date.now()}` : `TXN-${Date.now()}-local`,
+        id: saved.id,
         date: txnDate,
         type: selectedTxnType,
         category: selectedTxnType,
         description: desc || `Recorded ${selectedTxnType} voucher`,
         amount: amtVal,
         party: partyName,
-        ref: refNum || `SF-V-${crypto.randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+        ref: reference,
         ref_invoice: ["Debit Note", "Credit Note"].includes(selectedTxnType) ? (taggedSalesInvoice || refInvoice) : undefined,
         ledger: selectedTxnType,
         status: "Pending",
@@ -1400,7 +1445,7 @@ export default function FinancePage() {
                     <div className="text-[9px] font-bold text-success uppercase tracking-widest border-b border-border-custom pb-1 mb-2">Payment</div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 text-[11px]">
                       {["Payment In", "Payment Out", "Debit Note", "Credit Note", "Party to Party", "Upload Payments"].map(type => (
-                        <button key={type} onClick={() => { setSelectedTxnType(type as any); setPartyName(""); setIsDropdownOpen(false); setShowAddModal(true); }}
+                        <button key={type} onClick={() => openNewVoucher(type)}
                           className="py-1 px-2 text-left rounded-lg text-muted hover:text-success hover:bg-success/10 transition-all text-xs cursor-pointer font-semibold">
                           + {type}
                         </button>
@@ -1412,7 +1457,7 @@ export default function FinancePage() {
                     <div className="text-[9px] font-bold text-primary uppercase tracking-widest border-b border-border-custom pb-1 mb-2">Sales</div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 text-[11px]">
                       {["Sales Invoice", "Material Sales"].map(type => (
-                        <button key={type} onClick={() => { setSelectedTxnType(type as any); setPartyName(""); setIsDropdownOpen(false); setShowAddModal(true); }}
+                        <button key={type} onClick={() => openNewVoucher(type)}
                           className="py-1 px-2 text-left rounded-lg text-muted hover:text-primary hover:bg-primary/10 transition-all text-xs cursor-pointer font-semibold">
                           + {type}
                         </button>
@@ -1424,7 +1469,7 @@ export default function FinancePage() {
                     <div className="text-[9px] font-bold text-primary uppercase tracking-widest border-b border-border-custom pb-1 mb-2">Expense</div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 text-[11px]">
                       {["Material Purchase", "Material Return", "Material Transfer", "Sub Con Bill", "Other Expense", "Equipment Expense"].map(type => (
-                        <button key={type} onClick={() => { setSelectedTxnType(type as any); setPartyName(""); setIsDropdownOpen(false); setShowAddModal(true); }}
+                        <button key={type} onClick={() => openNewVoucher(type)}
                           className="py-1 px-2 text-left rounded-lg text-muted hover:text-primary hover:bg-primary/10 transition-all text-xs cursor-pointer font-semibold">
                           + {type}
                         </button>
