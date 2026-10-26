@@ -436,7 +436,7 @@ export default function EquipmentTrackingPage() {
                             const eq = fleet.find(e => e.id === m.equipment_id);
                             return (
                               <li key={m.id}>
-                                <span className="text-foreground font-bold">{eq?.name ?? "—"} ({eq?.code})</span>: {m.service_type} (Scheduled: {m.scheduled_date})
+                                <span className="text-foreground font-bold">{eq?.name ?? "—"} ({eq?.code})</span>: {m.service_type} (due {formatDate(m.scheduled_date)})
                               </li>
                             );
                           })}
