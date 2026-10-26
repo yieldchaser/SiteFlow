@@ -65,7 +65,7 @@ export function startHereCategory(companyId: string): HelpCategory {
         a: (
           <>
             <p>
-              Open <L to="/settings">Settings</L> from the sidebar (under Setup &amp; Config). The Company tab opens
+              Open <L to="/settings">Settings</L>{" "}from the sidebar (under Setup &amp; Config). The Company tab opens
               first.
             </p>
             <Steps>
@@ -86,7 +86,7 @@ export function startHereCategory(companyId: string): HelpCategory {
         a: (
           <>
             <p>
-              Open <L to="/settings">Settings</L> and choose the Roles &amp; Access tab first.
+              Open <L to="/settings">Settings</L>{" "}and choose the Roles &amp; Access tab first.
             </p>
             <Steps>
               <li>
@@ -132,7 +132,7 @@ export function startHereCategory(companyId: string): HelpCategory {
         a: (
           <>
             <p>
-              Open <L to="/cost-codes">Cost Codes</L> from the sidebar (under Procurement &amp; Materials). This opens
+              Open <L to="/cost-codes">Cost Codes</L>{" "}from the sidebar (under Procurement &amp; Materials). This opens
               the Cost Code Library tab of the Library.
             </p>
             <Steps>
@@ -158,7 +158,7 @@ export function startHereCategory(companyId: string): HelpCategory {
         a: (
           <>
             <p>
-              All of these live in the <L to="/d/library">Library</L> (sidebar, under Setup &amp; Config). Each kind
+              All of these live in the <L to="/d/library">Library</L>{" "}(sidebar, under Setup &amp; Config). Each kind
               has its own tab along the top.
             </p>
             <Steps>
@@ -190,7 +190,7 @@ export function startHereCategory(companyId: string): HelpCategory {
         a: (
           <>
             <p>
-              Open <L to="/projects">Projects</L> from the sidebar and press + Create Project. The form has three
+              Open <L to="/projects">Projects</L>{" "}from the sidebar and press + Create Project. The form has three
               short pages.
             </p>
             <Steps>
@@ -220,7 +220,7 @@ export function startHereCategory(companyId: string): HelpCategory {
         a: (
           <>
             <p>
-              Open the project from <L to="/projects">Projects</L> and go to its Party tab.
+              Open the project from <L to="/projects">Projects</L>{" "}and go to its Party tab.
             </p>
             <Steps>
               <li>Press + Add Party and pick the client, suppliers and subcontractors from your Party Library.</li>
@@ -251,7 +251,7 @@ export function startHereCategory(companyId: string): HelpCategory {
               </li>
             </Steps>
             <p className="mt-2">
-              <strong>Budget.</strong> Open <L to="/d/budget">Budget</L> from the sidebar (under Finance &amp;
+              <strong>Budget.</strong> Open <L to="/d/budget">Budget</L>{" "}from the sidebar (under Finance &amp;
               Billing) and press + Set Budget. Enter the budget for material, labour, subcontractor and equipment.
               The page then compares the budget with what is committed in purchase and work orders and what has
               actually been billed.
@@ -266,7 +266,7 @@ export function startHereCategory(companyId: string): HelpCategory {
         a: (
           <>
             <p>
-              Open <L to="/d/planning">Planning</L> from the sidebar with your project selected at the top.
+              Open <L to="/d/planning">Planning</L>{" "}from the sidebar with your project selected at the top.
             </p>
             <Steps>
               <li>
@@ -289,7 +289,7 @@ export function startHereCategory(companyId: string): HelpCategory {
         a: (
           <>
             <p>
-              Open <L to="/d/hr">HR &amp; Staff</L> from the sidebar (under Finance &amp; Billing).
+              Open <L to="/d/hr">HR &amp; Staff</L>{" "}from the sidebar (under Finance &amp; Billing).
             </p>
             <Steps>
               <li>Press + Add Staff. The Add New Employee form opens.</li>
@@ -346,17 +346,17 @@ export function startHereCategory(companyId: string): HelpCategory {
           <>
             <Steps>
               <li>
-                <strong>DPR.</strong> In <L to="/d/dpr">DPR (Daily Progress)</L> press + Create DPR. Choose the task,
+                <strong>DPR.</strong> In <L to="/d/dpr">DPR (Daily Progress)</L>{" "}press + Create DPR. Choose the task,
                 enter quantity done, workers on site, weather, material used, notes and any problem. One DPR per
                 project per day.
               </li>
               <li>
-                <strong>Quality.</strong> In <L to="/d/quality">Quality &amp; NCR</L> press + New Inspection, pick a
+                <strong>Quality.</strong> In <L to="/d/quality">Quality &amp; NCR</L>{" "}press + New Inspection, pick a
                 checklist and mark each point Pass, Fail or NA. If something fails, raise an NCR in the NCR Tracker
                 tab, then review and close it once fixed. Cube and other lab results go in the Lab Tests tab.
               </li>
               <li>
-                <strong>Safety.</strong> In <L to="/d/safety">Safety</L> use + Report Incident for any near miss or
+                <strong>Safety.</strong> In <L to="/d/safety">Safety</L>{" "}use + Report Incident for any near miss or
                 injury, and log Toolbox Talks and PPE Compliance checks in their tabs.
               </li>
             </Steps>
@@ -370,7 +370,7 @@ export function startHereCategory(companyId: string): HelpCategory {
         a: (
           <>
             <p>
-              Everything here is in <L to="/d/procurement">Procurement</L> with the project selected.
+              Everything here is in <L to="/d/procurement">Procurement</L>{" "}with the project selected.
             </p>
             <Steps>
               <li>Site raises a request with + Material Indent. It is approved from the Indent tab or the Project Hub.</li>
@@ -387,7 +387,7 @@ export function startHereCategory(companyId: string): HelpCategory {
                 Unbilled tab in Procurement lists goods received that have no invoice yet.
               </li>
               <li>
-                Optional check: <L to="/d/three-way">Three-Way Match</L> compares the PO, the GRN and the invoice
+                Optional check: <L to="/d/three-way">Three-Way Match</L>{" "}compares the PO, the GRN and the invoice
                 and flags any difference before you pay.
               </li>
               <li>Material used on site is recorded with Log Usage or on the DPR, and stock goes down.</li>
@@ -403,11 +403,11 @@ export function startHereCategory(companyId: string): HelpCategory {
           <>
             <Steps>
               <li>
-                In <L to="/d/subcon">Subcontractors</L> press + Sub Con Work Order. Choose the subcontractor and
+                In <L to="/d/subcon">Subcontractors</L>{" "}press + Sub Con Work Order. Choose the subcontractor and
                 enter the items, quantities and rates.
               </li>
               <li>
-                Each time they claim work done, go to <L to="/d/billing">Billing &amp; Invoices</L> and press +
+                Each time they claim work done, go to <L to="/d/billing">Billing &amp; Invoices</L>{" "}and press +
                 Submit RA Bill against that work order. Add TDS and retention as deductions. SiteFlow works out GST and
                 shows the net payable.
               </li>
@@ -424,7 +424,7 @@ export function startHereCategory(companyId: string): HelpCategory {
         a: (
           <>
             <p>
-              Open the project from <L to="/projects">Projects</L> and go to its Transaction tab.
+              Open the project from <L to="/projects">Projects</L>{" "}and go to its Transaction tab.
             </p>
             <Steps>
               <li>
@@ -450,7 +450,7 @@ export function startHereCategory(companyId: string): HelpCategory {
           <>
             <Steps>
               <li>
-                <strong>Payroll.</strong> Open <L to="/d/payroll-attendance">Payroll</L> and press + New Payroll for
+                <strong>Payroll.</strong> Open <L to="/d/payroll-attendance">Payroll</L>{" "}and press + New Payroll for
                 the month. Salaries are worked out from attendance, with PF, ESI and TDS. Payslips can be exported.
               </li>
               <li>
@@ -458,8 +458,8 @@ export function startHereCategory(companyId: string): HelpCategory {
                 TDS 26Q data for the month and keep a record of each filing with its acknowledgement number.
               </li>
               <li>
-                <strong>Reports.</strong> <L to="/reports">Reports</L> has ready reports for sales, purchases,
-                parties, retention, stock and more. <L to="/analytics">Analytics</L> shows progress and spending
+                <strong>Reports.</strong> <L to="/reports">Reports</L>{" "}has ready reports for sales, purchases,
+                parties, retention, stock and more. <L to="/analytics">Analytics</L>{" "}shows progress and spending
                 curves.
               </li>
             </Steps>
