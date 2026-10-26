@@ -467,3 +467,34 @@ def test_finance_feed_names_equipment_and_other_expense_bills(client, db, make_t
         assert r.status_code == 201, r.text
     feed = client.get(f"/apis/v3/finance/transactions/{comp.id}", headers=hdr).json()["transactions"]
     assert sorted(t["type"] for t in feed) == ["Equipment Expense", "Other Expense"], [t["type"] for t in feed]
+
+
+def test_project_pending_todos_counts_each_todo_once(client, db, make_tenant, auth_headers):
+    """Observed: the project dashboard said "Pending To-Dos 0" with three
+    unassigned pending to-dos on the project's To Do tab. The count inner-joined
+    assignees, so unassigned to-dos vanished and shared ones counted twice."""
+    from app import models
+
+    sfx = _uuid.uuid4().hex[:8]
+    comp, user, team = make_tenant(
+        company_name=f"Todo-{sfx}", user_name=f"UTodo-{sfx}", mobile=f"+9184{sfx}", email=f"todo-{sfx}@test.com",
+    )
+    _c2, _u2, team2 = make_tenant(
+        company_name=f"Todo2-{sfx}", user_name=f"UTodo2-{sfx}", mobile=f"+9183{sfx}", email=f"todo2-{sfx}@test.com",
+    )
+    project = models.Project(id=_uuid.uuid4(), company_id=comp.id, name="S", state="Maharashtra")
+    db.add(project)
+    db.commit()
+    unassigned = models.Todo(id=_uuid.uuid4(), company_id=comp.id, project_id=project.id, title="Submit RA-3 bill")
+    shared = models.Todo(id=_uuid.uuid4(), company_id=comp.id, project_id=project.id, title="Cube test")
+    licence = models.Todo(id=_uuid.uuid4(), company_id=comp.id, project_id=project.id, title="Renew crane licence")
+    done = models.Todo(id=_uuid.uuid4(), company_id=comp.id, project_id=project.id, title="Done", status="done")
+    db.add_all([unassigned, shared, licence, done])
+    db.flush()
+    db.add_all([
+        models.TodoAssignee(todo_id=shared.id, assignee_id=team.id),
+        models.TodoAssignee(todo_id=shared.id, assignee_id=team2.id),
+    ])
+    db.commit()
+    body = client.get(f"/apis/v3/projects/{project.id}", headers=auth_headers(user, comp)).json()
+    assert body["todo_pending"] == 3, body["todo_pending"]

@@ -112,11 +112,11 @@ export default function TodoPage() {
         <PageShell width="wide">
         <div className="flex flex-wrap items-center gap-3 mb-4">
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-md border border-border-custom bg-card px-3 py-2 text-sm text-foreground">
-            {["All", "pending", "done"].map((s) => <option key={s} value={s}>{s === "All" ? "Status" : s}</option>)}
+            {["All", "pending", "done"].map((s) => <option key={s} value={s}>{s === "All" ? "Status" : formatLabel(s)}</option>)}
           </select>
           <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="rounded-md border border-border-custom bg-card px-3 py-2 text-sm text-foreground">
             <option value="All">Type</option>
-            {types.map((t) => <option key={t} value={t}>{t}</option>)}
+            {types.map((t) => <option key={t} value={t}>{formatLabel(t)}</option>)}
           </select>
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search To Do" className="flex-1 min-w-[180px] rounded-md border border-border-custom bg-card px-3 py-2 text-sm text-foreground" />
         </div>
@@ -258,7 +258,7 @@ function NewTodoModal({
             <div>
               <div className="mb-1 text-xs font-medium text-muted">Repeat</div>
               <select value={repeat} onChange={(e) => setRepeat(e.target.value)} className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground">
-                {["none", "daily", "weekly", "monthly"].map((r) => <option key={r} value={r}>{r}</option>)}
+                {["none", "daily", "weekly", "monthly"].map((r) => <option key={r} value={r}>{r === "none" ? "Does not repeat" : formatLabel(r)}</option>)}
               </select>
             </div>
           </div>

@@ -73,6 +73,23 @@ export default function MaterialTab() {
     load();
   }, [load]);
 
+  // Offer the Material Library's own categories (stock received by GRN takes
+  // its category from there) alongside the generic defaults.
+  const [libraryCategories, setLibraryCategories] = useState<string[]>([]);
+  useEffect(() => {
+    fetch(getApi(`/library/materials/${companyId}`), { headers: authHeaders() })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => {
+        const list = Array.isArray(data) ? data : [];
+        setLibraryCategories(list.map((m: { category?: string | null }) => (m.category || "").trim()).filter(Boolean));
+      })
+      .catch(() => setLibraryCategories([]));
+  }, [companyId]);
+  const categories = useMemo(
+    () => Array.from(new Set([...libraryCategories, ...CATEGORIES.filter((c) => c !== "Uncategorized"), "Uncategorized"])),
+    [libraryCategories]
+  );
+
   const grouped = useMemo(() => {
     const m = new Map<string, StockRow[]>();
     for (const r of rows) {
@@ -279,12 +296,12 @@ export default function MaterialTab() {
                               onChange={(e) => recategorize(r, e.target.value)}
                               className="bg-input border border-border-custom rounded px-1.5 py-1 text-[11px] text-muted"
                             >
-                              {CATEGORIES.map((c) => (
+                              {categories.map((c) => (
                                 <option key={c} value={c}>
                                   {c}
                                 </option>
                               ))}
-                              {!CATEGORIES.includes(r.category) && (
+                              {!categories.includes(r.category) && (
                                 <option value={r.category}>{r.category}</option>
                               )}
                             </select>
@@ -330,7 +347,7 @@ export default function MaterialTab() {
                     onChange={(e) => setCat(e.target.value)}
                     className="mt-1 w-full bg-input border border-border-custom rounded-lg px-3 py-2 text-sm text-foreground"
                   >
-                    {CATEGORIES.map((c) => (
+                    {categories.map((c) => (
                       <option key={c} value={c}>
                         {c}
                       </option>

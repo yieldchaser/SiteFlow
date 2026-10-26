@@ -31,30 +31,41 @@ function compute(task: Task, today: Date) {
   const elapsed = daysBetween(start, today);
   const actualPct = Number(task.progress) || 0;
 
-  // Delay = today - planned end date (days). Uncapped. Shown only while incomplete.
-  let delayDays = 0;
-  if (task.status !== "completed") {
-    const raw = daysBetween(end, today);
-    delayDays = raw > 0 ? raw : 0;
-  }
-
   // Forecast End: extrapolate remaining % at the realized progress rate.
   let forecast: string;
+  let forecastEnd: Date | null = null;
   if (task.status === "completed") {
     forecast = formatDate(end);
-  } else if (actualPct <= 0 || elapsed <= 0) {
-    forecast = "Insufficient data";
+  } else if (elapsed <= 0) {
+    forecast = "Not started yet";
+  } else if (actualPct <= 0) {
+    forecast = "No progress logged";
   } else {
     const ratePerDay = actualPct / elapsed; // % per elapsed day
     if (ratePerDay <= 0) {
       forecast = "Insufficient data";
     } else {
       const remainingDays = (100 - actualPct) / ratePerDay;
-      forecast = formatDate(new Date(today.getTime() + remainingDays * DAY));
+      forecastEnd = new Date(today.getTime() + remainingDays * DAY);
+      forecast = formatDate(forecastEnd);
     }
   }
 
-  return { start, end, totalDays, elapsed, actualPct, delayDays, forecast };
+  // Delay (days), shown only while incomplete: the worst of
+  //  - overdue: today past the planned end,
+  //  - forecast slip: forecast end past the planned end,
+  //  - missed start: planned start passed with no progress.
+  // Counting only "overdue" showed "On track" for a task forecast to finish
+  // weeks late, beside the forecast column that said so.
+  let delayDays = 0;
+  if (task.status !== "completed") {
+    const overdue = daysBetween(end, today);
+    const slip = forecastEnd ? daysBetween(end, forecastEnd) : 0;
+    const missedStart = actualPct <= 0 && elapsed > 0 ? elapsed : 0;
+    delayDays = Math.max(0, overdue, slip, missedStart);
+  }
+
+  return { start, end, totalDays, elapsed, actualPct, delayDays, forecast, forecastEnd };
 }
 
 export default function TaskPage() {
@@ -230,7 +241,7 @@ export default function TaskPage() {
                 <td className={`px-4 py-3 text-right font-semibold ${r.delayDays > 0 ? "text-danger" : "text-success"}`}>
                   {r.delayDays > 0 ? `${r.delayDays}d behind` : r.task.status === "completed" ? "—" : "On track"}
                 </td>
-                <td className={`px-4 py-3 whitespace-nowrap ${r.forecast === "Insufficient data" ? "text-warning italic" : "text-foreground"}`}>
+                <td className={`px-4 py-3 whitespace-nowrap ${r.forecastEnd === null && r.task.status !== "completed" ? "text-warning italic" : "text-foreground"}`}>
                   {r.forecast}
                 </td>
                 <td className="px-4 py-3 text-muted">{formatLabel(r.task.status)}</td>

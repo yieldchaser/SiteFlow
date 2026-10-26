@@ -187,9 +187,9 @@ def _project_cash(db: Session, project_id: uuid.UUID):
 def _serialize_project(db: Session, p: models.Project, include_members=False):
     progress = _project_progress(db, p.id)
     cash_in, cash_out = _project_cash(db, p.id)
-    todo_pending = db.query(func.count(models.Todo.id)).join(
-        models.TodoAssignee, models.TodoAssignee.todo_id == models.Todo.id
-    ).filter(
+    # Every pending to-do counts once. An inner join on assignees dropped
+    # unassigned to-dos and counted a to-do once per assignee.
+    todo_pending = db.query(func.count(models.Todo.id)).filter(
         models.Todo.project_id == p.id,
         models.Todo.status == "pending"
     ).scalar() or 0

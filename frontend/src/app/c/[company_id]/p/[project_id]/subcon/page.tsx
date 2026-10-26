@@ -391,7 +391,7 @@ export default function SubconPage() {
     <div className="flex-1 flex flex-col overflow-hidden font-sans">
       <PageHeader
         title="Subcontractor Management"
-        subtitle="Work orders, physical progress, and subcontractor billing register"
+        subtitle="Work orders, work billed against each order, and the subcontractor billing register"
       >
         <button
           onClick={handleOpenCreateWO}
@@ -427,7 +427,7 @@ export default function SubconPage() {
                   <th className="px-4 py-3">S.No.</th>
                   <th className="px-4 py-3">Work Order</th>
                   <th className="px-4 py-3">Sub Contractor</th>
-                  <th className="px-4 py-3">Physical Progress</th>
+                  <th className="px-4 py-3" title="Work value billed so far, as a share of the work order value (before GST)">Work Billed</th>
                   <th className="px-4 py-3">Work Order Value</th>
                   <th className="px-4 py-3">Billed Value</th>
                   <th className="px-4 py-3">Approval Status</th>
