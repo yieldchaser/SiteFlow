@@ -29,6 +29,9 @@ interface Option {
 }
 
 const TODO_TYPES = ["General", "Task", "Reminder", "Meeting Action", "Payment", "Quality Check", "Attendance"];
+// Older to-dos were saved as "task" or "reminder"; show and filter them under the same names as new ones.
+const typeLabel = (type?: string | null) =>
+  TODO_TYPES.find((t) => t.toLowerCase() === (type || "General").toLowerCase()) || type || "General";
 const REPEATS: Record<string, string> = { none: "Does not repeat", daily: "Every day", weekly: "Every week", monthly: "Every month" };
 
 const dueDay = (t: Todo) => (t.due_date ? t.due_date.slice(0, 10) : "");
@@ -131,7 +134,7 @@ export default function TodoBoard({ companyId, fixedProjectId }: { companyId: st
     const q = search.trim().toLowerCase();
     const list = todos.filter((t) => {
       if (tab === "done" ? t.status !== "done" : t.status === "done") return false;
-      if (filterType !== "All" && (t.type || "General") !== filterType) return false;
+      if (filterType !== "All" && typeLabel(t.type) !== filterType) return false;
       if (filterWho === "none" && t.assignee_ids.length > 0) return false;
       if (filterWho !== "All" && filterWho !== "none" && !t.assignee_ids.includes(filterWho)) return false;
       if (q && !t.title.toLowerCase().includes(q) && !projectName(t.project_id).toLowerCase().includes(q)) return false;
@@ -159,7 +162,7 @@ export default function TodoBoard({ companyId, fixedProjectId }: { companyId: st
       due_date: dueDay(t),
       assignee: t.assignee_ids[0] || "",
       project_id: t.project_id || "",
-      type: t.type || "General",
+      type: typeLabel(t.type),
       repeat_type: t.repeat_type || "none",
       url: t.url || "",
     });
@@ -334,7 +337,7 @@ export default function TodoBoard({ companyId, fixedProjectId }: { companyId: st
                           {!fixedProjectId && <td className="px-4 py-3 text-muted">{projectName(t.project_id) || "Company-wide"}</td>}
                           <td className="px-4 py-3">
                             <span className="bg-elevated border border-border-custom text-[10px] font-semibold px-2 py-0.5 rounded text-foreground whitespace-nowrap">
-                              {t.type || "General"}
+                              {typeLabel(t.type)}
                             </span>
                           </td>
                           <td className="px-4 py-3 text-right whitespace-nowrap space-x-1.5">

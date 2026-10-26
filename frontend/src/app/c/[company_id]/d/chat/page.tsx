@@ -1,5 +1,5 @@
 "use client";
-import Badge, { type BadgeTone } from "@/components/ui/Badge";
+import Badge from "@/components/ui/Badge";
 
 import {  getApiHost , readErrorDetail } from "@/lib/api";
 import { authHeaders, formatDate, formatDateTime } from "@/lib/siteflow";
@@ -8,7 +8,6 @@ import { useProject } from "@/context/ProjectContext";
 import { useParams } from "next/navigation";
 import Icon from "@/components/marketing/Icon";
 
-import PageShell from "@/components/layout/PageShell";
 import PageHeader from "@/components/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import FieldHint from "@/components/ui/FieldHint";
@@ -179,7 +178,9 @@ export default function ChatPage() {
         setMessages((prev) => {
           if (!sinceId) return fresh;
           const seen = new Set(prev.map((m) => m.id));
-          return [...prev, ...fresh.filter((m) => !seen.has(m.id))];
+          const added = fresh.filter((m) => !seen.has(m.id));
+          // Same array when nothing arrived, so a quiet poll does not scroll someone reading older messages.
+          return added.length ? [...prev, ...added] : prev;
         });
         if (fresh.length > 0) {
           lastMessageIdRef.current = fresh[fresh.length - 1].id;
@@ -802,7 +803,8 @@ export default function ChatPage() {
                                     key={i}
                                     src={url}
                                     alt="Site photo"
-                                    className="rounded-lg w-full max-h-60 min-h-24 object-cover cursor-zoom-in hover:opacity-90 transition-opacity"
+                                    // Fixed height: the loading placeholder takes the same space, so the scroll to the newest message holds.
+                                    className="rounded-lg w-full h-48 object-cover cursor-zoom-in hover:opacity-90 transition-opacity"
                                     fallback={<div className="rounded-lg bg-elevated text-[10px] text-muted p-3">Photo could not be loaded</div>}
                                     onClick={setLightbox}
                                   />

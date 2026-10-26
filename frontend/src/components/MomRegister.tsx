@@ -399,13 +399,13 @@ export default function MomRegister({
                               {items.length === 0 ? (
                                 <span className="text-muted">None</span>
                               ) : (
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 whitespace-nowrap">
                                   <span className="text-foreground font-semibold">{done} of {items.length} done</span>
                                   {overdue > 0 && <Badge tone="danger">{overdue} overdue</Badge>}
                                 </div>
                               )}
                             </td>
-                            <td className="px-5 py-3"><Badge tone={statusTones[m.status] || "neutral"}>{m.status}</Badge></td>
+                            <td className="px-5 py-3 whitespace-nowrap"><Badge tone={statusTones[m.status] || "neutral"}>{m.status}</Badge></td>
                             <td className="px-5 py-3 text-right whitespace-nowrap space-x-2" onClick={(e) => e.stopPropagation()}>
                               <button onClick={() => setViewing(m)}
                                 className="px-3 py-1.5 rounded-lg bg-elevated text-foreground text-[10px] font-bold border border-border-custom hover:border-primary cursor-pointer">
