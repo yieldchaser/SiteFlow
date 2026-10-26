@@ -8,6 +8,21 @@ export const apiFileUrl = (src: string) => (src.startsWith("/") ? `${getApiHost(
 
 const isApiFile = (src: string) => src.startsWith("/apis/") || src.startsWith(`${getApiHost()}/apis/`);
 
+// One download per picture: the same group picture shows in the list, the header and the About panel.
+const cache = new Map<string, Promise<string>>();
+const loadObjectUrl = (src: string) => {
+  let pending = cache.get(src);
+  if (!pending) {
+    pending = fetch(apiFileUrl(src), { headers: authHeaders() })
+      .then((res) => (res.ok ? res.blob() : Promise.reject(res.status)))
+      .then((blob) => URL.createObjectURL(blob));
+    // A failed load is retried next time instead of being remembered.
+    pending.catch(() => cache.delete(src));
+    cache.set(src, pending);
+  }
+  return pending;
+};
+
 /**
  * An <img> for files the API serves only to signed-in users. A plain <img src>
  * cannot send the login token, so those files are fetched with it and shown
@@ -32,19 +47,12 @@ export default function AuthImage({
 
   useEffect(() => {
     if (!needsAuth) return;
-    let revoked = false;
-    let created: string | null = null;
-    fetch(apiFileUrl(src), { headers: authHeaders() })
-      .then((res) => (res.ok ? res.blob() : Promise.reject(res.status)))
-      .then((blob) => {
-        if (revoked) return;
-        created = URL.createObjectURL(blob);
-        setLoaded({ src, url: created, failed: false });
-      })
-      .catch(() => !revoked && setLoaded({ src, url: null, failed: true }));
+    let cancelled = false;
+    loadObjectUrl(src)
+      .then((url) => !cancelled && setLoaded({ src, url, failed: false }))
+      .catch(() => !cancelled && setLoaded({ src, url: null, failed: true }));
     return () => {
-      revoked = true;
-      if (created) URL.revokeObjectURL(created);
+      cancelled = true;
     };
   }, [src, needsAuth]);
 
