@@ -239,7 +239,7 @@ isCode: cl.is_code_reference || "—",
             passCount: insp.pass_count,
             failCount: insp.fail_count,
             naCount: insp.na_count,
-            inspector: insp.inspected_by ? (teamById[String(insp.inspected_by)] || "Team member") : "—"
+            inspector: insp.inspected_by_name || (insp.inspected_by ? (teamById[String(insp.inspected_by)] || "Team member") : "—")
           };
         });
         setInspections(mapped);

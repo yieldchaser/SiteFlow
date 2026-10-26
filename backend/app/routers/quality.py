@@ -109,6 +109,7 @@ class InspectionResponse_(BaseModel):
     na_count: int
     overall_remarks: Optional[str]
     inspected_by: Optional[uuid.UUID] = None
+    inspected_by_name: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -337,7 +338,16 @@ def list_inspections(
     query = db.query(SiteInspection).filter(SiteInspection.project_id == project_id)
     if task_id:
         query = query.filter(SiteInspection.task_id == task_id)
-    return query.order_by(SiteInspection.inspection_date.desc()).all()
+    rows = query.order_by(SiteInspection.inspection_date.desc()).all()
+    # inspected_by is a user id; the register printed it raw as the inspector.
+    user_ids = {r.inspected_by for r in rows if r.inspected_by}
+    names = dict(db.query(User.id, User.name).filter(User.id.in_(user_ids)).all()) if user_ids else {}
+    out = []
+    for r in rows:
+        item = InspectionResponse_.model_validate(r)
+        item.inspected_by_name = names.get(r.inspected_by)
+        out.append(item)
+    return out
 
 
 @router.get("/inspections/{insp_id}/responses")

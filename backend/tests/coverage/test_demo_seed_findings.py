@@ -498,3 +498,26 @@ def test_project_pending_todos_counts_each_todo_once(client, db, make_tenant, au
     db.commit()
     body = client.get(f"/apis/v3/projects/{project.id}", headers=auth_headers(user, comp)).json()
     assert body["todo_pending"] == 3, body["todo_pending"]
+
+
+def test_inspection_register_names_the_inspector(client, db, make_tenant, auth_headers):
+    """Observed: the project Site Inspections register showed the inspector as
+    a raw user UUID, in the table and in the Inspected By filter."""
+    from datetime import datetime as _dt
+    from app import models
+
+    sfx = _uuid.uuid4().hex[:8]
+    comp, user, _team = make_tenant(
+        company_name=f"Insp-{sfx}", user_name=f"Sneha Deshpande {sfx}", mobile=f"+9182{sfx}", email=f"insp-{sfx}@test.com",
+    )
+    project = models.Project(id=_uuid.uuid4(), company_id=comp.id, name="S", state="Maharashtra")
+    checklist = models.QualityChecklist(id=_uuid.uuid4(), company_id=comp.id, title="Pre-concreting checklist")
+    db.add_all([project, checklist])
+    db.flush()
+    db.add(models.SiteInspection(
+        id=_uuid.uuid4(), project_id=project.id, checklist_id=checklist.id, inspected_by=user.id,
+        zone="Tower A - L6 slab", inspection_date=_dt(2026, 10, 8),
+    ))
+    db.commit()
+    rows = client.get(f"/apis/v3/quality/inspections/{project.id}", headers=auth_headers(user, comp)).json()
+    assert rows[0]["inspected_by_name"] == f"Sneha Deshpande {sfx}", rows[0]
