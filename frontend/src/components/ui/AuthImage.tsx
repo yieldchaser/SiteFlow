@@ -34,12 +34,14 @@ export default function AuthImage({
   className,
   fallback = null,
   onClick,
+  onLoad,
 }: {
   src: string;
   alt: string;
   className?: string;
   fallback?: React.ReactNode;
   onClick?: (objectUrl: string) => void;
+  onLoad?: () => void;
 }) {
   const needsAuth = isApiFile(src);
   // Result is tagged with the src it belongs to, so a new src never shows the old picture.
@@ -62,7 +64,14 @@ export default function AuthImage({
   if (!shown) return <div className={`${className ?? ""} animate-pulse bg-elevated`} aria-label={alt} />;
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={shown} alt={alt} className={className} onClick={onClick ? () => onClick(shown) : undefined} />
+    <img
+      src={shown}
+      alt={alt}
+      className={className}
+      draggable={false}
+      onLoad={onLoad}
+      onClick={onClick ? () => onClick(shown) : undefined}
+    />
   );
 }
 

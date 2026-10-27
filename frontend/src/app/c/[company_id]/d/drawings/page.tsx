@@ -13,6 +13,7 @@ import PageShell from "@/components/layout/PageShell";
 import PageHeader from "@/components/PageHeader";
 import SegmentedTabs from "@/components/ui/Tabs";
 import { EmptyState } from "@/components/ui/EmptyState";
+import AuthImage from "@/components/ui/AuthImage";
 
 type PinCategory = "RFI" | "Clash" | "Observation" | "Approval";
 type RevStatus = "current" | "superseded" | "locked";
@@ -503,10 +504,11 @@ export default function DrawingsPage() {
                   className={`flex-1 relative rounded-md border border-border-custom bg-black overflow-hidden min-h-0 ${isEditable ? "cursor-crosshair" : "cursor-default"}`}>
                   {/* Drawing image */}
                   {activeRev?.fileUrl && (
-                    <img key={activeRev.id} src={activeRev.fileUrl} alt={activeDrawing.name}
+                    // Sheets are stored as API paths that need the login token; a
+                    // plain <img> asked the website for them and showed nothing.
+                    <AuthImage key={activeRev.id} src={activeRev.fileUrl} alt={activeDrawing.name}
                       onLoad={() => setImgLoaded(true)}
-                      className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${imgLoaded ? "opacity-60" : "opacity-0"}`}
-                      draggable={false} />
+                      className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-500 ${imgLoaded ? "opacity-60" : "opacity-0"}`} />
                   )}
 
                   {/* Blueprint grid overlay */}

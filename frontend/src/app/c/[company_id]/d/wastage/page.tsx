@@ -8,6 +8,7 @@ import { useParams } from "next/navigation";
 import PageShell from "@/components/layout/PageShell";
 import PageHeader from "@/components/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
+import AuthImage from "@/components/ui/AuthImage";
 
 interface Wastage {
   id: string;
@@ -191,7 +192,7 @@ export default function WastagePage() {
                   {r.photo_urls && r.photo_urls.length > 0 && (
                     <div className="flex gap-2 mb-3">
                       {r.photo_urls.map((url, i) => (
-                        <img key={i} src={url} alt="" className="w-16 h-16 rounded-lg object-cover border border-border-custom" />
+                        <AuthImage key={i} src={url} alt="Wastage photo" className="w-16 h-16 rounded-lg object-cover border border-border-custom" />
                       ))}
                     </div>
                   )}
