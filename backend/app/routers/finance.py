@@ -1326,8 +1326,17 @@ def get_company_transactions(
 
     rows: List[TransactionRow] = []
 
+    # Each party name costs several queries; resolved per row it made this
+    # screen take ~18 s for 74 rows on prod. Resolve each party once.
+    party_names: dict = {}
+
+    def party_name(team_id):
+        if team_id not in party_names:
+            party_names[team_id] = _txn_party_name(db, team_id)
+        return party_names[team_id]
+
     for b in bills:
-        party = _txn_party_name(db, b.party_company_user_id)
+        party = party_name(b.party_company_user_id)
         payable = float(b.total_payable or 0.0)
         paid = float(b.paid_amount or 0.0)
         outstanding = round(max(0.0, payable - paid), 2)
@@ -1365,7 +1374,7 @@ def get_company_transactions(
         ))
 
     for p in payments:
-        party = _txn_party_name(db, p.party_company_user_id)
+        party = party_name(p.party_company_user_id)
         amt = float(p.amount or 0.0)
         if p.payment_type == "in":
             in_total += amt
