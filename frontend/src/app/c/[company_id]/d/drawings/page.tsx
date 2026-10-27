@@ -471,7 +471,7 @@ export default function DrawingsPage() {
         <PageShell width="wide">
 
         {/* Content */}
-        <div className="flex-1 overflow-hidden">
+        <div className={tab === "drawings" && activeDrawing ? "h-[calc(100vh-11rem)] min-h-[480px] overflow-hidden" : "flex-1 overflow-hidden"}>
           {/* ── DRAWINGS TAB ── */}
           {tab === "drawings" && activeDrawing && (
             <div className="flex h-full">
