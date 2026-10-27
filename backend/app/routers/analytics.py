@@ -381,15 +381,24 @@ def get_company_analytics(company_id: uuid.UUID, db: Session = Depends(get_db), 
             logs_without_hours += 1
 
     labour_days = round(total_hours / 8.0, 2) if attendance_logs and total_hours else None
-    completed_area = 0.0
+    # Each BOQ line counts once, scaled by how far its linked tasks have got.
+    # Counting the full line for every finished task linked to it counted a
+    # raft shared by two tower tasks twice, and a slab line split across four
+    # floor tasks as fully done when two floors were still open.
+    done_by_item: dict = {}
     for task in tasks:
-        if _task_is_completed(task) and task.boq_item_id:
-            boq = boq_by_id.get(task.boq_item_id)
-            unit = (boq.unit or "").strip().lower() if boq else ""
-            if unit in AREA_UNITS:
-                completed_area += _to_float(boq.quantity)
-            elif unit in SQFT_UNITS:
-                completed_area += _to_float(boq.quantity) * SQFT_TO_M2
+        if task.boq_item_id:
+            done = 1.0 if _task_is_completed(task) else min(max(_to_float(task.progress) / 100.0, 0.0), 1.0)
+            done_by_item.setdefault(task.boq_item_id, []).append(done)
+    completed_area = 0.0
+    for item_id, fractions in done_by_item.items():
+        boq = boq_by_id.get(item_id)
+        unit = (boq.unit or "").strip().lower() if boq else ""
+        share = sum(fractions) / len(fractions)
+        if unit in AREA_UNITS:
+            completed_area += _to_float(boq.quantity) * share
+        elif unit in SQFT_UNITS:
+            completed_area += _to_float(boq.quantity) * SQFT_TO_M2 * share
     # No finished area-measured work means productivity is unknown, not zero.
     labour_productivity = round(completed_area / labour_days, 2) if labour_days and completed_area else None
 

@@ -94,6 +94,45 @@ def test_productivity_counts_sqft_and_is_unknown_without_area(client, db, make_t
     assert lp["productivity_m2_per_labour_day"] == 46.45
 
 
+def test_productivity_counts_each_boq_line_once(client, db, make_tenant, auth_headers):
+    comp, _team, project, hdr = _tenant(make_tenant, auth_headers, 4)
+    db.add(project)
+    db.flush()
+    emp = models.StaffEmployee(
+        id=uuid.uuid4(), company_id=comp.id, project_id=project.id, name="Mason",
+        status="active", basic_salary=1000.0, hra=0.0, other_allowances=0.0,
+        pf_employee_pct=0.0, pf_employer_pct=0.0, esi_employee_pct=0.0,
+        esi_employer_pct=0.0, tds_monthly=0.0, is_esi_applicable=False)
+    db.add(emp)
+    db.flush()
+    db.add(models.AttendanceLog(
+        id=uuid.uuid4(), employee_id=emp.id, project_id=project.id,
+        attendance_date=_utc(2026, 1, 1, 9), status="Present", hours_worked=8))
+    raft = models.BOQItem(id=uuid.uuid4(), project_id=project.id, section_name="S",
+                          item_name="Raft", unit="sqm", quantity=100.0)
+    slab = models.BOQItem(id=uuid.uuid4(), project_id=project.id, section_name="S",
+                          item_name="Slab", unit="sqm", quantity=200.0)
+    db.add_all([raft, slab])
+    db.flush()
+
+    def task(name, item, status, progress):
+        db.add(models.Task(
+            id=uuid.uuid4(), project_id=project.id, name=name, status=status, progress=progress,
+            duration_days=1, start_date=_utc(2026, 1, 1), end_date=_utc(2026, 1, 2), boq_item_id=item.id))
+
+    # Two finished tower tasks share one 100 sqm raft: 100, not 200.
+    task("Raft A", raft, "completed", 100)
+    task("Raft B", raft, "completed", 100)
+    # A 200 sqm slab split over two floors, one finished, one at 0: 100, not 200.
+    task("Slab L1", slab, "completed", 100)
+    task("Slab L2", slab, "not_started", 0)
+    db.commit()
+
+    lp = client.get(f"/apis/v3/analytics/company/{comp.id}", headers=hdr).json()["labour_productivity"]
+    assert lp["completed_area_m2"] == 200.0, lp
+    assert lp["productivity_m2_per_labour_day"] == 200.0, lp
+
+
 def test_item_wise_sales_uses_the_bill_invoice_date(client, db, make_tenant, auth_headers):
     comp, team, project, hdr = _tenant(make_tenant, auth_headers, 3)
     db.add(project)
