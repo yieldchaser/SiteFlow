@@ -409,8 +409,8 @@ export default function TeamSchedulePage() {
     const startPct = posPct(span.start);
     const endPct = posPct(span.end);
     const widthPct = Math.max(endPct - startPct, 1.5);
-    const barColor = group.unassigned ? "bg-warning" : "bg-success";
-    const fillColor = group.unassigned ? "bg-warning" : "bg-success";
+    const barColor = group.unassigned ? "bg-slate-400/20 border border-slate-400/60" : "bg-primary/15 border border-primary/50";
+    const fillColor = group.unassigned ? "bg-slate-400/70" : "bg-primary/60";
 
     const out: React.ReactElement[] = [];
     out.push(
@@ -439,7 +439,7 @@ export default function TeamSchedulePage() {
             title={`${group.name} — ${Math.round(agg)}%`}
           >
             <div className={`h-full ${fillColor}`} style={{ width: `${clamp(agg, 0, 100)}%` }} />
-            <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-black/80 px-1 truncate">
+            <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-foreground px-1 truncate">
               {Math.round(agg)}%
             </span>
           </div>
@@ -455,8 +455,8 @@ export default function TeamSchedulePage() {
           const sp = posPct(s);
           const ep = posPct(e);
           const wp = Math.max(ep - sp, 1.5);
-          const color = n.task.assigned_to ? "bg-success" : "bg-warning";
-          const fill = n.task.assigned_to ? "bg-success" : "bg-warning";
+          const color = n.task.assigned_to ? "bg-primary/15 border border-primary/50" : "bg-slate-400/20 border border-slate-400/60";
+          const fill = n.task.assigned_to ? "bg-primary/60" : "bg-slate-400/70";
           out.push(
             <div key={n.task.id} className="flex items-stretch border-b border-border-custom hover:bg-elevated/40">
               <div className="w-64 shrink-0 flex items-center gap-2 px-4 py-2 border-r border-border-custom bg-background/10">
@@ -478,7 +478,7 @@ export default function TeamSchedulePage() {
                   title={`${n.task.name} — ${Math.round(Number(n.task.progress) || 0)}%`}
                 >
                   <div className={`h-full ${fill}`} style={{ width: `${clamp(Number(n.task.progress) || 0, 0, 100)}%` }} />
-                  <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-black/80 px-1 truncate">
+                  <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-foreground px-1 truncate">
                     {Math.round(Number(n.task.progress) || 0)}%
                   </span>
                 </div>
@@ -803,10 +803,10 @@ ${tasksXml}
           {/* Legend */}
           <div className="px-4 py-2 flex items-center gap-4 text-[10px] border-b border-border-custom bg-background/30">
             <div className="flex items-center gap-1.5">
-              <div className="w-4 h-3 rounded bg-warning" /> Unassigned
+              <div className="w-4 h-3 rounded bg-slate-400/70" /> Unassigned
             </div>
             <div className="flex items-center gap-1.5">
-              <div className="w-4 h-3 rounded bg-success" /> Assigned
+              <div className="w-4 h-3 rounded bg-primary/60" /> Assigned
             </div>
             <span className="text-muted ml-auto">{filteredTasks.length} tasks</span>
           </div>
