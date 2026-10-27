@@ -480,7 +480,20 @@ export default function DrawingsPage() {
                 {/* Drawing header bar */}
                 <div className="flex items-center justify-between bg-input border border-border-custom rounded-md px-4 py-2.5 text-xs shrink-0">
                   <div>
-                    <div className="font-bold text-foreground text-sm">{activeDrawing.name}</div>
+                    {drawings.length > 1 ? (
+                      <select
+                        value={activeDrawing.id}
+                        onChange={(e) => handleSelectDrawing(e.target.value)}
+                        aria-label="Choose drawing"
+                        className="font-bold text-foreground text-sm bg-transparent border-0 p-0 pr-6 focus:outline-none cursor-pointer max-w-full"
+                      >
+                        {drawings.map((d) => (
+                          <option key={d.id} value={d.id} className="bg-card">{d.name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="font-bold text-foreground text-sm">{activeDrawing.name}</div>
+                    )}
                     <div className="text-[10px] text-muted mt-0.5">{activeDrawing.category} · Active: {registerActiveRev?.version ?? "—"} · {registerActiveRev?.date ?? "—"} · {registerActiveRev?.approvalStatus === "approved" ? "Approved" : registerActiveRev?.approvalStatus === "rejected" ? "Rejected" : "Pending"}</div>
                   </div>
                   <div className="flex items-center gap-2">
