@@ -12,6 +12,7 @@ import PageHeader from "@/components/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import FieldHint from "@/components/ui/FieldHint";
+import AuthImage, { uploadProjectImage } from "@/components/ui/AuthImage";
 
 interface Task {
   id: string;
@@ -62,7 +63,12 @@ interface DPRLog {
   materials_consumed?: { material_name: string; quantity: number; unit: string }[];
   notes: string;
   issues: string;
+  photos?: string[];
 }
+
+// A DPR photo is stored as its file path with the record type after "#", e.g.
+// "/apis/v3/files/file/<id>#Quality Check". The fragment never reaches the server.
+const photoLabel = (path: string) => decodeURIComponent(path.split("#")[1] || "");
 
 const PHOTO_SLOTS: { label: string; icon: IconName; color: string }[] = [
   { label: "Site Progress", icon: "site", color: "bg-primary/15" },
@@ -126,6 +132,24 @@ export default function DPRPage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [uploadingSlot, setUploadingSlot] = useState<string | null>(null);
+
+  const addPhotos = async (label: string, files: FileList | null) => {
+    if (!files || !files.length || !projectId) return;
+    setUploadingSlot(label);
+    setMessage("");
+    try {
+      for (const file of Array.from(files)) {
+        const path = await uploadProjectImage(projectId, file, "DPR Photos");
+        setPhotos((prev) => [...prev, `${path}#${encodeURIComponent(label)}`]);
+      }
+    } catch (err) {
+      setMessage(err instanceof Error && err.message ? err.message : "Could not upload the photo.");
+    } finally {
+      setUploadingSlot(null);
+    }
+  };
 
   const fetchTasks = async () => {
     try {
@@ -226,6 +250,7 @@ export default function DPRPage() {
           notes: notes,
           issues: issues,
           materials_consumed: formattedMaterials,
+          photos,
         })
       });
 
@@ -236,6 +261,7 @@ export default function DPRPage() {
         setMaterialsConsumed([]);
         setNotes("");
         setIssues("");
+        setPhotos([]);
         setIsCreateDPROpen(false);
         fetchDPRSummary();
         fetchDPRLogs();
@@ -334,6 +360,22 @@ export default function DPRPage() {
                         </div>
                       )}
                       {log.notes && <p className="text-muted mt-1">{log.notes}</p>}
+                      {log.photos && log.photos.length > 0 && (
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {log.photos.map((path) => (
+                            <figure key={path} className="w-20">
+                              <AuthImage
+                                src={path.split("#")[0]}
+                                alt={photoLabel(path) || "DPR photo"}
+                                className="h-16 w-20 rounded border border-border-custom object-cover cursor-zoom-in"
+                                fallback={<div className="h-16 w-20 rounded border border-border-custom bg-elevated" />}
+                                onClick={(url) => window.open(url, "_blank")}
+                              />
+                              {photoLabel(path) && <figcaption className="mt-0.5 truncate text-[9px] text-muted">{photoLabel(path)}</figcaption>}
+                            </figure>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     {log.issues && (
                       <div className="p-2 rounded bg-warning/10 border border-warning/20 text-warning text-[10px] inline-flex items-center gap-1">
@@ -561,18 +603,52 @@ export default function DPRPage() {
               <div className="space-y-2 pt-2 border-t border-border-custom">
                 <span className="text-muted font-bold block">Attach Progress Records</span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-center text-[10px]">
-                  {PHOTO_SLOTS.map((slot, i) => (
-                    <div key={i} className={`p-2.5 rounded-md border border-border-custom ${slot.color} flex flex-col items-center justify-center cursor-pointer hover:border-border-custom`}>
-                      <Icon name={slot.icon} className="w-5 h-5" />
-                      <span className="mt-1 text-muted font-bold">{slot.label}</span>
-                    </div>
-                  ))}
+                  {PHOTO_SLOTS.map((slot) => {
+                    const count = photos.filter((p) => photoLabel(p) === slot.label).length;
+                    return (
+                      <label key={slot.label} className={`p-2.5 rounded-md border border-border-custom ${slot.color} flex flex-col items-center justify-center cursor-pointer hover:border-primary`}>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          className="hidden"
+                          disabled={uploadingSlot !== null}
+                          onChange={(e) => {
+                            const files = e.target.files;
+                            addPhotos(slot.label, files).finally(() => { e.target.value = ""; });
+                          }}
+                        />
+                        <Icon name={slot.icon} className="w-5 h-5" />
+                        <span className="mt-1 text-muted font-bold">{slot.label}</span>
+                        <span className="mt-0.5 text-[9px] text-primary font-bold">
+                          {uploadingSlot === slot.label ? "Uploading..." : count ? `${count} added` : "Add photo"}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
+                {photos.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {photos.map((path) => (
+                      <div key={path} className="relative">
+                        <AuthImage src={path.split("#")[0]} alt={photoLabel(path)} className="h-14 w-14 rounded border border-border-custom object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => setPhotos((prev) => prev.filter((p) => p !== path))}
+                          className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-danger text-white"
+                          aria-label={`Remove ${photoLabel(path)} photo`}
+                        >
+                          <Icon name="close" className="h-2.5 w-2.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-2 justify-end border-t border-border-custom pt-4">
                 <button type="button" onClick={() => setIsCreateDPROpen(false)} className="px-4 py-2 bg-elevated text-muted hover:text-foreground rounded-md">Cancel</button>
-                <button type="submit" disabled={submitting} className="px-5 py-2.5 bg-primary text-white font-bold rounded-md hover:opacity-90">
+                <button type="submit" disabled={submitting || uploadingSlot !== null} className="px-5 py-2.5 bg-primary text-white font-bold rounded-md hover:opacity-90">
                   {submitting ? "Saving..." : "Submit Log"}
                 </button>
               </div>

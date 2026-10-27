@@ -76,13 +76,13 @@ export default function AuthImage({
 }
 
 /**
- * Upload an image into the project's "Chat Photos" folder and return the
- * stored path to save on the record.
+ * Upload an image into one of the project's folders ("Chat Photos" unless
+ * another is named) and return the stored path to save on the record.
  */
-export async function uploadProjectImage(projectId: string, file: File): Promise<string> {
+export async function uploadProjectImage(projectId: string, file: File, folder = "Chat Photos"): Promise<string> {
   const host = getApiHost();
   const headers = authHeaders() || {};
-  const FOLDER = "Chat Photos";
+  const FOLDER = folder;
   let folderId: string | undefined;
   try {
     const res = await fetch(`${host}/apis/v3/files/folders?project_id=${projectId}`, { headers });
