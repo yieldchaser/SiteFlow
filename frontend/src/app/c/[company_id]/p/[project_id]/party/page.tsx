@@ -323,8 +323,8 @@ function NewPartyModal({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <Inp label="Party Name *" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
         <Inp label="Party ID" value={form.party_id_custom} onChange={(v) => setForm({ ...form, party_id_custom: v })} />
-        <Inp label="Phone" value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} />
-        <Inp label="Email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} />
+        <Inp label="Phone" type="tel" value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} />
+        <Inp label="Email" type="email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} />
         <div className="col-span-2">
           <Lbl>Party Type</Lbl>
           <select value={form.party_type} onChange={(e) => setForm({ ...form, party_type: e.target.value })} className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground">
@@ -332,18 +332,18 @@ function NewPartyModal({
           </select>
         </div>
         <Inp label="Address" value={form.address} onChange={(v) => setForm({ ...form, address: v })} />
-        <Inp label="Date of Joining" value={form.date_of_joining} onChange={(v) => setForm({ ...form, date_of_joining: v })} />
+        <Inp label="Date of Joining" type="date" value={form.date_of_joining} onChange={(v) => setForm({ ...form, date_of_joining: v })} />
         <Inp label="Aadhaar" value={form.aadhaar_number} onChange={(v) => setForm({ ...form, aadhaar_number: v })} />
         <Inp label="PAN" value={form.pan_number} onChange={(v) => setForm({ ...form, pan_number: v })} />
       </div>
       <div className="mt-4 rounded-md border border-border-custom p-3">
         <Lbl>Opening Balance</Lbl>
         <div className="flex gap-3 mt-1">
-          <select value={direction} onChange={(e) => setDirection(e.target.value)} className="rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground">
+          <select value={direction} onChange={(e) => setDirection(e.target.value)} className="min-w-0 rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground">
             <option value="will_receive">Party will receive (Advance Paid)</option>
             <option value="will_pay">Party will pay (To Pay)</option>
           </select>
-          <input type="number" placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} className="flex-1 rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground" />
+          <input type="number" placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} className="min-w-0 flex-1 rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground" />
         </div>
       </div>
       <div className="flex justify-end mt-4">
@@ -399,11 +399,11 @@ function AddPartyModal({
         {available.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.party_type || "—"})</option>)}
       </select>
       <div className="flex gap-3 mt-3">
-        <select value={direction} onChange={(e) => setDirection(e.target.value)} className="rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground">
+        <select value={direction} onChange={(e) => setDirection(e.target.value)} className="min-w-0 rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground">
           <option value="will_receive">Party will receive</option>
           <option value="will_pay">Party will pay</option>
         </select>
-        <input type="number" placeholder="Opening Amount" value={amount} onChange={(e) => setAmount(e.target.value)} className="flex-1 rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground" />
+        <input type="number" placeholder="Opening Amount" value={amount} onChange={(e) => setAmount(e.target.value)} className="min-w-0 flex-1 rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground" />
       </div>
       <div className="flex justify-end mt-4">
         <button onClick={submit} disabled={!partyId || saving} className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white disabled:opacity-40">
@@ -432,11 +432,11 @@ function Lbl({ children }: { children: React.ReactNode }) {
   return <div className="mb-1 text-xs font-medium text-muted">{children}</div>;
 }
 
-function Inp({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+function Inp({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (v: string) => void; type?: string }) {
   return (
     <div>
       <Lbl>{label}</Lbl>
-      <input value={value} onChange={(e) => onChange(e.target.value)} className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground" />
+      <input type={type} value={value} onChange={(e) => onChange(e.target.value)} className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground" />
     </div>
   );
 }
