@@ -82,7 +82,9 @@ async function staleWhileRevalidate(request) {
       }
       return response;
     })
-    .catch(() => cached);
+    // With nothing cached, hand back a network error rather than undefined,
+    // which the browser rejects with "Failed to convert value to 'Response'".
+    .catch(() => cached || Response.error());
   return cached || network;
 }
 
