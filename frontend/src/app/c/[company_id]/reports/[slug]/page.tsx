@@ -683,6 +683,20 @@ export default function DynamicReportViewPage() {
     }
   }, [slug, companyId, refreshTrigger]);
 
+  // The select filters were declared with only "All", so picking a project
+  // (or party, material...) was impossible. Offer the values the report holds.
+  const filterColumn = (label: string) => meta.columns.find(c => c.toLowerCase().includes(label.toLowerCase()));
+  const selectOptions = (label: string): string[] => {
+    const col = filterColumn(label);
+    if (!col) return ["All"];
+    const values = new Set<string>();
+    rows.forEach(row => {
+      const v = row[col];
+      if (v !== null && v !== undefined && String(v).trim() !== "") values.add(String(v));
+    });
+    return ["All", ...Array.from(values).sort((a, b) => a.localeCompare(b))];
+  };
+
   // Filter rows based on search and filters
   const filteredData = rows.filter(row => {
     // 1. Match search query across all cells
@@ -697,8 +711,11 @@ export default function DynamicReportViewPage() {
       const val = filterValues[filterLabel];
       if (val !== "All" && val !== "") {
         // Find if a column name matches the filter label
-        const matchedCol = meta.columns.find(c => c.toLowerCase().includes(filterLabel.toLowerCase()));
-        if (matchedCol && row[matchedCol] && !row[matchedCol].toLowerCase().includes(val.toLowerCase())) {
+        const matchedCol = filterColumn(filterLabel);
+        if (!matchedCol) continue;
+        const cell = String(row[matchedCol] ?? "");
+        const isSelect = meta.filters.some(f => f.label === filterLabel && f.type === "select");
+        if (isSelect ? cell !== val : !cell.toLowerCase().includes(val.toLowerCase())) {
           return false;
         }
       }
@@ -962,7 +979,7 @@ export default function DynamicReportViewPage() {
                         onChange={e => handleFilterChange(filter.label, e.target.value)}
                         className="bg-card border border-border-custom rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-primary min-w-[130px]"
                       >
-                        {filter.options?.map(opt => (
+                        {selectOptions(filter.label).map(opt => (
                           <option key={opt} value={opt}>{opt}</option>
                         ))}
                       </select>
