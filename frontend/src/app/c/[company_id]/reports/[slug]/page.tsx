@@ -897,9 +897,9 @@ export default function DynamicReportViewPage() {
             </button>
             {showExportDropdown && (
               <div className="absolute right-0 mt-2 w-40 bg-card border border-border-custom rounded-lg shadow-xl py-1 z-50">
-                <button onClick={() => handleExportSelect("csv")} className="w-full text-left px-4 py-2 text-xs text-muted hover:bg-elevated hover:text-white transition-colors cursor-pointer">Export as CSV</button>
-                <button onClick={() => handleExportSelect("pdf")} className="w-full text-left px-4 py-2 text-xs text-muted hover:bg-elevated hover:text-white transition-colors cursor-pointer">Export as PDF</button>
-                <button onClick={() => handleExportSelect("html")} className="w-full text-left px-4 py-2 text-xs text-muted hover:bg-elevated hover:text-white transition-colors cursor-pointer">Export as HTML</button>
+                <button onClick={() => handleExportSelect("csv")} className="w-full text-left px-4 py-2 text-xs text-muted hover:bg-elevated hover:text-foreground transition-colors cursor-pointer">Export as CSV</button>
+                <button onClick={() => handleExportSelect("pdf")} className="w-full text-left px-4 py-2 text-xs text-muted hover:bg-elevated hover:text-foreground transition-colors cursor-pointer">Export as PDF</button>
+                <button onClick={() => handleExportSelect("html")} className="w-full text-left px-4 py-2 text-xs text-muted hover:bg-elevated hover:text-foreground transition-colors cursor-pointer">Export as HTML</button>
               </div>
             )}
           </div>
@@ -932,9 +932,9 @@ export default function DynamicReportViewPage() {
                 </button>
                 {showExportDropdown && (
                   <div className="absolute right-0 mt-2 w-40 bg-card border border-border-custom rounded-lg shadow-xl py-1 z-50">
-                    <button onClick={() => handleExportSelect("csv")} className="w-full text-left px-4 py-2 text-xs text-muted hover:bg-elevated hover:text-white transition-colors">Export as CSV</button>
-                    <button onClick={() => handleExportSelect("pdf")} className="w-full text-left px-4 py-2 text-xs text-muted hover:bg-elevated hover:text-white transition-colors">Export as PDF</button>
-                    <button onClick={() => handleExportSelect("html")} className="w-full text-left px-4 py-2 text-xs text-muted hover:bg-elevated hover:text-white transition-colors">Export as HTML</button>
+                    <button onClick={() => handleExportSelect("csv")} className="w-full text-left px-4 py-2 text-xs text-muted hover:bg-elevated hover:text-foreground transition-colors">Export as CSV</button>
+                    <button onClick={() => handleExportSelect("pdf")} className="w-full text-left px-4 py-2 text-xs text-muted hover:bg-elevated hover:text-foreground transition-colors">Export as PDF</button>
+                    <button onClick={() => handleExportSelect("html")} className="w-full text-left px-4 py-2 text-xs text-muted hover:bg-elevated hover:text-foreground transition-colors">Export as HTML</button>
                   </div>
                 )}
               </div>
@@ -945,7 +945,7 @@ export default function DynamicReportViewPage() {
                   placeholder="Search Data..."
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  className="bg-card border border-border-custom rounded-lg pl-7 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-primary w-40 transition-all focus:w-48"
+                  className="bg-card border border-border-custom rounded-lg pl-7 pr-3 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary w-40 transition-all focus:w-48"
                 />
                 <Icon name="search" className="absolute left-2.5 top-2 w-3.5 h-3.5 text-muted" />
               </div>
@@ -977,7 +977,7 @@ export default function DynamicReportViewPage() {
                       <select
                         value={filterValues[filter.label] || "All"}
                         onChange={e => handleFilterChange(filter.label, e.target.value)}
-                        className="bg-card border border-border-custom rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-primary min-w-[130px]"
+                        className="bg-card border border-border-custom rounded-lg px-3 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary min-w-[130px]"
                       >
                         {selectOptions(filter.label).map(opt => (
                           <option key={opt} value={opt}>{opt}</option>
@@ -988,7 +988,7 @@ export default function DynamicReportViewPage() {
                         type="date"
                         value={filterValues[filter.label] || ""}
                         onChange={e => handleFilterChange(filter.label, e.target.value)}
-                        className="bg-card border border-border-custom rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-primary"
+                        className="bg-card border border-border-custom rounded-lg px-2.5 py-1 text-xs text-foreground focus:outline-none focus:border-primary"
                       />
                     )}
                   </div>

@@ -536,7 +536,7 @@ export default function ReportsDashboard() {
                         placeholder="Search employee by name..."
                         value={partyNameFilter}
                         onChange={e => setPartyNameFilter(e.target.value)}
-                        className="w-full bg-background border border-border-custom rounded-lg pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-primary"
+                        className="w-full bg-background border border-border-custom rounded-lg pl-9 pr-3 py-2 text-xs text-foreground focus:outline-none focus:border-primary"
                       />
                       <Icon name="search" className="absolute left-3 top-2.5 w-4 h-4 text-muted" />
                     </div>
