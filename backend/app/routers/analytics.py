@@ -64,6 +64,21 @@ AREA_UNITS = {
     "square meters",
 }
 
+# Indian BOQs are usually measured in square feet; convert so productivity is
+# still reported in m2 per labour-day instead of silently counting nothing.
+SQFT_UNITS = {
+    "sqft",
+    "sq ft",
+    "sq.ft",
+    "sq.ft.",
+    "sft",
+    "ft2",
+    "ft²",
+    "square feet",
+    "square foot",
+}
+SQFT_TO_M2 = 0.09290304
+
 COMPLETED_TASK_STATUSES = {
     "completed",
     "done",
@@ -370,9 +385,13 @@ def get_company_analytics(company_id: uuid.UUID, db: Session = Depends(get_db), 
     for task in tasks:
         if _task_is_completed(task) and task.boq_item_id:
             boq = boq_by_id.get(task.boq_item_id)
-            if boq and (boq.unit or "").strip().lower() in AREA_UNITS:
+            unit = (boq.unit or "").strip().lower() if boq else ""
+            if unit in AREA_UNITS:
                 completed_area += _to_float(boq.quantity)
-    labour_productivity = round(completed_area / labour_days, 2) if labour_days else None
+            elif unit in SQFT_UNITS:
+                completed_area += _to_float(boq.quantity) * SQFT_TO_M2
+    # No finished area-measured work means productivity is unknown, not zero.
+    labour_productivity = round(completed_area / labour_days, 2) if labour_days and completed_area else None
 
     ordered_qty = sum(_to_float(item.quantity) for item in purchase_order_items)
     consumed_qty = sum(_to_float(tx.qty) for tx in material_transactions)
@@ -403,11 +422,21 @@ def get_company_analytics(company_id: uuid.UUID, db: Session = Depends(get_db), 
     # cft into one scalar makes the comparison meaningless, so each material
     # line is compared in its own unit.
     ordered_by_material = defaultdict(float)
+    units_by_material = defaultdict(set)
     for item in purchase_order_items:
-        ordered_by_material[(item.material_name, (item.unit or "").strip().lower())] += _to_float(item.quantity)
+        unit = (item.unit or "").strip().lower()
+        ordered_by_material[(item.material_name, unit)] += _to_float(item.quantity)
+        if unit:
+            units_by_material[item.material_name].add(unit)
     consumed_by_material = defaultdict(float)
     for tx in material_transactions:
-        consumed_by_material[(tx.material_name, (tx.unit or "").strip().lower())] += _to_float(tx.qty)
+        unit = (tx.unit or "").strip().lower()
+        # Usage logged without a unit is in the unit the material is bought in,
+        # when it is bought in only one; otherwise it would stand alone as a
+        # line with nothing ordered and be flagged as over-consumed.
+        if not unit and len(units_by_material.get(tx.material_name, ())) == 1:
+            unit = next(iter(units_by_material[tx.material_name]))
+        consumed_by_material[(tx.material_name, unit)] += _to_float(tx.qty)
     material_reconciliation = []
     for material, unit in sorted(set(ordered_by_material) | set(consumed_by_material)):
         ordered_m = ordered_by_material.get((material, unit), 0.0)

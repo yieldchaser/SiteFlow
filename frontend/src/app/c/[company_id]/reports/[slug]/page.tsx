@@ -262,7 +262,7 @@ const REPORT_METADATA: Record<string, ReportMeta> = {
   "item-wise-sales": {
     title: "Item Wise Sales Report",
     hasDownload: true,
-    filters: [{ label: "Invoice Date", type: "date" }, { label: "Client Name", type: "select", options: ["All"] }, { label: "Project Name", type: "select", options: ["All"] }, { label: "Sale Type", type: "select", options: ["All"] }],
+    filters: [{ label: "Invoice Date", type: "date" }, { label: "Client Name", type: "select", options: ["All"] }, { label: "Item Name", type: "select", options: ["All"] }],
     columns: ['Client Name', 'Invoice Date', 'Item Name', 'Unit', 'Quantity', 'Item Rate', 'Tax %', 'Total Amount', 'Invoice Created']
   },
   "company-attendance": {

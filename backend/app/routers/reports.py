@@ -6,7 +6,7 @@ Phase 11 — Client Portal & PDF Progress Reports Router
 import logging
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -883,24 +883,48 @@ def _rep_item_wise_sales(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
             ).filter(CRMLead.company_id == cid)
 
         items = items_q.all()
+        # A converted quotation's invoice is the bill that carries its id; its
+        # invoice date is the one to show, not the moment the quotation was keyed.
+        quot_ids = {it.quotation_id for it in items}
+        bill_by_quot = {}
+        if quot_ids:
+            for bill in db.query(Bill).filter(
+                Bill.company_id == cid,
+                Bill.quotation_id.in_(quot_ids),
+                Bill.status != "Cancelled",
+            ).order_by(Bill.created_at).all():
+                bill_by_quot.setdefault(bill.quotation_id, bill)
         rows = []
         for it in items:
             q = db.query(CRMQuotation).filter(CRMQuotation.id == it.quotation_id).first()
             lead = db.query(CRMLead).filter(CRMLead.id == q.lead_id).first() if q else None
+            bill = bill_by_quot.get(it.quotation_id)
+            if bill and bill.invoice_date:
+                invoice_date = bill.invoice_date
+            else:
+                invoice_date = q.created_at if q else None
+            if isinstance(invoice_date, datetime):
+                # Stored in UTC (naive when the driver drops the zone); the
+                # invoice's day is the Indian calendar day.
+                if invoice_date.tzinfo is None:
+                    invoice_date = invoice_date.replace(tzinfo=timezone.utc)
+                invoice_date = invoice_date.astimezone(timezone(timedelta(hours=5, minutes=30)))
+                invoice_date = invoice_date.date()
+            created = (bill.created_at if bill else None) or (q.created_at if q else None)
             # R2-321: the invoice-shaped headers Sale Type, Project Name,
             # Invoice Number, Tax Amount and Gross Amount have no backing data
             # anywhere on a quotation line; they are dropped outright rather
             # than shipped as permanently blank columns.
             rows.append({
                 "Client Name": lead.client_company_name if lead else "",
-                "Invoice Date": _clean(q.created_at) if q else "",
+                "Invoice Date": invoice_date.isoformat() if invoice_date else "",
                 "Item Name": it.item_name,
                 "Unit": it.unit,
                 "Quantity": _clean(it.qty),
                 "Item Rate": _clean(it.selling_price),
                 "Tax %": _clean(it.supply_tax_pct),
                 "Total Amount": _clean(it.total_amount),
-                "Invoice Created": _clean(q.created_at) if q else "",
+                "Invoice Created": _clean(created),
             })
         return rows
     except Exception:
