@@ -2522,7 +2522,7 @@ export default function FinancePage() {
                         <div key={p.id} className="flex items-center gap-2">
                           <div className="w-48 shrink-0 text-xs text-foreground truncate">{p.name}</div>
                           <input
-                            value={partyLedgerInputs[p.id] || ""}
+                            value={partyLedgerInputs[p.id] ?? tallyPartyMappings.find((m) => m.onsite_party_id === p.id)?.tally_ledger_name ?? ""}
                             placeholder="Tally ledger name"
                             onChange={(e) => setPartyLedgerInputs((prev) => ({ ...prev, [p.id]: e.target.value }))}
                             onBlur={(e) => savePartyMapping(p.id, e.target.value)}

@@ -1322,7 +1322,7 @@ def get_transactions(project_id: UUID, db: Session = Depends(get_db), _: None = 
             type=t.type,
             unit=t.unit,
             source_ref_id=t.source_ref_id,
-            reason=t.reason if t.type in ADJUSTMENT_TYPES else None,
+            reason=t.reason,
             created_at=t.created_at
         ) for t in txns
     ]
@@ -1445,7 +1445,9 @@ def create_transaction(req: TransactionCreateRequest, db: Session = Depends(get_
         type=req.type,
         unit=req.unit,
         source_ref_id=req.source_ref_id,
-        reason=req.reason if req.type == "adjustment" else None,
+        # Adjustments must say why; other movements may carry a note, such as
+        # the location or lorry number a usage was booked against.
+        reason=(req.reason or "").strip()[:255] or None,
     )
     db.add(txn)
     db.flush()
@@ -1495,7 +1497,7 @@ def create_transaction(req: TransactionCreateRequest, db: Session = Depends(get_
         type=txn.type,
         unit=txn.unit,
         source_ref_id=txn.source_ref_id,
-        reason=txn.reason if txn.type in ADJUSTMENT_TYPES else None,
+        reason=txn.reason,
         created_at=txn.created_at,
     )
 

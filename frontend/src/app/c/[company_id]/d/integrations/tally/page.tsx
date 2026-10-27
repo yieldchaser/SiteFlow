@@ -70,6 +70,7 @@ export default function TallyIntegrationPage() {
   const [ledgerSaving, setLedgerSaving] = useState(false);
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [ledgerMapId, setLedgerMapId] = useState<string | null>(null);
+  const [salesMapId, setSalesMapId] = useState<string | null>(null);
   const [connId, setConnId] = useState<string | null>(null);
 
   // Agents state
@@ -198,6 +199,7 @@ export default function TallyIntegrationPage() {
         }
         const sales = lms.find((m: any) => m.onsite_transaction_type === "Sales Invoice");
         if (sales) {
+          setSalesMapId(sales.id);
           setSalesLedger(sales.tally_ledger_name || "Sales A/c");
         }
       }
@@ -246,6 +248,31 @@ export default function TallyIntegrationPage() {
           alert(err || "Failed to create ledger mappings");
           return;
         }
+      }
+
+      // Sales invoices post to their own ledger; this field was shown and
+      // loaded but never saved.
+      const salesName = salesLedger.trim() || "Sales A/c";
+      const salesRes = salesMapId
+        ? await fetch(`${getApiHost()}/apis/v3/tally/mappings/ledger/${salesMapId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
+            body: JSON.stringify({ tally_ledger_name: salesName }),
+          })
+        : await fetch(`${getApiHost()}/apis/v3/tally/mappings/ledger`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
+            body: JSON.stringify({
+              company_id: companyId,
+              onsite_transaction_type: "Sales Invoice",
+              posting_mode: "lumpsum",
+              tally_voucher_type: "Sales",
+              tally_ledger_name: salesName,
+            }),
+          });
+      if (!salesRes.ok) {
+        alert((await readErrorDetail(salesRes)) || "Failed to save the sales ledger");
+        return;
       }
 
       if (connId) {

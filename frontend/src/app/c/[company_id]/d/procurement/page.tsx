@@ -730,6 +730,7 @@ export default function ProcurementPage() {
           material_name: useMaterialName,
           qty,
           type: "used",
+          reason: useSourceRef.trim() || undefined,
         }),
       });
       if (!res.ok) {
@@ -738,6 +739,7 @@ export default function ProcurementPage() {
         return;
       }
       setShowUseModal(false);
+      setUseSourceRef("");
       fetchProcurementData();
     } catch (e) {
       console.error("Usage log error:", e);
