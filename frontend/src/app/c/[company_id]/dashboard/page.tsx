@@ -107,6 +107,10 @@ export default function DashboardPage() {
   // True while a dashboard request is in flight, so the charts say Loading
   // instead of "No Data Available" during a slow or cold-start response.
   const [opLoadedFor, setOpLoadedFor] = useState<string | null>(null);
+  // Health bands the user has unticked in the Project Health legend.
+  const [hiddenHealth, setHiddenHealth] = useState<string[]>([]);
+  const toggleHealth = (band: string) =>
+    setHiddenHealth((prev) => (prev.includes(band) ? prev.filter((b) => b !== band) : [...prev, band]));
   const [finLoadedFor, setFinLoadedFor] = useState<string | null>(null);
   const [financialData, setFinancialData] = useState<any>({
     advance_paid: 0.0,
@@ -563,9 +567,14 @@ export default function DashboardPage() {
                 const completedCount = filteredProjList.filter(p => p.status === "Completed").length;
                 const cancelledCount = filteredProjList.filter(p => p.status === "Cancelled").length;
 
-                const healthyCount = filteredProjList.filter(p => p.health === "Healthy").length;
-                const warningCount = filteredProjList.filter(p => p.health === "Warning").length;
-                const criticalCount = filteredProjList.filter(p => p.health === "Critical").length;
+                const allHealthy = filteredProjList.filter(p => p.health === "Healthy").length;
+                const allWarning = filteredProjList.filter(p => p.health === "Warning").length;
+                const allCritical = filteredProjList.filter(p => p.health === "Critical").length;
+                // The gauge draws only the bands ticked in the legend.
+                const healthyCount = hiddenHealth.includes("Healthy") ? 0 : allHealthy;
+                const warningCount = hiddenHealth.includes("Warning") ? 0 : allWarning;
+                const criticalCount = hiddenHealth.includes("Critical") ? 0 : allCritical;
+                const allBandsShown = hiddenHealth.length === 0;
                 const totalHealthCount = healthyCount + warningCount + criticalCount || 1;
 
                 const healthyPct = healthyCount / totalHealthCount;
@@ -790,7 +799,7 @@ export default function DashboardPage() {
                               fontSize="22"
                               textAnchor="middle"
                             >
-                              {filteredProjList.length}
+                              {allBandsShown ? filteredProjList.length : healthyCount + warningCount + criticalCount}
                             </text>
                             <text
                               x="160"
@@ -811,8 +820,9 @@ export default function DashboardPage() {
                           <div className="flex items-center gap-2.5 pb-2 border-b border-border-custom text-xs font-bold text-foreground">
                             <input
                               type="checkbox"
-                              checked={true}
-                              readOnly
+                              checked={allBandsShown}
+                              onChange={() => setHiddenHealth(allBandsShown ? ["Healthy", "Warning", "Critical"] : [])}
+                              aria-label="Show all health bands"
                               className="rounded border-border-custom text-primary focus:ring-primary h-3.5 w-3.5 cursor-pointer"
                             />
                             <span>Project Health</span>
@@ -822,37 +832,40 @@ export default function DashboardPage() {
                             <div className="flex items-center gap-2.5">
                               <input
                                 type="checkbox"
-                                checked={healthyCount > 0}
-                                readOnly
+                                checked={!hiddenHealth.includes("Healthy")}
+                                onChange={() => toggleHealth("Healthy")}
+                                aria-label="Show Healthy projects on the chart"
                                 className="rounded border-border-custom text-success focus:ring-success h-3.5 w-3.5 cursor-pointer"
                               />
                               <div className="h-2.5 w-2.5 rounded-full bg-success" />
                               <span className="text-muted font-medium">Healthy</span>
-                              <strong className="text-foreground font-bold ml-auto">{healthyCount}</strong>
+                              <strong className="text-foreground font-bold ml-auto">{allHealthy}</strong>
                             </div>
 
                             <div className="flex items-center gap-2.5">
                               <input
                                 type="checkbox"
-                                checked={warningCount > 0}
-                                readOnly
+                                checked={!hiddenHealth.includes("Warning")}
+                                onChange={() => toggleHealth("Warning")}
+                                aria-label="Show Warning projects on the chart"
                                 className="rounded border-border-custom text-warning focus:ring-warning h-3.5 w-3.5 cursor-pointer"
                               />
                               <div className="h-2.5 w-2.5 rounded-full bg-warning" />
                               <span className="text-muted font-medium">Warning</span>
-                              <strong className="text-foreground font-bold ml-auto">{warningCount}</strong>
+                              <strong className="text-foreground font-bold ml-auto">{allWarning}</strong>
                             </div>
 
                             <div className="flex items-center gap-2.5">
                               <input
                                 type="checkbox"
-                                checked={criticalCount > 0}
-                                readOnly
+                                checked={!hiddenHealth.includes("Critical")}
+                                onChange={() => toggleHealth("Critical")}
+                                aria-label="Show Critical projects on the chart"
                                 className="rounded border-border-custom text-danger focus:ring-danger h-3.5 w-3.5 cursor-pointer"
                               />
                               <div className="h-2.5 w-2.5 rounded-full bg-danger" />
                               <span className="text-muted font-medium">Critical</span>
-                              <strong className="text-foreground font-bold ml-auto">{criticalCount}</strong>
+                              <strong className="text-foreground font-bold ml-auto">{allCritical}</strong>
                             </div>
                           </div>
                         </div>
