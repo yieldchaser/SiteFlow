@@ -145,11 +145,6 @@ export default function DashboardPage() {
         .then((data) => setOperationalData(data))
         .catch((err) => console.error("Failed to fetch operational stats", err));
 
-      fetch(`${apiHost}/apis/v3/analytics/company/${companyId}/financial`, { headers: authHeaders() })
-        .then((res) => res.json())
-        .then((data) => setFinancialData(data))
-        .catch((err) => console.error("Failed to fetch financial stats", err));
-
       if (activeProject && !activeProject.startsWith("d0000000-")) {
         fetch(`${apiHost}/apis/v3/hr/employees/${activeProject}`, { headers: authHeaders() })
           .then((res) => res.json())
@@ -207,6 +202,22 @@ export default function DashboardPage() {
         .catch((err) => console.error("Failed to fetch projects list", err));
     }
   }, [companyId, activeProject]);
+
+  // Financial tab: the whole company, or the project picked in its menu.
+  const [finProject, setFinProject] = useState("All");
+  const [finProjectList, setFinProjectList] = useState<{ project_id: string; project_name: string }[]>([]);
+  useEffect(() => {
+    if (!companyId) return;
+    const query = finProject === "All" ? "" : `?project_id=${finProject}`;
+    fetch(`${getApiHost()}/apis/v3/analytics/company/${companyId}/financial${query}`, { headers: authHeaders() })
+      .then((res) => res.json())
+      .then((data) => {
+        setFinancialData(data);
+        // The menu always lists every project, even while one is picked.
+        if (finProject === "All" && Array.isArray(data?.project_summaries)) setFinProjectList(data.project_summaries);
+      })
+      .catch((err) => console.error("Failed to fetch financial stats", err));
+  }, [companyId, finProject]);
 
   // Project setup wizard state
   const [isWizardOpen, setIsWizardOpen] = useState(false);
@@ -1043,10 +1054,14 @@ export default function DashboardPage() {
                     <div className="flex gap-4 items-center">
                       <div className="space-y-1">
                         <label className="text-[9px] text-muted uppercase tracking-wider font-bold block">Project Name</label>
-                        <select className="bg-input border border-border-custom rounded-lg px-3 py-1.5 text-xs text-foreground focus:outline-none min-w-[150px] transition-all">
-                          <option>All</option>
-                          {financialData?.project_summaries?.map((p: any, idx: number) => (
-                            <option key={idx}>{p.project_name}</option>
+                        <select
+                          value={finProject}
+                          onChange={(e) => setFinProject(e.target.value)}
+                          className="bg-input border border-border-custom rounded-lg px-3 py-1.5 text-xs text-foreground focus:outline-none min-w-[150px] transition-all"
+                        >
+                          <option value="All">All</option>
+                          {finProjectList.map((p) => (
+                            <option key={p.project_id} value={p.project_id}>{p.project_name}</option>
                           ))}
                         </select>
                       </div>
@@ -1057,7 +1072,9 @@ export default function DashboardPage() {
                   {/* Company Party Balance (All Projects) - Half-circle Donut & Metrics */}
                   <div className="bg-card border border-border-custom rounded-lg p-5 space-y-6 transition-all">
                     <div className="flex justify-between items-center border-b border-border-custom pb-3">
-                      <h4 className="text-xs font-bold text-muted uppercase tracking-wider">Company Party Balance (All Projects)</h4>
+                      <h4 className="text-xs font-bold text-muted uppercase tracking-wider">{finProject === "All"
+                          ? "Company Party Balance (All Projects)"
+                          : `Party Balance: ${finProjectList.find((p) => p.project_id === finProject)?.project_name || "Project"}`}</h4>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">

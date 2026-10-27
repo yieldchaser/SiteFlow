@@ -12,11 +12,11 @@ from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import Date, cast, func
+from sqlalchemy import Date, cast, func, true
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.auth import get_current_user, verify_company_access, scope_projects
+from app.auth import get_current_user, verify_company_access, scope_projects, project_ids_for_user
 from app.constants import (
     EXPENSE_INVOICE_TYPES,
     REVENUE_INVOICE_TYPES,
@@ -640,13 +640,22 @@ def get_company_operational_analytics(company_id: uuid.UUID, db: Session = Depen
 
 
 @router.get("/company/{company_id}/financial")
-def get_company_financial_analytics(company_id: uuid.UUID, db: Session = Depends(get_db), _: None = Depends(verify_company_access), current_user: User = Depends(get_current_user)):
+def get_company_financial_analytics(company_id: uuid.UUID, project_id: Optional[uuid.UUID] = None, db: Session = Depends(get_db), _: None = Depends(verify_company_access), current_user: User = Depends(get_current_user)):
+    """Company money picture, or one project's when project_id is given."""
     company = db.query(Company).filter(Company.id == company_id).first()
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
 
-    projects = scope_projects(db.query(Project).filter(Project.company_id == company_id), db, current_user, company_id).all()
+    project_query = scope_projects(db.query(Project).filter(Project.company_id == company_id), db, current_user, company_id)
+    if project_id is not None:
+        project_query = project_query.filter(Project.id == project_id)
+    projects = project_query.all()
+    if project_id is not None and not projects:
+        raise HTTPException(status_code=404, detail="Project not found")
     project_ids = [p.id for p in projects]
+    # Advances can be booked without a project. They belong in the company
+    # picture only when the whole company is shown to someone who sees it all.
+    whole_company = project_id is None and project_ids_for_user(db, current_user, company_id) is None
 
     bills = db.query(Bill).filter(Bill.project_id.in_(project_ids), Bill.status != "Cancelled").all() if project_ids else []
 
@@ -679,6 +688,7 @@ def get_company_financial_analytics(company_id: uuid.UUID, db: Session = Depends
             # members are Payment rows too, and are not advances.
             CompanyTeam.library_party_id.isnot(None),
             Payment.unsettled_amount > 0,
+            true() if whole_company else Payment.project_id.in_(project_ids),
         )
         .group_by(Payment.payment_type)
         .all()
