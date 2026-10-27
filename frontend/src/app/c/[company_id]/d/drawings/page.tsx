@@ -70,6 +70,9 @@ export default function DrawingsPage() {
   const companyId = (company_id as string) || "demo";
   const { activeProjectId } = useProject();
   const projectId = activeProjectId;
+  // Project the page last loaded for; until it matches, show Loading rather than empty.
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
+  const drawingsLoading = loadedFor !== projectId;
 
   const [tab, setTab] = useState<"drawings" | "files">("drawings");
   const [drawings, setDrawings] = useState<Drawing[]>([]);
@@ -162,6 +165,8 @@ export default function DrawingsPage() {
     } catch (err) {
       console.error("Failed to fetch drawings from server", err);
       setIsOffline(true);
+    } finally {
+      setLoadedFor(projectId);
     }
   };
 
@@ -682,7 +687,11 @@ export default function DrawingsPage() {
             </div>
           )}
 
-          {tab === "drawings" && !activeDrawing && (
+          {tab === "drawings" && !activeDrawing && drawingsLoading && (
+            <div className="flex-1 flex items-center justify-center p-8 text-muted text-sm">Loading drawings...</div>
+          )}
+
+          {tab === "drawings" && !activeDrawing && !drawingsLoading && (
             <div className="flex-1 flex items-center justify-center p-8">
               <EmptyState
                 title="No drawings found"

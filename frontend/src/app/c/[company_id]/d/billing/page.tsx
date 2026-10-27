@@ -82,6 +82,9 @@ export default function SubcontractorBillingPage() {
   const companyId = company_id || "demo-company";
   const { activeProjectId } = useProject();
   const projectId = activeProjectId;
+  // Project the lists were last loaded for; until it matches they say Loading.
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
+  const billingLoading = loadedFor !== projectId;
 
   const [tab, setTab] = useState<"wo" | "ra-bills" | "notes">("ra-bills");
 
@@ -272,6 +275,7 @@ export default function SubcontractorBillingPage() {
         fetchNotes(nameMap),
         fetchTowers(),
       ]);
+      setLoadedFor(projectId);
     })();
   }, [companyId, projectId]);
 
@@ -943,7 +947,10 @@ export default function SubcontractorBillingPage() {
                           </td>
                         </tr>
                       ))}
-                      {bills.length === 0 && (
+                      {bills.length === 0 && billingLoading && (
+                        <tr><td colSpan={9} className="p-8 text-center text-muted text-sm">Loading RA bills...</td></tr>
+                      )}
+                      {bills.length === 0 && !billingLoading && (
                         <tr>
                           <td colSpan={9} className="p-8">
                             <EmptyState
@@ -1034,7 +1041,10 @@ export default function SubcontractorBillingPage() {
                           </td>
                         </tr>
                       ))}
-                      {workOrders.length === 0 && (
+                      {workOrders.length === 0 && billingLoading && (
+                        <tr><td colSpan={6} className="p-8 text-center text-muted text-sm">Loading work orders...</td></tr>
+                      )}
+                      {workOrders.length === 0 && !billingLoading && (
                         <tr>
                           <td colSpan={6} className="p-8">
                             <EmptyState
@@ -1106,7 +1116,10 @@ export default function SubcontractorBillingPage() {
                           </td>
                         </tr>
                       ))}
-                      {notes.length === 0 && (
+                      {notes.length === 0 && billingLoading && (
+                        <tr><td colSpan={8} className="p-8 text-center text-muted text-sm">Loading notes...</td></tr>
+                      )}
+                      {notes.length === 0 && !billingLoading && (
                         <tr>
                           <td colSpan={8} className="p-8">
                             <EmptyState

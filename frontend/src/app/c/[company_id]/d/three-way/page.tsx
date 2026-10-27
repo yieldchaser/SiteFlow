@@ -51,6 +51,9 @@ export default function ThreeWayPage() {
   const companyId = params?.company_id as string;
   const { activeProjectId } = useProject();
   const projectId = activeProjectId;
+  // Project the page last loaded for; until it matches, show Loading rather than empty.
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
+  const matchLoading = loadedFor !== projectId;
 
   const [matches, setMatches] = useState<Match[]>([]);
   const [pos, setPos] = useState<PO[]>([]);
@@ -75,6 +78,8 @@ export default function ThreeWayPage() {
       }
     } catch (e) {
       console.error("Failed to load matches", e);
+    } finally {
+      setLoadedFor(projectId);
     }
   };
 
@@ -212,7 +217,9 @@ export default function ThreeWayPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-custom">
-              {matches.length === 0 ? (
+              {matches.length === 0 && matchLoading ? (
+                <tr><td colSpan={7} className="p-8 text-center text-muted text-sm">Loading 3-way matches...</td></tr>
+              ) : matches.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="p-8">
                     <EmptyState

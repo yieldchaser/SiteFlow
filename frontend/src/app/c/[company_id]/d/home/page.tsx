@@ -161,6 +161,10 @@ export default function ProjectsHomePage() {
 
   const apiHost = getApiHost();
 
+  // False until the first load answers, so the lists say Loading rather than empty.
+  const [hubLoaded, setHubLoaded] = useState(false);
+  const hubLoading = !hubLoaded;
+
   const fetchData = async () => {
     if (!companyId) return;
     try {
@@ -216,6 +220,8 @@ export default function ProjectsHomePage() {
       }
     } catch (err) {
       console.error("Error fetching projects dashboard data:", err);
+    } finally {
+      setHubLoaded(true);
     }
   };
 
@@ -534,7 +540,9 @@ export default function ProjectsHomePage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-custom">
-              {filteredProjects.length === 0 ? (
+              {filteredProjects.length === 0 && hubLoading ? (
+                <tr><td colSpan={seesFinance ? 7 : 6} className="p-8 text-center text-muted text-sm">Loading projects...</td></tr>
+              ) : filteredProjects.length === 0 ? (
                 <tr>
                   <td colSpan={seesFinance ? 7 : 6} className="px-6 py-12 text-center text-muted font-medium">
                     {canEditProjects ? 'No active projects. Click "+ New Project" to create one.' : "No active projects yet."}
@@ -643,7 +651,9 @@ export default function ProjectsHomePage() {
 
             {/* List */}
             <div className="p-5 space-y-4 max-h-[400px] overflow-y-auto">
-              {leaves.length === 0 ? (
+              {leaves.length === 0 && hubLoading ? (
+                <div className="p-6 text-center text-muted text-sm">Loading leave requests...</div>
+              ) : leaves.length === 0 ? (
                 <EmptyState
                   title="No leave requests found"
                   description="No leave applications submitted by site staff."
@@ -821,7 +831,9 @@ export default function ProjectsHomePage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border-custom">
-                      {filteredIndents.length === 0 ? (
+                      {filteredIndents.length === 0 && hubLoading ? (
+                        <tr><td colSpan={6} className="p-8 text-center text-muted text-sm">Loading indents...</td></tr>
+                      ) : filteredIndents.length === 0 ? (
                         <tr>
                           <td colSpan={6} className="p-8">
                             <EmptyState

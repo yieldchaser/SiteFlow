@@ -72,6 +72,10 @@ export default function DepreciationPage() {
     notes: "",
   });
 
+  // Which lists have answered at least once; until then they say Loading.
+  const [schedulesLoaded, setSchedulesLoaded] = useState(false);
+  const [entriesLoaded, setEntriesLoaded] = useState(false);
+
   const fetchSchedules = async () => {
     try {
       const res = await fetch(`${getApiHost()}/apis/v3/assets/schedules/${companyId}`, { headers: authHeaders() });
@@ -81,6 +85,8 @@ export default function DepreciationPage() {
       }
     } catch (e) {
       console.error("Failed to load schedules", e);
+    } finally {
+      setSchedulesLoaded(true);
     }
   };
 
@@ -93,6 +99,8 @@ export default function DepreciationPage() {
       }
     } catch (e) {
       console.error("Failed to load entries", e);
+    } finally {
+      setEntriesLoaded(true);
     }
   };
 
@@ -222,7 +230,9 @@ export default function DepreciationPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border-custom">
-                {schedules.length === 0 ? (
+                {schedules.length === 0 && !schedulesLoaded ? (
+                  <tr><td colSpan={7} className="p-8 text-center text-muted text-sm">Loading schedules...</td></tr>
+                ) : schedules.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="p-8">
                       <EmptyState
@@ -271,7 +281,9 @@ export default function DepreciationPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border-custom">
-                {entries.length === 0 ? (
+                {entries.length === 0 && !entriesLoaded ? (
+                  <tr><td colSpan={6} className="p-8 text-center text-muted text-sm">Loading entries...</td></tr>
+                ) : entries.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="p-8">
                       <EmptyState

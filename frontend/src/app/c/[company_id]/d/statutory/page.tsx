@@ -226,6 +226,10 @@ export default function StatutoryPage() {
     filed_by: "",
   });
 
+  // Filter the reports were last loaded for; until it matches, say Loading.
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
+  const reportsLoading = loadedFor !== (filterType || "all");
+
   const fetchReports = async () => {
     try {
       const url = `${getApiHost()}/apis/v3/statutory/${companyId}${
@@ -235,6 +239,8 @@ export default function StatutoryPage() {
       if (res.ok) setReports(await res.json());
     } catch (e) {
       console.error("Failed to load reports", e);
+    } finally {
+      setLoadedFor(filterType || "all");
     }
   };
 
@@ -967,7 +973,9 @@ export default function StatutoryPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border-custom/30">
-                    {reports.length === 0 ? (
+                    {reports.length === 0 && reportsLoading ? (
+                      <tr><td colSpan={10} className="p-8 text-center text-muted text-sm">Loading statutory reports...</td></tr>
+                    ) : reports.length === 0 ? (
                       <tr>
                         <td colSpan={10} className="p-8">
                           <EmptyState

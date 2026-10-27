@@ -70,6 +70,9 @@ export default function PaymentApprovalPage() {
 
   const apiHost = getApiHost();
 
+  // False until the first load answers, so the list says Loading rather than empty.
+  const [requestsLoaded, setRequestsLoaded] = useState(false);
+
   const fetchData = async () => {
     if (!companyId || !accessToken) return;
     const authHeaders = { "Authorization": `Bearer ${accessToken}` };
@@ -84,6 +87,8 @@ export default function PaymentApprovalPage() {
       }
     } catch (err) {
       console.error(err);
+    } finally {
+      setRequestsLoaded(true);
     }
 
     try {
@@ -197,7 +202,9 @@ export default function PaymentApprovalPage() {
 
       {/* Requests List */}
       <div className="space-y-4">
-        {filteredRequests.length === 0 ? (
+        {filteredRequests.length === 0 && !requestsLoaded ? (
+          <div className="p-8 text-center text-muted text-sm">Loading approvals...</div>
+        ) : filteredRequests.length === 0 ? (
           <EmptyState
             title="No approvals found"
             description="No requests match the selected status or project filter."
