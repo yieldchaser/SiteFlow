@@ -542,9 +542,9 @@ export default function ProjectDashboardPage() {
           addsCostCodes ? (
             <button
               onClick={() => setShowAddCC(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary/95 text-white rounded-md text-xs font-semibold transition-all cursor-pointer"
+              className="flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-1.5 bg-primary hover:bg-primary/95 text-white rounded-md text-xs font-semibold transition-all cursor-pointer"
             >
-              + Add Cost Code
+              + <span className="hidden sm:inline">Add </span>Cost Code
             </button>
           ) : null
         }
