@@ -495,7 +495,7 @@ export default function ProjectDashboardPage() {
           ? [{ name: "Other", budget: "", committed: "", actual: fmtINR(budget.other_actual, currencyDecimalPlaces), left: "" }]
           : []),
       ],
-      footer: "Committed is ordered but not yet billed. Spent counts approved bills, finalised payroll, equipment use, fuel and wastage. Change the budget on the Budget page.",
+      footer: "Committed is purchase orders and work orders placed. Spent counts approved bills, finalised payroll, equipment use, fuel and wastage. Change the budget on the Budget page.",
     });
 
   const openBoqDrill = () =>

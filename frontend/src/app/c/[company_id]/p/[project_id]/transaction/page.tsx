@@ -133,12 +133,12 @@ type LedgerRow = {
   status: string;
 };
 
-function Card({ label, value, tone }: { label: string; value: string; tone?: "emerald" | "rose" | "violet" }) {
-  const color = tone === "emerald" ? "text-success" : tone === "rose" ? "text-danger" : tone === "violet" ? "text-chart-4" : "text-foreground";
+function Card({ label, value, tone }: { label: string; value: string; tone?: "emerald" | "rose" }) {
+  const color = tone === "emerald" ? "text-success" : tone === "rose" ? "text-danger" : "text-foreground";
   return (
-    <div className="rounded-lg border border-border-custom bg-card p-4">
-      <div className="text-xs uppercase tracking-wider text-muted">{label}</div>
-      <div className={`mt-2 text-2xl font-bold ${color}`}>{value}</div>
+    <div className="rounded-xl border border-border-custom bg-card p-5 shadow-sm">
+      <div className="text-xs font-medium text-muted">{label}</div>
+      <div className={`mt-2 text-2xl font-bold tracking-tight tabular-nums ${color}`}>{value}</div>
     </div>
   );
 }
@@ -402,9 +402,9 @@ export default function TransactionPage() {
           ledger below shows, and the label must not claim otherwise. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card label="Total In (Cash Received)" value={fmtINR(totalIn, currencyDecimalPlaces)} tone="emerald" />
-        <Card label="Total Out (Cash Paid)" value={fmtINR(totalOut, currencyDecimalPlaces)} tone="rose" />
+        <Card label="Total Out (Cash Paid)" value={fmtINR(totalOut, currencyDecimalPlaces)} />
         <Card label="Project Balance (In − Out)" value={fmtINR(balance, currencyDecimalPlaces)} tone={balance >= 0 ? "emerald" : "rose"} />
-        <Card label="Margin (Sales − Expense, ex-GST)" value={fmtINR(margin, currencyDecimalPlaces)} tone="violet" />
+        <Card label="Margin (Sales − Expense, ex-GST)" value={fmtINR(margin, currencyDecimalPlaces)} tone={margin >= 0 ? "emerald" : "rose"} />
       </div>
 
       {/* R2-173: never present voucher-only cash tiles as if they were complete */}
