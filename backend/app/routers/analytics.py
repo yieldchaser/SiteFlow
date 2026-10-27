@@ -42,6 +42,7 @@ from app.models import (
     PurchaseOrder,
     PurchaseOrderItem,
     MaterialTransaction,
+    GoodsReceiptNote,
     MaterialWastage,
     Task,
     User,
@@ -630,11 +631,16 @@ def get_company_operational_analytics(company_id: uuid.UUID, project_id: Optiona
             "absent": absent
         })
 
-        # Material receipt logs count
-        mat_txs = db.query(MaterialTransaction).filter(
+        # Material lines received that day. A GRN row is dated by the GRN's
+        # received date, not by when it was typed in: back-entered receipts all
+        # landed on the entry day before.
+        received_on = func.coalesce(GoodsReceiptNote.received_date, MaterialTransaction.created_at)
+        mat_txs = db.query(MaterialTransaction).outerjoin(
+            GoodsReceiptNote, GoodsReceiptNote.id == MaterialTransaction.source_ref_id
+        ).filter(
             MaterialTransaction.project_id.in_(series_ids),
-            MaterialTransaction.created_at >= t_start,
-            MaterialTransaction.created_at < t_end,
+            received_on >= t_start,
+            received_on < t_end,
             MaterialTransaction.type == "received"
         ).count() if project_ids else 0
         
