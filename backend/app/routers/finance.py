@@ -39,7 +39,7 @@ from app.constants import (
     is_settlement_money_out,
 )
 from app.workflow_controls import enforce_entry_creation_window
-from app.party_names import resolve_party_name
+from app.party_names import resolve_party_name, resolve_party_names_batch
 
 logger = logging.getLogger(__name__)
 
@@ -1327,13 +1327,17 @@ def get_company_transactions(
     rows: List[TransactionRow] = []
 
     # Each party name costs several queries; resolved per row it made this
-    # screen take ~18 s for 74 rows on prod. Resolve each party once.
-    party_names: dict = {}
+    # screen take ~18 s for 74 rows on prod. Resolve them all in one batch.
+    party_names = resolve_party_names_batch(
+        db,
+        [b.party_company_user_id for b in bills] + [p.party_company_user_id for p in payments],
+        fallback="Unknown Party",
+    )
 
     def party_name(team_id):
-        if team_id not in party_names:
-            party_names[team_id] = _txn_party_name(db, team_id)
-        return party_names[team_id]
+        if not team_id:
+            return "Walk-in Party"
+        return party_names.get(team_id, "Unknown Party")
 
     for b in bills:
         party = party_name(b.party_company_user_id)
