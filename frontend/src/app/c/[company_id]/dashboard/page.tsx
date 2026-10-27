@@ -84,6 +84,16 @@ function MonthlyBars({
   );
 }
 
+// Chart placeholder: "Loading..." while the request runs, "No Data Available"
+// only once it has answered with nothing to plot.
+function ChartEmpty({ loading }: { loading: boolean }) {
+  return loading ? (
+    <span className="text-muted text-xs font-semibold uppercase tracking-wider animate-pulse">Loading...</span>
+  ) : (
+    <span className="text-danger [.light-theme_&]:text-danger text-xs font-bold uppercase tracking-wider">No Data Available</span>
+  );
+}
+
 export default function DashboardPage() {
   const params = useParams();
   const companyId = params?.company_id as string;
@@ -94,6 +104,10 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("overview");
   const [overviewTab, setOverviewTab] = useState<"operational" | "financial">("operational");
   const [operationalData, setOperationalData] = useState<any>(null);
+  // True while a dashboard request is in flight, so the charts say Loading
+  // instead of "No Data Available" during a slow or cold-start response.
+  const [opLoadedFor, setOpLoadedFor] = useState<string | null>(null);
+  const [finLoadedFor, setFinLoadedFor] = useState<string | null>(null);
   const [financialData, setFinancialData] = useState<any>({
     advance_paid: 0.0,
     to_pay: 0.0,
@@ -211,7 +225,8 @@ export default function DashboardPage() {
         // The menu always lists every project, even while one is picked.
         if (finProject === "All" && Array.isArray(data?.project_summaries)) setFinProjectList(data.project_summaries);
       })
-      .catch((err) => console.error("Failed to fetch financial stats", err));
+      .catch((err) => console.error("Failed to fetch financial stats", err))
+      .finally(() => setFinLoadedFor(finProject));
   }, [companyId, finProject]);
 
   // Project setup wizard state
@@ -240,8 +255,12 @@ export default function DashboardPage() {
     fetch(`${getApiHost()}/apis/v3/analytics/company/${companyId}/operational${query}`, { headers: authHeaders() })
       .then((res) => res.json())
       .then((data) => setOperationalData(data))
-      .catch((err) => console.error("Failed to fetch operational stats", err));
+      .catch((err) => console.error("Failed to fetch operational stats", err))
+      .finally(() => setOpLoadedFor(selProject));
   }, [companyId, selProject]);
+
+  const opLoading = opLoadedFor !== selProject;
+  const finLoading = finLoadedFor !== finProject;
 
   const [projects, setProjects] = useState<any[]>([]);
 
@@ -516,6 +535,8 @@ export default function DashboardPage() {
                 // The planning list carries no dates, progress, customer or key
                 // personnel; the operational analytics row for the project does.
                 const opById = new Map<string, any>((operationalData?.projects || []).map((o: any) => [o.project_id, o]));
+                // Until those rows arrive the cells would read "-" and 0.00%.
+                const opPending = opLoading && !operationalData;
                 const projRows = projects.map(p => {
                   const o = opById.get(p.id);
                   if (!o) return p;
@@ -854,7 +875,7 @@ export default function DashboardPage() {
                             if (!hasData) {
                               return (
                                 <div className="h-40 flex items-center justify-center rounded-md bg-transparent">
-                                  <span className="text-danger [.light-theme_&]:text-danger text-xs font-bold uppercase tracking-wider">No Data Available</span>
+                                  <ChartEmpty loading={opLoading} />
                                 </div>
                               );
                             }
@@ -928,7 +949,7 @@ export default function DashboardPage() {
                             if (!hasData) {
                               return (
                                 <div className="h-40 flex items-center justify-center rounded-md bg-transparent">
-                                  <span className="text-danger [.light-theme_&]:text-danger text-xs font-bold uppercase tracking-wider">No Data Available</span>
+                                  <ChartEmpty loading={opLoading} />
                                 </div>
                               );
                             }
@@ -1036,10 +1057,10 @@ export default function DashboardPage() {
                                       {p.health}
                                     </span>
                                   </td>
-                                  <td className="px-4 py-3 text-center border-r border-border-custom text-muted font-semibold font-sans">{p.startDate || "-"}</td>
-                                  <td className="px-4 py-3 text-center border-r border-border-custom text-muted font-semibold font-sans">{p.endDate || "-"}</td>
-                                  <td className="px-4 py-3 text-right border-r border-border-custom font-bold text-foreground font-sans">{p.progress.toFixed(2)}%</td>
-                                  <td className="px-4 py-3 border-r border-border-custom text-muted font-medium">{p.customerName || "-"}</td>
+                                  <td className="px-4 py-3 text-center border-r border-border-custom text-muted font-semibold font-sans">{opPending ? "..." : p.startDate || "-"}</td>
+                                  <td className="px-4 py-3 text-center border-r border-border-custom text-muted font-semibold font-sans">{opPending ? "..." : p.endDate || "-"}</td>
+                                  <td className="px-4 py-3 text-right border-r border-border-custom font-bold text-foreground font-sans">{opPending ? "..." : `${p.progress.toFixed(2)}%`}</td>
+                                  <td className="px-4 py-3 border-r border-border-custom text-muted font-medium">{opPending ? "..." : p.customerName || "-"}</td>
                                   <td className="px-4 py-3 text-muted font-medium">{p.projectStage || "-"}</td>
                                 </tr>
                               ))
@@ -1302,7 +1323,7 @@ export default function DashboardPage() {
                           if (!hasData) {
                             return (
                               <div className="h-40 flex items-center justify-center bg-transparent">
-                                <span className="text-danger [.light-theme_&]:text-danger text-xs font-bold uppercase tracking-wider">No Data Available</span>
+                                <ChartEmpty loading={finLoading} />
                               </div>
                             );
                           }
@@ -1337,7 +1358,7 @@ export default function DashboardPage() {
                           if (!hasData) {
                             return (
                               <div className="h-40 flex items-center justify-center bg-transparent">
-                                <span className="text-danger [.light-theme_&]:text-danger text-xs font-bold uppercase tracking-wider">No Data Available</span>
+                                <ChartEmpty loading={finLoading} />
                               </div>
                             );
                           }
@@ -1370,7 +1391,7 @@ export default function DashboardPage() {
                           if (!hasData) {
                             return (
                               <div className="h-40 flex items-center justify-center bg-transparent">
-                                <span className="text-danger [.light-theme_&]:text-danger text-xs font-bold uppercase tracking-wider">No Data Available</span>
+                                <ChartEmpty loading={finLoading} />
                               </div>
                             );
                           }
@@ -1408,7 +1429,7 @@ export default function DashboardPage() {
                           if (!hasPaymentData) {
                             return (
                               <div className="h-40 flex items-center justify-center rounded-md bg-transparent">
-                                <span className="text-danger [.light-theme_&]:text-danger text-xs font-bold uppercase tracking-wider">No Data Available</span>
+                                <ChartEmpty loading={finLoading} />
                               </div>
                             );
                           }
@@ -1457,7 +1478,7 @@ export default function DashboardPage() {
                           if (!hasExpenseData) {
                             return (
                               <div className="h-40 flex items-center justify-center rounded-md bg-transparent">
-                                <span className="text-danger [.light-theme_&]:text-danger text-xs font-bold uppercase tracking-wider">No Data Available</span>
+                                <ChartEmpty loading={finLoading} />
                               </div>
                             );
                           }
