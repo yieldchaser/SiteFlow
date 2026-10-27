@@ -560,7 +560,8 @@ export default function DynamicReportViewPage() {
 
   const [toastMessage, setToastMessage] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [showExportDropdown, setShowExportDropdown] = useState(false);
+  // Which of the two Export buttons has its menu open, so only one menu shows.
+  const [exportMenu, setExportMenu] = useState<"header" | "toolbar" | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc" | null>(null);
 
@@ -740,7 +741,7 @@ export default function DynamicReportViewPage() {
 
   // Handle format export selection
   const handleExportSelect = (format: string) => {
-    setShowExportDropdown(false);
+    setExportMenu(null);
     
     const exportColumns = meta.columns.filter(col => processedData.length === 0 || processedData.some(row => (row[col] ?? "") !== ""));
     const formatExportCell = (value: unknown) => {
@@ -889,13 +890,13 @@ export default function DynamicReportViewPage() {
           {/* Dynamic 4-option export dropdown button */}
           <div className="relative">
             <button 
-              onClick={() => setShowExportDropdown(!showExportDropdown)}
+              onClick={() => setExportMenu(exportMenu === "header" ? null : "header")}
               className="text-white text-xs bg-primary hover:bg-primary/90 font-bold rounded-lg px-3.5 py-1.5 transition-all flex items-center gap-1 cursor-pointer"
               title="Export Options"
             >
               <Icon name="arrow_up" className="w-3.5 h-3.5" /> Export
             </button>
-            {showExportDropdown && (
+            {exportMenu === "header" && (
               <div className="absolute right-0 mt-2 w-40 bg-card border border-border-custom rounded-lg shadow-xl py-1 z-50">
                 <button onClick={() => handleExportSelect("csv")} className="w-full text-left px-4 py-2 text-xs text-muted hover:bg-elevated hover:text-foreground transition-colors cursor-pointer">Export as CSV</button>
                 <button onClick={() => handleExportSelect("pdf")} className="w-full text-left px-4 py-2 text-xs text-muted hover:bg-elevated hover:text-foreground transition-colors cursor-pointer">Export as PDF</button>
@@ -924,13 +925,13 @@ export default function DynamicReportViewPage() {
               {/* Dynamic 4-option export dropdown button */}
               <div className="relative">
                 <button 
-                  onClick={() => setShowExportDropdown(!showExportDropdown)}
+                  onClick={() => setExportMenu(exportMenu === "toolbar" ? null : "toolbar")}
                   className="text-muted hover:text-primary text-xs border border-border-custom bg-card/20 rounded-lg px-3 py-1.5 transition-all flex items-center gap-1"
                   title="Export Options"
                 >
                   <Icon name="arrow_up" className="w-3.5 h-3.5" /> Export
                 </button>
-                {showExportDropdown && (
+                {exportMenu === "toolbar" && (
                   <div className="absolute right-0 mt-2 w-40 bg-card border border-border-custom rounded-lg shadow-xl py-1 z-50">
                     <button onClick={() => handleExportSelect("csv")} className="w-full text-left px-4 py-2 text-xs text-muted hover:bg-elevated hover:text-foreground transition-colors">Export as CSV</button>
                     <button onClick={() => handleExportSelect("pdf")} className="w-full text-left px-4 py-2 text-xs text-muted hover:bg-elevated hover:text-foreground transition-colors">Export as PDF</button>
