@@ -49,12 +49,23 @@ type Bill = {
   items_json?: string | null;
 };
 
-type CostCode = {
-  id: string;
-  code: string;
-  name: string;
-  sub_cost_code?: string | null;
-  budget_amount: number;
+// The project's own budget, as on the Budget page (/budget/committed).
+type ProjectBudget = {
+  material_budget: number;
+  labour_budget: number;
+  subcon_budget: number;
+  equipment_budget: number;
+  material_committed: number;
+  labour_committed: number;
+  subcon_committed: number;
+  equipment_committed: number;
+  material_actual: number;
+  labour_actual: number;
+  subcon_actual: number;
+  equipment_actual: number;
+  other_actual: number;
+  total_budget: number;
+  total_actual: number;
 };
 
 type DrillCol = { key: string; label: string };
@@ -281,7 +292,7 @@ export default function ProjectDashboardPage() {
   const [project, setProject] = useState<ProjectDash | null>(null);
   const [docs, setDocs] = useState<BOQDoc[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
-  const [costCodes, setCostCodes] = useState<CostCode[]>([]);
+  const [budget, setBudget] = useState<ProjectBudget | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [drill, setDrill] = useState<DrillData | null>(null);
@@ -295,36 +306,27 @@ export default function ProjectDashboardPage() {
   const [ccBudget, setCcBudget] = useState("");
   const [savingCC, setSavingCC] = useState(false);
 
-  const loadCostCodes = useCallback(async (compId: string) => {
-    try {
-      const res = await fetch(getApi(`/library/cost-codes/${compId}`), { headers: authHeaders() });
-      if (res.ok) setCostCodes(await res.json());
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [pRes, docRes, billsRes] = await Promise.all([
+      const [pRes, docRes, billsRes, budgetRes] = await Promise.all([
         fetch(getApi(`/projects/${projectId}`), { headers: authHeaders() }),
         fetch(getApi(`/budgeting/boq-documents?project_id=${projectId}`), { headers: authHeaders() }),
         fetch(getApi(`/billing/bills?project_id=${projectId}`), { headers: authHeaders() }),
+        fetch(getApi(`/budget/committed/${projectId}`), { headers: authHeaders() }),
       ]);
       const pData = pRes.ok ? await pRes.json() : null;
       if (pData) setProject(pData);
       if (docRes.ok) setDocs(await docRes.json());
       if (billsRes.ok) setBills(await billsRes.json());
-      // cost codes are company-scoped → use the resolved company UUID, not the route slug
-      await loadCostCodes(pData?.company_id || companyId);
+      if (budgetRes.ok) setBudget(await budgetRes.json());
     } catch {
       /* ignore */
     } finally {
       setLoading(false);
     }
-  }, [projectId, companyId, loadCostCodes]);
+  }, [projectId]);
 
   useEffect(() => {
     load();
@@ -339,7 +341,10 @@ export default function ProjectDashboardPage() {
   // ── Real financial computations (per spec) ───────────────────────────────────
   const boqValue = docs.reduce((s, d) => s + (d.boq_value || 0), 0);
   const workDone = docs.reduce((s, d) => s + (d.boq_value || 0) * ((d.physical_progress || 0) / 100), 0);
-  const estimatedBudget = costCodes.reduce((s, c) => s + (c.budget_amount || 0), 0);
+  // Cost codes belong to the whole company, so the project's budget comes
+  // from its own budget, the same figures the Budget page shows.
+  const estimatedBudget = budget?.total_budget || 0;
+  const budgetSpent = budget?.total_actual || 0;
 
   // Cancelled bills never count, same as the server's Billed In/Out.
   const sale = bills.filter((b) => REVENUE_INVOICE_TYPES.includes(b.invoice_type) && b.status !== "Cancelled");
@@ -372,22 +377,6 @@ export default function ProjectDashboardPage() {
   const estimatedMargin = boqValue - estimatedBudget;
   const pct = (num: number, den: number) => (den > 0 ? `${((num / den) * 100).toFixed(1)}%` : "—");
 
-  // Actual expense per cost code (from bill line items tagged with a cost code)
-  const expByCC: Record<string, number> = {};
-  for (const b of bills) {
-    if (!b.items_json) continue;
-    try {
-      const items = JSON.parse(b.items_json);
-      for (const it of items) {
-        if (it && it.cost_code_name) {
-          expByCC[it.cost_code_name] = (expByCC[it.cost_code_name] || 0) + (Number(it.amount) || 0);
-        }
-      }
-    } catch {
-      /* ignore malformed */
-    }
-  }
-
   // ── Add Cost Code ────────────────────────────────────────────────────────────
   const saveCostCode = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -414,7 +403,6 @@ export default function ProjectDashboardPage() {
       setCcCode("");
       setCcName("");
       setCcBudget("");
-      await loadCostCodes(companyId);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to add cost code");
     } finally {
@@ -470,38 +458,50 @@ export default function ProjectDashboardPage() {
     value: purchase.filter((b) => b.invoice_type === s.type).reduce((t, b) => t + (b.total_payable || 0), 0),
   }));
 
-  // Budget against actual, biggest budgets first.
-  const ccRows = [...costCodes]
-    .sort((a, b) => (b.budget_amount || 0) - (a.budget_amount || 0))
-    .slice(0, 6)
-    .map((c) => ({ name: c.name, budget: c.budget_amount || 0, actual: expByCC[c.name] || 0 }));
-  const ccMax = Math.max(1, ...ccRows.map((r) => Math.max(r.budget, r.actual)));
+  // Budget against actual spend for each budget head.
+  const budgetRows = budget
+    ? [
+        { name: "Materials", budget: budget.material_budget, committed: budget.material_committed, actual: budget.material_actual },
+        { name: "Labour", budget: budget.labour_budget, committed: budget.labour_committed, actual: budget.labour_actual },
+        { name: "Subcontractors", budget: budget.subcon_budget, committed: budget.subcon_committed, actual: budget.subcon_actual },
+        { name: "Equipment", budget: budget.equipment_budget, committed: budget.equipment_committed, actual: budget.equipment_actual },
+      ].filter((r) => r.budget > 0 || r.actual > 0)
+    : [];
+  const rowMax = Math.max(1, ...budgetRows.map((r) => Math.max(r.budget, r.actual)));
 
   const marginPct = saleExGst > 0 ? (margin0 / saleExGst) * 100 : null;
   const collectedPct = saleTotal > 0 ? (cashIn / saleTotal) * 100 : 0;
 
   const openBudgetDrill = () =>
     setDrill({
-      title: "Estimate Cost Code Budget",
-      subtitle: `Total estimated budget ${fmtINR(estimatedBudget, currencyDecimalPlaces)} across ${costCodes.length} cost codes`,
+      title: "Project Budget",
+      subtitle: `${fmtINR(budgetSpent, currencyDecimalPlaces)} spent of ${fmtINR(estimatedBudget, currencyDecimalPlaces)} · ${pct(budgetSpent, estimatedBudget)} used`,
       cols: [
-        { key: "name", label: "Cost Code Name" },
-        { key: "budget", label: "Budget Amount" },
-        { key: "actual", label: "Actual Expense" },
+        { key: "name", label: "Budget head" },
+        { key: "budget", label: "Budget" },
+        { key: "committed", label: "Committed" },
+        { key: "actual", label: "Spent" },
+        { key: "left", label: "Left" },
       ],
-      rows: costCodes.map((c) => ({
-        name: c.name,
-        budget: fmtINR(c.budget_amount, currencyDecimalPlaces),
-        actual: fmtINR(expByCC[c.name] || 0, currencyDecimalPlaces),
-      })),
-      footer: "Actual Expense is summed from bill line items tagged to each cost code.",
-      action: addsCostCodes ? { label: "+ Add Cost Code", onClick: () => setShowAddCC(true) } : undefined,
+      rows: [
+        ...budgetRows.map((r) => ({
+          name: r.name,
+          budget: fmtINR(r.budget, currencyDecimalPlaces),
+          committed: fmtINR(r.committed, currencyDecimalPlaces),
+          actual: fmtINR(r.actual, currencyDecimalPlaces),
+          left: fmtINR(r.budget - r.actual, currencyDecimalPlaces),
+        })),
+        ...(budget && budget.other_actual > 0
+          ? [{ name: "Other", budget: "", committed: "", actual: fmtINR(budget.other_actual, currencyDecimalPlaces), left: "" }]
+          : []),
+      ],
+      footer: "Committed is ordered but not yet billed. Spent counts approved bills, finalised payroll, equipment use, fuel and wastage. Change the budget on the Budget page.",
     });
 
   const openBoqDrill = () =>
     setDrill({
       title: "Total BOQ Value",
-      subtitle: `BOQ Value ${fmtINR(boqValue, currencyDecimalPlaces)} − Estimated Budget ${fmtINR(estimatedBudget, currencyDecimalPlaces)} = Estimated Margin ${fmtINR(estimatedMargin, currencyDecimalPlaces)}`,
+      subtitle: `BOQ Value ${fmtINR(boqValue, currencyDecimalPlaces)} − Project Budget ${fmtINR(estimatedBudget, currencyDecimalPlaces)} = Estimated Margin ${fmtINR(estimatedMargin, currencyDecimalPlaces)}`,
       cols: [
         { key: "title", label: "BOQ Document" },
         { key: "value", label: "BOQ Value" },
@@ -657,11 +657,11 @@ export default function ProjectDashboardPage() {
                 label="Billed Out"
                 icon="outbox"
                 value={fmtINR(project.cash_out, currencyDecimalPlaces)}
-                sub={estimatedBudget > 0 ? `${pct(expense, estimatedBudget)} of budget used` : "No budget set yet"}
+                sub={estimatedBudget > 0 ? `${pct(budgetSpent, estimatedBudget)} of the project budget spent` : "No project budget set yet"}
                 onClick={() =>
                   setDrill({
                     title: "Billed Out (Expenses till date)",
-                    subtitle: `${fmtINR(expense, currencyDecimalPlaces)} · ${pct(expense, estimatedBudget)} of Estimated Budget (${fmtINR(estimatedBudget, currencyDecimalPlaces)})`,
+                    subtitle: `${fmtINR(expense, currencyDecimalPlaces)} billed by vendors and subcontractors, including GST`,
                     cols: [
                       { key: "Invoice #", label: "Invoice #" },
                       { key: "Date", label: "Date" },
@@ -751,8 +751,8 @@ export default function ProjectDashboardPage() {
               <SectionTitle title="Budget and BOQ" />
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {[
-                  { k: "Estimated Budget", v: fmtINR(estimatedBudget, currencyDecimalPlaces), s: `${costCodes.length} cost code${costCodes.length === 1 ? "" : "s"}`, on: openBudgetDrill },
-                  { k: "Total BOQ Value", v: fmtINR(boqValue, currencyDecimalPlaces), s: `Estimated margin ${compactINR(estimatedMargin)}`, on: openBoqDrill },
+                  { k: "Project Budget", v: estimatedBudget > 0 ? fmtINR(estimatedBudget, currencyDecimalPlaces) : "Not set", s: estimatedBudget > 0 ? `${compactINR(estimatedBudget - budgetSpent)} left to spend` : "Set it on the Budget page", on: openBudgetDrill },
+                  { k: "Total BOQ Value", v: fmtINR(boqValue, currencyDecimalPlaces), s: estimatedBudget > 0 ? `Estimated margin ${compactINR(estimatedMargin)}` : `${docs.length} BOQ document${docs.length === 1 ? "" : "s"}`, on: openBoqDrill },
                   {
                     k: "Work Done Value",
                     v: workDone > 0 || boqValue === 0 ? fmtINR(workDone, currencyDecimalPlaces) : "Not measured",
@@ -779,27 +779,24 @@ export default function ProjectDashboardPage() {
                 <div className="flex items-center justify-between text-xs mb-1.5">
                   <span className="text-muted">Budget used</span>
                   <span className="tabular-nums font-medium text-foreground">
-                    {compactINR(expense)} of {compactINR(estimatedBudget)}
-                    {estimatedBudget > 0 && ` · ${pct(expense, estimatedBudget)}`}
+                    {compactINR(budgetSpent)} of {compactINR(estimatedBudget)}
+                    {estimatedBudget > 0 && ` · ${pct(budgetSpent, estimatedBudget)}`}
                   </span>
                 </div>
                 <Meter
-                  value={expense}
+                  value={budgetSpent}
                   max={estimatedBudget}
-                  color={estimatedBudget > 0 && expense > estimatedBudget ? "var(--danger)" : "var(--primary)"}
+                  color={estimatedBudget > 0 && budgetSpent > estimatedBudget ? "var(--danger)" : "var(--primary)"}
                 />
               </div>
 
-              {ccRows.length > 0 && (
+              {budgetRows.length > 0 && (
                 <div className="mt-5 space-y-3">
                   <div className="flex items-center gap-4 text-[11px] text-muted">
                     <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-primary/25" />Budget</span>
-                    <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-primary" />Actual</span>
-                    {ccRows.every((r) => r.actual === 0) && (
-                      <span className="ml-auto text-right">Actuals fill in when bill lines are tagged to a cost code.</span>
-                    )}
+                    <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-primary" />Spent</span>
                   </div>
-                  {ccRows.map((r) => (
+                  {budgetRows.map((r) => (
                     <div key={r.name}>
                       <div className="flex items-center justify-between text-xs mb-1">
                         <span className="truncate text-foreground">{r.name}</span>
@@ -808,10 +805,10 @@ export default function ProjectDashboardPage() {
                         </span>
                       </div>
                       <div className="relative h-2 rounded-full bg-elevated overflow-hidden">
-                        <div className="absolute inset-y-0 left-0 rounded-full bg-primary/25" style={{ width: `${(r.budget / ccMax) * 100}%` }} />
+                        <div className="absolute inset-y-0 left-0 rounded-full bg-primary/25" style={{ width: `${(r.budget / rowMax) * 100}%` }} />
                         <div
                           className={`absolute inset-y-0 left-0 rounded-full ${r.actual > r.budget ? "bg-danger" : "bg-primary"}`}
-                          style={{ width: `${(r.actual / ccMax) * 100}%` }}
+                          style={{ width: `${(r.actual / rowMax) * 100}%` }}
                         />
                       </div>
                     </div>
@@ -826,7 +823,7 @@ export default function ProjectDashboardPage() {
       {/* Modals */}
       {drill && <DrillModal data={drill} onClose={() => setDrill(null)} action={drill.action} />}
 
-      {/* Add Cost Code (inside Estimated Budget context) */}
+      {/* Add Cost Code */}
       {showAddCC && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-sm rounded-lg border border-border-custom bg-card p-6">
