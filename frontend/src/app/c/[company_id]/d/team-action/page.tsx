@@ -312,49 +312,41 @@ export default function TeamSchedulePage() {
     [tasks, assigneeFilter, statusFilter, projectFilter, dateFrom, dateTo]
   );
 
-  // ── Build Gantt tree (assigned tree + synthetic Unassigned group) ──
+  // ── Build Gantt tree: one group per project, tasks nested under parents ──
+  // This used to put every task without an assignee into one "Unassigned"
+  // block, which on a company with few logins swallowed the whole schedule.
   const ganttRows = useMemo(() => {
-    const unassigned = filteredTasks.filter((t) => !t.assigned_to);
-    const assigned = filteredTasks.filter((t) => t.assigned_to);
-
-    const byId = new Map(assigned.map((t) => [t.id, t]));
+    const byId = new Map(filteredTasks.map((t) => [t.id, t]));
     const childMap = new Map<string, CompanyTask[]>();
-    for (const t of assigned) {
+    for (const t of filteredTasks) {
       const pid = t.parent_id;
       if (pid && byId.has(pid)) {
         if (!childMap.has(pid)) childMap.set(pid, []);
         childMap.get(pid)!.push(t);
       }
     }
-    const roots = assigned.filter((t) => !t.parent_id || !byId.has(t.parent_id));
-
     const toNode = (t: CompanyTask): TreeNode => ({
       task: t,
       children: (childMap.get(t.id) || []).map(toNode),
     });
 
-    const rows: { kind: "group"; id: string; name: string; nodes: TreeNode[]; unassigned: boolean }[] = [];
+    const byProject = new Map<string, { name: string; roots: CompanyTask[] }>();
+    for (const t of filteredTasks) {
+      if (t.parent_id && byId.has(t.parent_id)) continue;
+      const key = t.project_id || "__none__";
+      if (!byProject.has(key)) byProject.set(key, { name: t.project_name || "No project", roots: [] });
+      byProject.get(key)!.roots.push(t);
+    }
 
-    if (unassigned.length > 0) {
-      rows.push({
-        kind: "group",
-        id: "__unassigned__",
-        name: "Unassigned",
-        nodes: unassigned.map((t) => ({ task: t, children: [] })),
-        unassigned: true,
-      });
-    }
-    for (const r of roots) {
-      const node = toNode(r);
-      rows.push({
-        kind: "group",
-        id: r.id,
-        name: r.name,
-        nodes: [node],
+    return Array.from(byProject.entries())
+      .sort((x, y) => x[1].name.localeCompare(y[1].name))
+      .map(([key, g]) => ({
+        kind: "group" as const,
+        id: `project:${key}`,
+        name: g.name,
+        nodes: g.roots.map(toNode),
         unassigned: false,
-      });
-    }
-    return rows;
+      }));
   }, [filteredTasks]);
 
   // ── Timeline range + periods ──
@@ -428,7 +420,7 @@ export default function TeamSchedulePage() {
               {group.name}
             </div>
             <div className="text-[10px] text-muted">
-              {group.unassigned ? "No assignee" : `${leaves.length} task${leaves.length > 1 ? "s" : ""}`}
+              {`${leaves.length} task${leaves.length === 1 ? "" : "s"}`}
             </div>
           </div>
         </div>
@@ -466,8 +458,7 @@ export default function TeamSchedulePage() {
                     {n.task.name}
                   </div>
                   <div className="text-[10px] text-muted truncate">
-                    {n.task.project_name || "—"}
-                    {n.task.assigned_to_name ? ` · ${n.task.assigned_to_name}` : ""}
+                    {n.task.assigned_to_name || "Not assigned"}
                   </div>
                 </div>
               </div>
