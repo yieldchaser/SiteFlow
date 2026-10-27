@@ -61,6 +61,36 @@ export function startHereCategory(companyId: string): HelpCategory {
         sources: ["frontend/src/components/Sidebar.tsx:1"],
       },
       {
+        q: "How do I see one site, or the whole company at once?",
+        a: (
+          <>
+            <p>
+              The site screens (DPR, Attendance, Procurement, Quality, Safety, Finance and the rest) show one project
+              at a time: the one chosen under Pinned Project in the sidebar. Change it there and every site screen
+              switches to that project.
+            </p>
+            <p className="mt-2">To look across all your projects together:</p>
+            <Steps>
+              <li>
+                <L to="/dashboard">Dashboard</L>: money, progress and attendance for every project. Pick a project
+                from its menu to look at just that one.
+              </li>
+              <li>
+                <L to="/reports">Reports</L>: every report covers all projects, for example Material Stock, Purchase
+                Orders, Attendance, Salary and Party Balances. Use the Project Name filter at the top of a report
+                to narrow it to one site.
+              </li>
+              <li>
+                <L to="/d/hr">HR</L>: press All sites to see every employee in the company, or This site for the
+                pinned project only.
+              </li>
+            </Steps>
+          </>
+        ),
+        text: "all projects whole company combined every site at once pinned project switch project overview drill down select all",
+        sources: ["frontend/src/components/Sidebar.tsx:711"],
+      },
+      {
         q: "Step 1: How do I fill in my company details, logo and signature?",
         a: (
           <>

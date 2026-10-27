@@ -31,6 +31,8 @@ export default function WastagePage() {
   const projectId = activeProjectId;
 
   const [records, setRecords] = useState<Wastage[]>([]);
+  // Project the records were last loaded for; until then show Loading, not "No wastage records".
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [message, setMessage] = useState("");
   // Wastage has to name a material that actually exists on site, otherwise the
@@ -57,6 +59,8 @@ export default function WastagePage() {
       }
     } catch (e) {
       console.error("Failed to load wastage", e);
+    } finally {
+      setLoadedFor(projectId);
     }
   };
 
@@ -154,7 +158,9 @@ export default function WastagePage() {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {records.length === 0 ? (
+          {records.length === 0 && loadedFor !== projectId ? (
+            <div className="col-span-full p-8 text-center text-muted text-sm">Loading wastage records...</div>
+          ) : records.length === 0 ? (
             <div className="col-span-full">
               <EmptyState
                 title="No wastage records found"

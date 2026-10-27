@@ -125,6 +125,9 @@ export default function ProcurementPage() {
   const [indents, setIndents] = useState<Indent[]>([]);
   const [indentScope, setIndentScope] = useState<"project" | "company">("project");
   const [pos, setPos] = useState<PO[]>([]);
+  // Which project the lists were last loaded for. Until it matches, the
+  // tables say Loading instead of "No purchase orders found".
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [grns, setGrns] = useState<GRN[]>([]);
@@ -300,6 +303,8 @@ export default function ProcurementPage() {
     } catch (err) {
       console.error("Procurement API unavailable", err);
       setIsOffline(true);
+    } finally {
+      setLoadedFor(projectId);
     }
   };
 
@@ -994,7 +999,11 @@ export default function ProcurementPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {pos.length === 0 ? (
+                      {pos.length === 0 && loadedFor !== projectId ? (
+                        <tr>
+                          <td colSpan={7} className="p-8 text-center text-muted text-sm">Loading purchase orders...</td>
+                        </tr>
+                      ) : pos.length === 0 ? (
                         <tr>
                           <td colSpan={7} className="p-8">
                             <EmptyState

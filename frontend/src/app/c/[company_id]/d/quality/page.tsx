@@ -127,6 +127,8 @@ export default function QualityPage() {
   
   const [checklists, setChecklists] = useState<Checklist[]>([]);
   const [inspections, setInspections] = useState<Inspection[]>([]);
+  // Project the register was last loaded for; until then it says Loading, not "No inspections yet".
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
   // The inspection register used to print inspected_by as a raw UUID, in the
   // table and in the "Inspected By" filter. Resolve it to a person.
   const [teamNameById, setTeamNameById] = useState<Record<string, string>>({});
@@ -246,6 +248,8 @@ isCode: cl.is_code_reference || "—",
       }
     } catch (e) {
       console.error("Failed to fetch inspections", e);
+    } finally {
+      setLoadedFor(projectId);
     }
   };
 
@@ -662,7 +666,11 @@ isCode: cl.is_code_reference || "—",
                     </tr>
                   </thead>
                   <tbody>
-                    {inspections.length === 0 ? (
+                    {inspections.length === 0 && loadedFor !== projectId ? (
+                      <tr>
+                        <td colSpan={7} className="px-5 py-8 text-center text-muted text-sm">Loading inspections...</td>
+                      </tr>
+                    ) : inspections.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="px-5 py-8">
                           <EmptyState
