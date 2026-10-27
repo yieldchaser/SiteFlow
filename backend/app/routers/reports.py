@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import FileResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -315,6 +315,25 @@ class ReportDataResponse(BaseModel):
     rows: List[dict]
     generated_at: str
     errors: List[str] = []
+    # False when a month was asked for but the report has no business date to
+    # filter on (master lists such as parties or employees), so it is all-time.
+    period_applied: Optional[bool] = None
+
+
+# Columns that say when a row happened. Created/Due/Expiry/Start/End dates are
+# left out: a party list filtered by the month a party was keyed in, or a bill
+# by its due date, is not what "Report Period" means.
+_PERIOD_SKIP = ("created", "creation", "due", "expiry", "start", "end", "tax")
+
+
+def _period_key(rows: List[dict]) -> Optional[str]:
+    for key in rows[0].keys():
+        if key == "Month":
+            return key
+        low = key.lower()
+        if "date" in low and not any(w in low for w in _PERIOD_SKIP):
+            return key
+    return None
 
 
 def _clean(v):
@@ -3487,6 +3506,8 @@ def get_report_data(
     slug: str,
     company_id: str,
     project_id: Optional[str] = None,
+    month: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}$", description="YYYY-MM; keep rows dated in that month"),
+    name: Optional[str] = Query(None, max_length=120, description="Keep rows whose name columns contain this text"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -3542,4 +3563,17 @@ def get_report_data(
         errors.append(f"Report '{slug}' failed to generate; an empty result was returned instead.")
     else:
         rows = built
-    return {"slug": slug, "rows": rows, "generated_at": generated_at, "errors": errors}
+    period_applied = None
+    if month and rows:
+        key = _period_key(rows)
+        period_applied = key is not None
+        if key is not None:
+            rows = [r for r in rows if str(r.get(key) or "").startswith(month)]
+    if name and name.strip():
+        needle = name.strip().lower()
+        rows = [
+            r for r in rows
+            if any("name" in k.lower() and needle in str(v or "").lower() for k, v in r.items())
+        ]
+    return {"slug": slug, "rows": rows, "generated_at": generated_at, "errors": errors,
+            "period_applied": period_applied}

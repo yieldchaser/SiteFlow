@@ -119,6 +119,18 @@ function isReportImplemented(report: ReportItem): boolean {
   return IMPLEMENTED_REPORT_SLUGS.has(slug);
 }
 
+const ALL_TIME = "All time";
+const MONTH_INDEX: Record<string, string> = {
+  Jan: "01", Feb: "02", Mar: "03", Apr: "04", May: "05", Jun: "06",
+  Jul: "07", Aug: "08", Sep: "09", Oct: "10", Nov: "11", Dec: "12",
+};
+
+// "Oct 2026" -> "2026-10"; All time -> null (no filter).
+function toIsoMonth(label: string): string | null {
+  const [mon, year] = label.split(" ");
+  return MONTH_INDEX[mon] && year ? `${year}-${MONTH_INDEX[mon]}` : null;
+}
+
 export default function ReportsDashboard() {
   const params = useParams();
   const router = useRouter();
@@ -147,16 +159,12 @@ export default function ReportsDashboard() {
       const d = new Date(now.getFullYear(), now.getMonth() + delta, 1);
       result.push(`${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`);
     }
-    return result;
-  };
-  const _closedMonth = (): string => {
-    const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const d = new Date();
-    d.setMonth(d.getMonth() - 1);
-    return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+    return [ALL_TIME, ...result];
   };
   const months = _buildMonths();
-  const [selectedMonth, setSelectedMonth] = useState(_closedMonth());
+  // All time by default: most reports are lists people want whole, and the
+  // arrows narrow it to one month when they need that.
+  const [selectedMonth, setSelectedMonth] = useState(ALL_TIME);
   const [partyNameFilter, setPartyNameFilter] = useState("");
   const [isExporting, setIsExporting] = useState(false);
 
@@ -368,7 +376,11 @@ export default function ReportsDashboard() {
     setIsExporting(true);
 
     try {
-      const res = await fetch(`${getApiHost()}/apis/v3/reports/data/${slug}?company_id=${companyId}`, {
+      const params = new URLSearchParams({ company_id: companyId });
+      const isoMonth = toIsoMonth(selectedMonth);
+      if (isoMonth) params.set("month", isoMonth);
+      if (partyNameFilter.trim()) params.set("name", partyNameFilter.trim());
+      const res = await fetch(`${getApiHost()}/apis/v3/reports/data/${slug}?${params}`, {
         headers: { ...(authHeaders() || {}) }
       });
       if (!res.ok) {
@@ -399,7 +411,13 @@ export default function ReportsDashboard() {
       link.click();
       document.body.removeChild(link);
 
-      showToast(`Exported ${selectedReport.name} successfully!`);
+      showToast(
+        data.period_applied === false
+          ? `Exported ${selectedReport.name}. This report has no date to filter by, so it covers all time.`
+          : rows.length === 0
+          ? `${selectedReport.name} has no rows for ${selectedMonth}. Exported an empty file.`
+          : `Exported ${selectedReport.name} (${rows.length} rows).`
+      );
     } catch {
       showToast("Export failed. Please try again.");
     } finally {
@@ -413,7 +431,7 @@ export default function ReportsDashboard() {
     <div className="flex-1 flex flex-col overflow-hidden bg-elevated/20">
       <PageHeader
         title="Reports & Analytics"
-        subtitle="Generate, filter, and export tabular company reports in CSV, Microsoft Excel or PDF format."
+        subtitle="Pick a report and a month, then download it as a CSV file that opens in Excel."
       >
         <div className="relative w-72 shrink-0">
           <input
@@ -564,9 +582,9 @@ export default function ReportsDashboard() {
                       <Icon name="schedule" className="w-4 h-4 animate-spin" /> Exporting file...
                     </>
                   ) : selectedReport.name === "Staff Monthly Salary Slip" || selectedReport.name === "Staff Salary Report" ? (
-                    <><Icon name="description" className="w-4 h-4" /> Download PDF</>
+                    <><Icon name="arrow_down" className="w-4 h-4" /> Download CSV</>
                   ) : (
-                    <><Icon name="arrow_down" className="w-4 h-4" /> Download Excel</>
+                    <><Icon name="arrow_down" className="w-4 h-4" /> Download CSV (opens in Excel)</>
                   )}
                 </button>
                 <button onClick={() => setShowModal(false)} className="w-full py-2 text-xs text-muted hover:text-foreground transition-all">Cancel</button>
