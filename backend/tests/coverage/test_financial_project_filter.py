@@ -51,3 +51,29 @@ def test_financial_summary_refuses_another_companys_project(client, db, make_ten
     theirs = _project(db, other, "Theirs")
     r = client.get(f"/apis/v3/analytics/company/{comp.id}/financial?project_id={theirs.id}", headers=auth_headers(user, comp))
     assert r.status_code == 404, r.text
+
+
+def test_operational_charts_follow_the_picked_project(client, db, make_tenant, auth_headers):
+    """The Operational tab's 7-day attendance chart stayed all-sites when a
+    project was picked."""
+    comp, user, _team = make_tenant(company_name=f"Ops Co {uuid.uuid4().hex[:6]}", user_name="Owner")
+    hdr = auth_headers(user, comp)
+    tower = _project(db, comp, "Tower")
+    villas = _project(db, comp, "Villas")
+    emp = models.StaffEmployee(id=uuid.uuid4(), company_id=comp.id, name="Ravi")
+    db.add(emp)
+    db.flush()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    for project in (tower, villas, villas):
+        db.add(models.AttendanceLog(id=uuid.uuid4(), employee_id=emp.id, project_id=project.id,
+                                    attendance_date=now, status="Present"))
+    db.commit()
+
+    def present(query=""):
+        r = client.get(f"/apis/v3/analytics/company/{comp.id}/operational{query}", headers=hdr)
+        assert r.status_code == 200, r.text
+        return sum(d["present"] for d in r.json()["attendance_series"]), len(r.json()["projects"])
+
+    assert present() == (3, 2)
+    # The chart narrows; the project list stays whole for the menu.
+    assert present(f"?project_id={tower.id}") == (1, 2)

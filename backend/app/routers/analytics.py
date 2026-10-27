@@ -490,13 +490,19 @@ def get_company_analytics(company_id: uuid.UUID, db: Session = Depends(get_db), 
 
 
 @router.get("/company/{company_id}/operational")
-def get_company_operational_analytics(company_id: uuid.UUID, db: Session = Depends(get_db), _: None = Depends(verify_company_access), current_user: User = Depends(get_current_user)):
+def get_company_operational_analytics(company_id: uuid.UUID, project_id: Optional[uuid.UUID] = None, db: Session = Depends(get_db), _: None = Depends(verify_company_access), current_user: User = Depends(get_current_user)):
+    """project_id narrows the 7-day attendance and material charts to one site.
+    The project list stays whole: the dashboard filters it itself and builds
+    its Project menu from it."""
     company = db.query(Company).filter(Company.id == company_id).first()
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
 
     projects = scope_projects(db.query(Project).filter(Project.company_id == company_id), db, current_user, company_id).all()
     project_ids = [p.id for p in projects]
+    if project_id is not None and project_id not in project_ids:
+        raise HTTPException(status_code=404, detail="Project not found")
+    series_ids = [project_id] if project_id is not None else project_ids
 
     # Calculate Project Health and Progress
     project_summary = []
@@ -602,7 +608,7 @@ def get_company_operational_analytics(company_id: uuid.UUID, db: Session = Depen
         
         # Attendance counts
         att_logs = db.query(AttendanceLog).filter(
-            AttendanceLog.project_id.in_(project_ids),
+            AttendanceLog.project_id.in_(series_ids),
             AttendanceLog.attendance_date >= t_start,
             AttendanceLog.attendance_date < t_end
         ).all() if project_ids else []
@@ -618,7 +624,7 @@ def get_company_operational_analytics(company_id: uuid.UUID, db: Session = Depen
 
         # Material receipt logs count
         mat_txs = db.query(MaterialTransaction).filter(
-            MaterialTransaction.project_id.in_(project_ids),
+            MaterialTransaction.project_id.in_(series_ids),
             MaterialTransaction.created_at >= t_start,
             MaterialTransaction.created_at < t_end,
             MaterialTransaction.type == "received"

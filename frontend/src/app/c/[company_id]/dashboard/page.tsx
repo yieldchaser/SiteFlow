@@ -140,11 +140,6 @@ export default function DashboardPage() {
               : Array.isArray(value?.rows)
                 ? value.rows
                 : [];
-      fetch(`${apiHost}/apis/v3/analytics/company/${companyId}/operational`, { headers: authHeaders() })
-        .then((res) => res.json())
-        .then((data) => setOperationalData(data))
-        .catch((err) => console.error("Failed to fetch operational stats", err));
-
       if (activeProject && !activeProject.startsWith("d0000000-")) {
         fetch(`${apiHost}/apis/v3/hr/employees/${activeProject}`, { headers: authHeaders() })
           .then((res) => res.json())
@@ -237,6 +232,16 @@ export default function DashboardPage() {
   const [selProject, setSelProject] = useState("All");
   const [selStatus, setSelStatus] = useState("All");
   const [selHealth, setSelHealth] = useState("All");
+
+  // Operational tab: the Project filter also narrows the 7-day charts.
+  useEffect(() => {
+    if (!companyId) return;
+    const query = selProject === "All" ? "" : `?project_id=${selProject}`;
+    fetch(`${getApiHost()}/apis/v3/analytics/company/${companyId}/operational${query}`, { headers: authHeaders() })
+      .then((res) => res.json())
+      .then((data) => setOperationalData(data))
+      .catch((err) => console.error("Failed to fetch operational stats", err));
+  }, [companyId, selProject]);
 
   const [projects, setProjects] = useState<any[]>([]);
 
@@ -915,7 +920,7 @@ export default function DashboardPage() {
                       <div className="bg-card border border-border-custom rounded-lg p-5 flex flex-col justify-between transition-all">
                         <div className="space-y-4">
                           <h4 className="text-xs font-bold text-muted uppercase tracking-wider">Last 7 Days Material Received</h4>
-                          <p className="text-[10px] text-muted">Material lines received into stock per day, all sites.</p>
+                          <p className="text-[10px] text-muted">Material lines received into stock per day{selProject === "All" ? ", all sites" : ""}.</p>
                           {(() => {
                             const series = operationalData?.material_series || [];
                             const hasData = series.length > 0 && series.some((day: any) => day.count > 0);
