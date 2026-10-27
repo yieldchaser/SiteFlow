@@ -57,6 +57,7 @@ export default function PageHeader({ title, subtitle, breadcrumbs, children, act
       "user_name",
       "creator_name",
       "company_name",
+      "company_name_for",
       "last_project_id",
     ];
     keys.forEach((k) => localStorage.removeItem(k));

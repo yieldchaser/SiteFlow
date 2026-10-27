@@ -78,6 +78,7 @@ export default function CompanySwitcher({
           // The claim is what the identity endpoints read, so it has to move too.
           if (data.company?.id) localStorage.setItem("company_id", data.company.id);
           localStorage.setItem("company_name", newName);
+          localStorage.setItem("company_name_for", newId);
         }
 
         const segments = (pathname || "").split("/");

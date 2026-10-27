@@ -466,13 +466,15 @@ export default function Sidebar() {
   // Company name fetch
   useEffect(() => {
     let isActive = true;
-    const cachedName = typeof window !== "undefined" ? localStorage.getItem("company_name") : null;
-    if (cachedName) {
-      setCompanyName(cachedName);
-      return;
-    }
-
     if (!companyId) return;
+
+    // Show the remembered name straight away, but only if it belongs to this
+    // company, then always refresh it: companies get renamed and people switch.
+    const cachedName = typeof window !== "undefined" ? localStorage.getItem("company_name") : null;
+    const cachedFor = typeof window !== "undefined" ? localStorage.getItem("company_name_for") : null;
+    if (cachedName && cachedFor === companyId) {
+      setCompanyName(cachedName);
+    }
 
     const load = async () => {
       try {
@@ -485,12 +487,15 @@ export default function Sidebar() {
           const data = await res.json();
           const resolvedCompanyName = data.name || "Workspace";
           if (isActive) setCompanyName(resolvedCompanyName);
-          if (typeof window !== "undefined") localStorage.setItem("company_name", resolvedCompanyName);
-        } else if (isActive) {
+          if (typeof window !== "undefined") {
+            localStorage.setItem("company_name", resolvedCompanyName);
+            localStorage.setItem("company_name_for", companyId);
+          }
+        } else if (isActive && !(cachedName && cachedFor === companyId)) {
           setCompanyName("Workspace");
         }
       } catch {
-        if (isActive) setCompanyName("Workspace");
+        if (isActive && !(cachedName && cachedFor === companyId)) setCompanyName("Workspace");
       }
     };
     load();
