@@ -7,7 +7,7 @@ import { useCompanySettings } from "@/context/CompanySettingsContext";
 import { usePermissions } from "@/context/PermissionsContext";
 import PageShell from "@/components/layout/PageShell";
 import PageHeader from "@/components/PageHeader";
-import Icon from "@/components/marketing/Icon";
+import Icon, { type IconName } from "@/components/marketing/Icon";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ProjectDash = {
@@ -73,14 +73,52 @@ const MONEY_IN_VOUCHER_TYPES = ["payment_in", "i_received"];
 const MONEY_OUT_VOUCHER_TYPES = ["payment_out", "i_paid"];
 
 // ─── Small components ───────────────────────────────────────────────────────────
-function Card({ label, value, tone }: { label: string; value: string; tone?: "emerald" | "rose" | "violet" }) {
-  const color =
-    tone === "emerald" ? "text-success" : tone === "rose" ? "text-danger" : tone === "violet" ? "text-chart-4" : "text-foreground";
+type Tone = "good" | "bad" | "neutral";
+const TONE_TEXT: Record<Tone, string> = { good: "text-success", bad: "text-danger", neutral: "text-foreground" };
+
+// Short money for chart labels: ₹1.25 Cr, ₹4.6 L, ₹12,400.
+function compactINR(n: number): string {
+  const sign = n < 0 ? "-" : "";
+  const a = Math.abs(n);
+  if (a >= 1e7) return `${sign}₹${(a / 1e7).toFixed(2)} Cr`;
+  if (a >= 1e5) return `${sign}₹${(a / 1e5).toFixed(1)} L`;
+  return `${sign}₹${Math.round(a).toLocaleString("en-IN")}`;
+}
+
+function SectionTitle({ title, hint }: { title: string; hint?: string }) {
   return (
-    <div className="rounded-lg border border-border-custom bg-card p-4">
-      <div className="text-xs uppercase tracking-wider text-muted">{label}</div>
-      <div className={`mt-2 text-3xl font-bold ${color}`}>{value}</div>
+    <div className="flex items-baseline justify-between gap-3 mb-3">
+      <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+      {hint && <span className="text-[11px] text-muted">{hint}</span>}
     </div>
+  );
+}
+
+function ProgressRing({ value, size = 120 }: { value: number; size?: number }) {
+  const v = Math.max(0, Math.min(100, value));
+  const r = 52;
+  const c = 2 * Math.PI * r;
+  return (
+    <svg width={size} height={size} viewBox="0 0 120 120" className="shrink-0" role="img" aria-label={`${v}% complete`}>
+      <circle cx="60" cy="60" r={r} fill="none" stroke="var(--border)" strokeWidth="10" className="opacity-60" />
+      <circle
+        cx="60"
+        cy="60"
+        r={r}
+        fill="none"
+        stroke="var(--primary)"
+        strokeWidth="10"
+        strokeLinecap="round"
+        strokeDasharray={`${(v / 100) * c} ${c}`}
+        transform="rotate(-90 60 60)"
+      />
+      <text x="60" y="58" textAnchor="middle" className="fill-foreground" style={{ fontSize: 22, fontWeight: 700 }}>
+        {Number.isInteger(v) ? v : v.toFixed(1)}%
+      </text>
+      <text x="60" y="76" textAnchor="middle" className="fill-muted" style={{ fontSize: 10, letterSpacing: 1 }}>
+        COMPLETE
+      </text>
+    </svg>
   );
 }
 
@@ -88,29 +126,83 @@ function KpiCard({
   label,
   value,
   sub,
-  tone,
+  tone = "neutral",
+  icon,
   onClick,
 }: {
   label: string;
   value: string;
-  sub?: string;
-  tone?: "emerald" | "rose" | "violet";
+  sub?: React.ReactNode;
+  tone?: Tone;
+  icon: IconName;
   onClick: () => void;
 }) {
-  const color =
-    tone === "emerald" ? "text-success" : tone === "rose" ? "text-danger" : tone === "violet" ? "text-chart-4" : "text-foreground";
   return (
     <button
       onClick={onClick}
-      className="group text-left rounded-lg border border-border-custom bg-card p-4 hover:border-primary/50 transition-colors"
+      className="group text-left rounded-xl border border-border-custom bg-card p-5 shadow-sm hover:shadow-md hover:border-primary/40 transition-all cursor-pointer flex flex-col"
     >
-      <div className="flex items-center justify-between">
-        <div className="text-xs uppercase tracking-wider text-muted">{label}</div>
-        <span className="text-[10px] text-muted group-hover:text-primary inline-flex items-center gap-0.5">details <Icon name="chevron_right" className="w-3 h-3" /></span>
+      <div className="flex items-center gap-2">
+        <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <Icon name={icon} className="w-4 h-4" />
+        </span>
+        <span className="text-xs font-medium text-muted">{label}</span>
       </div>
-      <div className={`mt-2 text-2xl font-bold ${color}`}>{value}</div>
-      {sub && <div className="mt-1 text-[11px] text-muted">{sub}</div>}
+      <div className={`mt-3 text-2xl font-bold tracking-tight tabular-nums ${TONE_TEXT[tone]}`}>{value}</div>
+      {sub && <div className="mt-1 text-xs text-muted">{sub}</div>}
+      <span className="mt-auto pt-4 text-xs font-medium text-primary inline-flex items-center gap-1 opacity-80 group-hover:opacity-100">
+        View details <Icon name="chevron_right" className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
+      </span>
     </button>
+  );
+}
+
+type Slice = { label: string; value: number; color: string };
+
+function Donut({ slices, centre, centreSub }: { slices: Slice[]; centre: string; centreSub: string }) {
+  const total = slices.reduce((s, x) => s + x.value, 0);
+  const r = 46;
+  const c = 2 * Math.PI * r;
+  let offset = 0;
+  return (
+    <svg viewBox="0 0 120 120" className="w-36 h-36 shrink-0" role="img" aria-label={`${centreSub} ${centre}`}>
+      <circle cx="60" cy="60" r={r} fill="none" stroke="var(--border)" strokeWidth="14" className="opacity-60" />
+      {total > 0 &&
+        slices.map((s) => {
+          const len = (s.value / total) * c;
+          const el = (
+            <circle
+              key={s.label}
+              cx="60"
+              cy="60"
+              r={r}
+              fill="none"
+              stroke={s.color}
+              strokeWidth="14"
+              strokeDasharray={`${len} ${c - len}`}
+              strokeDashoffset={-offset}
+              transform="rotate(-90 60 60)"
+            />
+          );
+          offset += len;
+          return el;
+        })}
+      <text x="60" y="60" textAnchor="middle" className="fill-foreground" style={{ fontSize: 13, fontWeight: 700 }}>
+        {centre}
+      </text>
+      <text x="60" y="74" textAnchor="middle" className="fill-muted" style={{ fontSize: 9 }}>
+        {centreSub}
+      </text>
+    </svg>
+  );
+}
+
+function Meter({ value, max, color = "var(--primary)" }: { value: number; max: number; color?: string }) {
+  const w = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+  return (
+    <div className="h-2 w-full rounded-full bg-elevated overflow-hidden">
+      <div className="h-full rounded-full" style={{ width: `${w}%`, background: color }} />
+    </div>
   );
 }
 
@@ -126,7 +218,7 @@ function DrillModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div
-        className="w-full max-w-2xl max-h-[82vh] overflow-auto rounded-lg border border-border-custom bg-card p-6"
+        className="w-full max-w-2xl max-h-[82vh] overflow-auto rounded-xl border border-border-custom bg-card p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-1">
@@ -149,7 +241,7 @@ function DrillModal({
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/[0.03]">
+            <tbody className="divide-y divide-border-custom">
               {data.rows.map((r, i) => (
                 <tr key={i} className="hover:bg-elevated">
                   {data.cols.map((c) => (
@@ -193,6 +285,8 @@ export default function ProjectDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [drill, setDrill] = useState<DrillData | null>(null);
+  // Read the clock once per visit, not on every render.
+  const [nowMs] = useState(() => Date.now());
 
   // Add Cost Code modal state
   const [showAddCC, setShowAddCC] = useState(false);
@@ -247,8 +341,9 @@ export default function ProjectDashboardPage() {
   const workDone = docs.reduce((s, d) => s + (d.boq_value || 0) * ((d.physical_progress || 0) / 100), 0);
   const estimatedBudget = costCodes.reduce((s, c) => s + (c.budget_amount || 0), 0);
 
-  const sale = bills.filter((b) => REVENUE_INVOICE_TYPES.includes(b.invoice_type));
-  const purchase = bills.filter((b) => EXPENSE_INVOICE_TYPES.includes(b.invoice_type));
+  // Cancelled bills never count, same as the server's Billed In/Out.
+  const sale = bills.filter((b) => REVENUE_INVOICE_TYPES.includes(b.invoice_type) && b.status !== "Cancelled");
+  const purchase = bills.filter((b) => EXPENSE_INVOICE_TYPES.includes(b.invoice_type) && b.status !== "Cancelled");
 
   const saleTotal = sale.reduce((s, b) => s + (b.total_payable || 0), 0);
   const expense = purchase.reduce((s, b) => s + (b.total_payable || 0), 0); // Total Expense (Till Date)
@@ -320,8 +415,8 @@ export default function ProjectDashboardPage() {
       setCcName("");
       setCcBudget("");
       await loadCostCodes(companyId);
-    } catch (e: any) {
-      setError(e?.message || "Failed to add cost code");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to add cost code");
     } finally {
       setSavingCC(false);
     }
@@ -337,6 +432,106 @@ export default function ProjectDashboardPage() {
       Paid: fmtINR(b.paid_amount, currencyDecimalPlaces),
       Balance: fmtINR((b.total_payable || 0) - (b.paid_amount || 0), currencyDecimalPlaces),
     }));
+
+  // ── Schedule: time gone vs work done ────────────────────────────────────────
+  const DAY = 86_400_000;
+  const startStr = project.actual_start_date || project.planned_start_date;
+  const endStr = project.actual_end_date || project.planned_end_date;
+  const startMs = startStr ? new Date(startStr).getTime() : NaN;
+  const endMs = endStr ? new Date(endStr).getTime() : NaN;
+  const hasSchedule = Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs;
+
+  const elapsedPct = hasSchedule ? Math.max(0, Math.min(100, ((nowMs - startMs) / (endMs - startMs)) * 100)) : 0;
+  const daysLeft = hasSchedule ? Math.ceil((endMs - nowMs) / DAY) : 0;
+  const progress = project.progress ?? 0;
+  const lead = progress - elapsedPct;
+  const pace: { text: string; cls: string } = !hasSchedule
+    ? { text: "No schedule set", cls: "bg-elevated text-muted" }
+    : project.actual_end_date
+      ? { text: "Completed", cls: "bg-success/10 text-success" }
+      : nowMs < startMs
+        ? { text: "Not started", cls: "bg-elevated text-muted" }
+        : lead >= -5
+          ? { text: lead > 5 ? "Ahead of schedule" : "On track", cls: "bg-success/10 text-success" }
+          : lead >= -15
+            ? { text: "Slightly behind", cls: "bg-warning/10 text-warning" }
+            : { text: "Behind schedule", cls: "bg-danger/10 text-danger" };
+
+  // ── Where the money went (pie) ───────────────────────────────────────────────
+  const EXPENSE_SLICES: { type: string; label: string; color: string }[] = [
+    { type: "purchase", label: "Materials", color: "var(--chart-1)" },
+    { type: "subcon", label: "Subcontractors", color: "var(--chart-6)" },
+    { type: "expense", label: "Site expenses", color: "var(--chart-3)" },
+    { type: "equipment", label: "Equipment", color: "var(--chart-7)" },
+  ];
+  const expenseSlices = EXPENSE_SLICES.map((s) => ({
+    label: s.label,
+    color: s.color,
+    value: purchase.filter((b) => b.invoice_type === s.type).reduce((t, b) => t + (b.total_payable || 0), 0),
+  }));
+
+  // Budget against actual, biggest budgets first.
+  const ccRows = [...costCodes]
+    .sort((a, b) => (b.budget_amount || 0) - (a.budget_amount || 0))
+    .slice(0, 6)
+    .map((c) => ({ name: c.name, budget: c.budget_amount || 0, actual: expByCC[c.name] || 0 }));
+  const ccMax = Math.max(1, ...ccRows.map((r) => Math.max(r.budget, r.actual)));
+
+  const marginPct = saleExGst > 0 ? (margin0 / saleExGst) * 100 : null;
+  const collectedPct = saleTotal > 0 ? (cashIn / saleTotal) * 100 : 0;
+
+  const openBudgetDrill = () =>
+    setDrill({
+      title: "Estimate Cost Code Budget",
+      subtitle: `Total estimated budget ${fmtINR(estimatedBudget, currencyDecimalPlaces)} across ${costCodes.length} cost codes`,
+      cols: [
+        { key: "name", label: "Cost Code Name" },
+        { key: "budget", label: "Budget Amount" },
+        { key: "actual", label: "Actual Expense" },
+      ],
+      rows: costCodes.map((c) => ({
+        name: c.name,
+        budget: fmtINR(c.budget_amount, currencyDecimalPlaces),
+        actual: fmtINR(expByCC[c.name] || 0, currencyDecimalPlaces),
+      })),
+      footer: "Actual Expense is summed from bill line items tagged to each cost code.",
+      action: addsCostCodes ? { label: "+ Add Cost Code", onClick: () => setShowAddCC(true) } : undefined,
+    });
+
+  const openBoqDrill = () =>
+    setDrill({
+      title: "Total BOQ Value",
+      subtitle: `BOQ Value ${fmtINR(boqValue, currencyDecimalPlaces)} − Estimated Budget ${fmtINR(estimatedBudget, currencyDecimalPlaces)} = Estimated Margin ${fmtINR(estimatedMargin, currencyDecimalPlaces)}`,
+      cols: [
+        { key: "title", label: "BOQ Document" },
+        { key: "value", label: "BOQ Value" },
+        { key: "progress", label: "Physical %" },
+      ],
+      rows: docs.map((d) => ({
+        title: d.title,
+        value: fmtINR(d.boq_value, currencyDecimalPlaces),
+        progress: `${(d.physical_progress || 0).toFixed(1)}%`,
+      })),
+    });
+
+  const openWorkDoneDrill = () =>
+    setDrill({
+      title: "Work Done Value",
+      subtitle: `BOQ value weighted by physical progress · ${pct(workDone, boqValue)} of Total BOQ Value (${fmtINR(boqValue, currencyDecimalPlaces)})`,
+      cols: [
+        { key: "title", label: "BOQ Document" },
+        { key: "value", label: "BOQ Value" },
+        { key: "progress", label: "Physical %" },
+        { key: "done", label: "Work Done" },
+      ],
+      rows: docs.map((d) => ({
+        title: d.title,
+        value: fmtINR(d.boq_value, currencyDecimalPlaces),
+        progress: `${(d.physical_progress || 0).toFixed(1)}%`,
+        done: fmtINR((d.boq_value || 0) * ((d.physical_progress || 0) / 100), currencyDecimalPlaces),
+      })),
+      footer: workDone === 0 && boqValue > 0 ? "Physical progress is not recorded on the BOQ yet. Update it on the BOQ page to see work done." : undefined,
+    });
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -357,206 +552,273 @@ export default function ProjectDashboardPage() {
       <div className="flex-1 overflow-y-auto">
         <PageShell width="wide">
 
-      {/* Basic snapshot - D1 R2-021: accrual is Billed In/Out, margin is ex-GST */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card label="Progress" value={`${project.progress ?? 0}%`} tone="violet" />
-        {seesMoney && (
-          <>
-            <Card label="Billed In" value={fmtINR(project.cash_in, currencyDecimalPlaces)} tone="emerald" />
-            <Card label="Billed Out" value={fmtINR(project.cash_out, currencyDecimalPlaces)} tone="rose" />
-            <Card label="Net Margin" value={fmtINR(margin0, currencyDecimalPlaces)} tone={margin0 >= 0 ? "emerald" : "rose"} />
-          </>
-        )}
+      {/* Hero: progress, schedule pace, status */}
+      <div className="rounded-xl border border-border-custom bg-card p-5 sm:p-6 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center gap-6">
+          <ProgressRing value={progress} />
+          <div className="flex-1 min-w-0 space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-2.5 py-1 text-xs font-semibold">
+                {formatLabel(project.status)}
+              </span>
+              <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${pace.cls}`}>{pace.text}</span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-elevated text-muted px-2.5 py-1 text-xs font-medium">
+                <Icon name="task_alt" className="w-3.5 h-3.5" />
+                {project.todo_pending ?? 0} pending to-do{(project.todo_pending ?? 0) === 1 ? "" : "s"}
+              </span>
+            </div>
+
+            {hasSchedule ? (
+              <div>
+                <div className="relative h-2.5 w-full rounded-full bg-elevated">
+                  <div className="absolute inset-y-0 left-0 rounded-full bg-primary" style={{ width: `${Math.min(100, progress)}%` }} />
+                  <div
+                    className="absolute -top-1 h-[18px] w-0.5 rounded bg-foreground/70"
+                    style={{ left: `calc(${elapsedPct}% - 1px)` }}
+                    title={`Today: ${elapsedPct.toFixed(0)}% of the schedule has passed`}
+                  />
+                </div>
+                <div className="mt-2 flex flex-wrap justify-between gap-x-4 gap-y-1 text-xs text-muted">
+                  <span>
+                    <span className="inline-block h-2 w-2 rounded-full bg-primary mr-1.5 align-middle" />
+                    Work done {progress.toFixed(1)}%
+                  </span>
+                  <span>
+                    <span className="inline-block h-2.5 w-0.5 bg-foreground/70 mr-1.5 align-middle" />
+                    Time gone {elapsedPct.toFixed(0)}%
+                  </span>
+                  <span className="font-medium text-foreground">
+                    {project.actual_end_date
+                      ? `Finished ${formatDate(project.actual_end_date)}`
+                      : daysLeft >= 0
+                        ? `${daysLeft.toLocaleString("en-IN")} days left`
+                        : `${Math.abs(daysLeft).toLocaleString("en-IN")} days past the end date`}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="text-xs text-muted">Add planned start and end dates to the project to track pace.</div>
+            )}
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-1 text-xs">
+              {[
+                ["Planned start", project.planned_start_date],
+                ["Planned end", project.planned_end_date],
+                ["Actual start", project.actual_start_date],
+                ["Actual end", project.actual_end_date],
+              ].map(([k, v]) => (
+                <div key={k as string}>
+                  <div className="text-muted">{k}</div>
+                  <div className="mt-0.5 font-medium text-foreground">{v ? formatDate(v) : "Not set"}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          {seesMoney && (
+            <div className="md:border-l md:border-border-custom md:pl-6 shrink-0">
+              <div className="text-xs text-muted">Project value</div>
+              <div className="mt-1 text-2xl font-bold tracking-tight tabular-nums text-foreground">
+                {fmtINR(project.project_value, currencyDecimalPlaces)}
+              </div>
+              <div className="mt-1 text-xs text-muted">BOQ {compactINR(boqValue)}</div>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Financial View — 6 spec cards */}
       {seesMoney && (
-      <div>
-        <div className="text-xs uppercase tracking-wider text-muted mb-3">Financial View</div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {/* 1. Estimated Budget */}
-          <KpiCard
-            label="Estimated Budget"
-            value={fmtINR(estimatedBudget, currencyDecimalPlaces)}
-            sub={`across ${costCodes.length} cost code${costCodes.length === 1 ? "" : "s"}`}
-            tone="violet"
-            onClick={() =>
-              setDrill({
-                title: "Estimate Cost Code Budget",
-                subtitle: `Total estimated budget ${fmtINR(estimatedBudget, currencyDecimalPlaces)} across ${costCodes.length} cost codes`,
-                cols: [
-                  { key: "name", label: "Cost Code Name" },
-                  { key: "budget", label: "Budget Amount" },
-                  { key: "actual", label: "Actual Expense" },
-                ],
-                rows: costCodes.map((c) => ({
-                  name: c.name,
-                  budget: fmtINR(c.budget_amount, currencyDecimalPlaces),
-                  actual: fmtINR(expByCC[c.name] || 0, currencyDecimalPlaces),
-                })),
-                footer: "Actual Expense is summed from bill line items tagged to each cost code.",
-                action: { label: "+ Add Cost Code", onClick: () => setShowAddCC(true) },
-              })
-            }
-          />
+        <>
+          {/* Money at a glance. Billed In/Out are accrual incl GST, margin is ex-GST (D1 R2-021). */}
+          <div>
+            <SectionTitle title="Money" hint="Billed amounts include GST. Margin is before GST." />
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+              <KpiCard
+                label="Billed In"
+                icon="inbox"
+                value={fmtINR(project.cash_in, currencyDecimalPlaces)}
+                tone="good"
+                sub={`${pct(saleTotal, boqValue)} of BOQ value · ${collectedPct.toFixed(0)}% collected`}
+                onClick={() =>
+                  setDrill({
+                    title: "Billed In (Sales Invoices)",
+                    subtitle: `${fmtINR(saleTotal, currencyDecimalPlaces)} · ${pct(saleTotal, boqValue)} of Total BOQ Value (${fmtINR(boqValue, currencyDecimalPlaces)})`,
+                    cols: [
+                      { key: "Invoice #", label: "Invoice #" },
+                      { key: "Date", label: "Date" },
+                      { key: "Status", label: "Status" },
+                      { key: "Total", label: "Total" },
+                      { key: "Paid", label: "Paid" },
+                    ],
+                    rows: billRows(sale),
+                  })
+                }
+              />
+              <KpiCard
+                label="Billed Out"
+                icon="outbox"
+                value={fmtINR(project.cash_out, currencyDecimalPlaces)}
+                sub={estimatedBudget > 0 ? `${pct(expense, estimatedBudget)} of budget used` : "No budget set yet"}
+                onClick={() =>
+                  setDrill({
+                    title: "Billed Out (Expenses till date)",
+                    subtitle: `${fmtINR(expense, currencyDecimalPlaces)} · ${pct(expense, estimatedBudget)} of Estimated Budget (${fmtINR(estimatedBudget, currencyDecimalPlaces)})`,
+                    cols: [
+                      { key: "Invoice #", label: "Invoice #" },
+                      { key: "Date", label: "Date" },
+                      { key: "Type", label: "Type" },
+                      { key: "Status", label: "Status" },
+                      { key: "Total", label: "Total" },
+                    ],
+                    rows: billRows(purchase),
+                  })
+                }
+              />
+              <KpiCard
+                label="Net Margin"
+                icon={margin0 >= 0 ? "trending_up" : "trending_down"}
+                value={fmtINR(margin0, currencyDecimalPlaces)}
+                tone={margin0 >= 0 ? "good" : "bad"}
+                sub={marginPct === null ? "No sales billed yet" : `${marginPct.toFixed(1)}% of sales, before GST`}
+                onClick={() =>
+                  setDrill({
+                    title: "Net Margin",
+                    subtitle: `Sales ${fmtINR(saleExGst, currencyDecimalPlaces)} − Costs ${fmtINR(expenseExGst, currencyDecimalPlaces)}, both before GST`,
+                    cols: [
+                      { key: "k", label: "Component" },
+                      { key: "v", label: "Amount" },
+                    ],
+                    rows: [
+                      { k: "Sales billed (before GST)", v: fmtINR(saleExGst, currencyDecimalPlaces) },
+                      { k: "Costs billed (before GST)", v: fmtINR(expenseExGst, currencyDecimalPlaces) },
+                      { k: "Net Margin", v: fmtINR(margin0, currencyDecimalPlaces) },
+                    ],
+                  })
+                }
+              />
+              <KpiCard
+                label="Net Cash Position"
+                icon="bank"
+                value={fmtINR(netCash, currencyDecimalPlaces)}
+                tone={netCash >= 0 ? "good" : "bad"}
+                sub={`To collect ${compactINR(receivables)} · To pay ${compactINR(payables)}`}
+                onClick={() =>
+                  setDrill({
+                    title: "Net Cash Position",
+                    subtitle: `${fmtINR(projectBalance, currencyDecimalPlaces)} (Balance) + ${fmtINR(receivables, currencyDecimalPlaces)} (Receivables) − ${fmtINR(payables, currencyDecimalPlaces)} (Payables) = ${fmtINR(netCash, currencyDecimalPlaces)}`,
+                    cols: [
+                      { key: "k", label: "Component" },
+                      { key: "v", label: "Amount" },
+                    ],
+                    rows: [
+                      { k: "Project Balance (cash in − cash out)", v: fmtINR(projectBalance, currencyDecimalPlaces) },
+                      { k: "Receivables (to be collected)", v: fmtINR(receivables, currencyDecimalPlaces) },
+                      { k: "Payables (due to vendors)", v: fmtINR(payables, currencyDecimalPlaces) },
+                      { k: "Net Cash Position", v: fmtINR(netCash, currencyDecimalPlaces) },
+                    ],
+                  })
+                }
+              />
+            </div>
+          </div>
 
-          {/* 2. Total BOQ Value */}
-          <KpiCard
-            label="Total BOQ Value"
-            value={fmtINR(boqValue, currencyDecimalPlaces)}
-            sub={`Estimated Margin: ${fmtINR(estimatedMargin, currencyDecimalPlaces)}`}
-            tone="emerald"
-            onClick={() =>
-              setDrill({
-                title: "Total BOQ Value",
-                subtitle: `BOQ Value ${fmtINR(boqValue, currencyDecimalPlaces)} − Estimated Budget ${fmtINR(estimatedBudget, currencyDecimalPlaces)} = Estimated Margin ${fmtINR(estimatedMargin, currencyDecimalPlaces)}`,
-                cols: [
-                  { key: "title", label: "BOQ Document" },
-                  { key: "value", label: "BOQ Value" },
-                  { key: "progress", label: "Physical %" },
-                ],
-                rows: docs.map((d) => ({
-                  title: d.title,
-                  value: fmtINR(d.boq_value, currencyDecimalPlaces),
-                  progress: `${(d.physical_progress || 0).toFixed(1)}%`,
-                })),
-              })
-            }
-          />
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+            {/* Where the money went */}
+            <div className="lg:col-span-2 rounded-xl border border-border-custom bg-card p-5 shadow-sm">
+              <SectionTitle title="Where the money went" hint="Bills till date" />
+              {expense > 0 ? (
+                <div className="flex flex-col sm:flex-row items-center gap-5">
+                  <Donut slices={expenseSlices} centre={compactINR(expense)} centreSub="total spent" />
+                  <ul className="flex-1 w-full space-y-2.5">
+                    {expenseSlices.map((s) => (
+                      <li key={s.label} className="flex items-center gap-2 text-xs">
+                        <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: s.color }} />
+                        <span className="text-foreground">{s.label}</span>
+                        <span className="ml-auto tabular-nums text-muted">{compactINR(s.value)}</span>
+                        <span className="w-10 text-right tabular-nums font-medium text-foreground">
+                          {((s.value / expense) * 100).toFixed(0)}%
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <div className="py-10 text-center text-xs text-muted">No expense bills on this project yet.</div>
+              )}
+            </div>
 
-          {/* 3. Total Sales Invoice */}
-          <KpiCard
-            label="Total Sales Invoice"
-            value={fmtINR(saleTotal, currencyDecimalPlaces)}
-            sub={`${pct(saleTotal, boqValue)} of BOQ value`}
-            tone="emerald"
-            onClick={() =>
-              setDrill({
-                title: "Total Sales Invoice",
-                subtitle: `${fmtINR(saleTotal, currencyDecimalPlaces)} · ${pct(saleTotal, boqValue)} of Total BOQ Value (${fmtINR(boqValue, currencyDecimalPlaces)})`,
-                cols: [
-                  { key: "Invoice #", label: "Invoice #" },
-                  { key: "Date", label: "Date" },
-                  { key: "Status", label: "Status" },
-                  { key: "Total", label: "Total" },
-                  { key: "Paid", label: "Paid" },
-                ],
-                rows: billRows(sale),
-              })
-            }
-          />
+            {/* Budget and BOQ */}
+            <div className="lg:col-span-3 rounded-xl border border-border-custom bg-card p-5 shadow-sm">
+              <SectionTitle title="Budget and BOQ" />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {[
+                  { k: "Estimated Budget", v: fmtINR(estimatedBudget, currencyDecimalPlaces), s: `${costCodes.length} cost code${costCodes.length === 1 ? "" : "s"}`, on: openBudgetDrill },
+                  { k: "Total BOQ Value", v: fmtINR(boqValue, currencyDecimalPlaces), s: `Estimated margin ${compactINR(estimatedMargin)}`, on: openBoqDrill },
+                  {
+                    k: "Work Done Value",
+                    v: workDone > 0 || boqValue === 0 ? fmtINR(workDone, currencyDecimalPlaces) : "Not measured",
+                    s: workDone > 0 ? `${pct(workDone, boqValue)} of BOQ value` : "Record physical progress on the BOQ",
+                    on: openWorkDoneDrill,
+                  },
+                ].map((x) => (
+                  <button
+                    key={x.k}
+                    onClick={x.on}
+                    className="group text-left rounded-lg bg-elevated/60 hover:bg-elevated p-3 transition-colors cursor-pointer"
+                  >
+                    <div className="text-xs text-muted">{x.k}</div>
+                    <div className="mt-1 text-lg font-bold tracking-tight tabular-nums text-foreground">{x.v}</div>
+                    <div className="mt-0.5 text-[11px] text-muted">{x.s}</div>
+                    <div className="mt-2 text-[11px] font-medium text-primary inline-flex items-center gap-1 opacity-80 group-hover:opacity-100">
+                      View details <Icon name="chevron_right" className="w-3 h-3" />
+                    </div>
+                  </button>
+                ))}
+              </div>
 
-          {/* 4. Total Expense (Till Date) */}
-          <KpiCard
-            label="Total Expense (Till Date)"
-            value={fmtINR(expense, currencyDecimalPlaces)}
-            sub={`${pct(expense, estimatedBudget)} of Budget used`}
-            tone="rose"
-            onClick={() =>
-              setDrill({
-                title: "Total Expense (Till Date)",
-                subtitle: `${fmtINR(expense, currencyDecimalPlaces)} · ${pct(expense, estimatedBudget)} of Estimated Budget (${fmtINR(estimatedBudget, currencyDecimalPlaces)})`,
-                cols: [
-                  { key: "Invoice #", label: "Invoice #" },
-                  { key: "Date", label: "Date" },
-                  { key: "Type", label: "Type" },
-                  { key: "Status", label: "Status" },
-                  { key: "Total", label: "Total" },
-                ],
-                rows: billRows(purchase),
-              })
-            }
-          />
+              <div className="mt-5">
+                <div className="flex items-center justify-between text-xs mb-1.5">
+                  <span className="text-muted">Budget used</span>
+                  <span className="tabular-nums font-medium text-foreground">
+                    {compactINR(expense)} of {compactINR(estimatedBudget)}
+                    {estimatedBudget > 0 && ` · ${pct(expense, estimatedBudget)}`}
+                  </span>
+                </div>
+                <Meter
+                  value={expense}
+                  max={estimatedBudget}
+                  color={estimatedBudget > 0 && expense > estimatedBudget ? "var(--danger)" : "var(--primary)"}
+                />
+              </div>
 
-          {/* 5. Work done value */}
-          <KpiCard
-            label="Work Done Value"
-            value={fmtINR(workDone, currencyDecimalPlaces)}
-            sub={`${pct(workDone, boqValue)} of BOQ value`}
-            tone="violet"
-            onClick={() =>
-              setDrill({
-                title: "Work Done Value",
-                subtitle: `Physical-progress-weighted BOQ value · ${pct(workDone, boqValue)} of Total BOQ Value (${fmtINR(boqValue, currencyDecimalPlaces)})`,
-                cols: [
-                  { key: "title", label: "BOQ Document" },
-                  { key: "value", label: "BOQ Value" },
-                  { key: "progress", label: "Physical %" },
-                  { key: "done", label: "Work Done" },
-                ],
-                rows: docs.map((d) => ({
-                  title: d.title,
-                  value: fmtINR(d.boq_value, currencyDecimalPlaces),
-                  progress: `${(d.physical_progress || 0).toFixed(1)}%`,
-                  done: fmtINR((d.boq_value || 0) * ((d.physical_progress || 0) / 100), currencyDecimalPlaces),
-                })),
-              })
-            }
-          />
-
-          {/* 6. Net Cash Position */}
-          <KpiCard
-            label="Net Cash Position"
-            value={fmtINR(netCash, currencyDecimalPlaces)}
-            sub="Project Balance + Receivables − Payables"
-            tone={netCash >= 0 ? "emerald" : "rose"}
-            onClick={() =>
-              setDrill({
-                title: "Net Cash Position",
-                subtitle: `${fmtINR(projectBalance, currencyDecimalPlaces)} (Balance) + ${fmtINR(receivables, currencyDecimalPlaces)} (Receivables) − ${fmtINR(payables, currencyDecimalPlaces)} (Payables) = ${fmtINR(netCash, currencyDecimalPlaces)}`,
-                cols: [
-                  { key: "k", label: "Component" },
-                  { key: "v", label: "Amount" },
-                ],
-                rows: [
-                  { k: "Project Balance (cash in − cash out)", v: fmtINR(projectBalance, currencyDecimalPlaces) },
-                  { k: "Receivables (to be collected)", v: fmtINR(receivables, currencyDecimalPlaces) },
-                  { k: "Payables (due to vendors)", v: fmtINR(payables, currencyDecimalPlaces) },
-                  { k: "Net Cash Position", v: fmtINR(netCash, currencyDecimalPlaces) },
-                ],
-              })
-            }
-          />
-        </div>
-      </div>
+              {ccRows.length > 0 && (
+                <div className="mt-5 space-y-3">
+                  <div className="flex items-center gap-4 text-[11px] text-muted">
+                    <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-primary/25" />Budget</span>
+                    <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-primary" />Actual</span>
+                  </div>
+                  {ccRows.map((r) => (
+                    <div key={r.name}>
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="truncate text-foreground">{r.name}</span>
+                        <span className="tabular-nums text-muted shrink-0 ml-3">
+                          {compactINR(r.actual)} / {compactINR(r.budget)}
+                        </span>
+                      </div>
+                      <div className="relative h-2 rounded-full bg-elevated overflow-hidden">
+                        <div className="absolute inset-y-0 left-0 rounded-full bg-primary/25" style={{ width: `${(r.budget / ccMax) * 100}%` }} />
+                        <div
+                          className={`absolute inset-y-0 left-0 rounded-full ${r.actual > r.budget ? "bg-danger" : "bg-primary"}`}
+                          style={{ width: `${(r.actual / ccMax) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
       )}
-
-      {/* Info + Schedule (existing) */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card label="Pending To-Dos" value={`${project.todo_pending ?? 0}`} />
-        {seesMoney && <Card label="Project Value" value={fmtINR(project.project_value, currencyDecimalPlaces)} />}
-        <Card label="Status" value={formatLabel(project.status)} />
-      </div>
-
-      <div className="rounded-lg border border-border-custom bg-card p-4 text-sm">
-        <div className="text-xs uppercase tracking-wider text-muted mb-3">Schedule</div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div>
-            <div className="text-muted">Planned Start</div>
-            <div className="text-foreground">
-              {formatDate(project.planned_start_date)}
-            </div>
-          </div>
-          <div>
-            <div className="text-muted">Planned End</div>
-            <div className="text-foreground">
-              {formatDate(project.planned_end_date)}
-            </div>
-          </div>
-          <div>
-            <div className="text-muted">Actual Start</div>
-            <div className="text-foreground">
-              {formatDate(project.actual_start_date)}
-            </div>
-          </div>
-          <div>
-            <div className="text-muted">Actual End</div>
-            <div className="text-foreground">
-              {formatDate(project.actual_end_date)}
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* Modals */}
       {drill && <DrillModal data={drill} onClose={() => setDrill(null)} action={drill.action} />}
