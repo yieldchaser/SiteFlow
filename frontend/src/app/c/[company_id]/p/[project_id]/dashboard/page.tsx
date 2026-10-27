@@ -795,6 +795,9 @@ export default function ProjectDashboardPage() {
                   <div className="flex items-center gap-4 text-[11px] text-muted">
                     <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-primary/25" />Budget</span>
                     <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-primary" />Actual</span>
+                    {ccRows.every((r) => r.actual === 0) && (
+                      <span className="ml-auto text-right">Actuals fill in when bill lines are tagged to a cost code.</span>
+                    )}
                   </div>
                   {ccRows.map((r) => (
                     <div key={r.name}>
