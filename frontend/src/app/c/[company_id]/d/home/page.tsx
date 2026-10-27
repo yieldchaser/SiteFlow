@@ -168,16 +168,38 @@ export default function ProjectsHomePage() {
 
       // The five lists are independent; fetch them together so the hub fills
       // in one round trip instead of five sequential ones.
-      const [planningProjectsRes, paymentsRes, todoRes, indentsRes, leavesRes] = await Promise.all([
+      const [planningProjectsRes, paymentsRes, todoRes, indentsRes, leavesRes, opsRes, finRes] = await Promise.all([
         fetch(`${apiHost}/apis/v3/planning/projects?company_id=${companyId}`, { headers: authHeaders }),
         fetch(`${apiHost}/apis/v3/finance/payment-requests/${companyId}`, { headers: authHeaders }),
         fetch(`${apiHost}/apis/v3/todos/company/${companyId}`, { headers: authHeaders }),
         fetch(`${apiHost}/apis/v3/procurement/indents?company_id=${companyId}`, { headers: authHeaders }),
         fetch(`${apiHost}/apis/v3/hr/leaves/${companyId}`, { headers: authHeaders }),
+        // The planning list has no progress or cash; the dashboard analytics do.
+        fetch(`${apiHost}/apis/v3/analytics/company/${companyId}/operational`, { headers: authHeaders }),
+        fetch(`${apiHost}/apis/v3/analytics/company/${companyId}/financial`, { headers: authHeaders }),
       ]);
 
       if (planningProjectsRes.ok) {
-        setProjects(extractProjects(await planningProjectsRes.json()));
+        const list = extractProjects(await planningProjectsRes.json());
+        const ops = opsRes.ok ? await opsRes.json().catch(() => null) : null;
+        const fin = finRes.ok ? await finRes.json().catch(() => null) : null;
+        const progressById = new Map<string, number>(
+          (ops?.projects || []).map((o: { project_id: string; progress?: number }) => [String(o.project_id), Number(o.progress) || 0])
+        );
+        const cashById = new Map<string, { in: number; out: number }>(
+          (fin?.project_summaries || []).map((f: { project_id: string; payment_in?: number; payment_out?: number }) => [
+            String(f.project_id),
+            { in: Number(f.payment_in) || 0, out: Number(f.payment_out) || 0 },
+          ])
+        );
+        setProjects(
+          list.map((p) => ({
+            ...p,
+            progress: progressById.get(String(p.id)) ?? p.progress,
+            cashflow_in: cashById.get(String(p.id))?.in ?? p.cashflow_in,
+            cashflow_out: cashById.get(String(p.id))?.out ?? p.cashflow_out,
+          }))
+        );
       }
       if (paymentsRes.ok) {
         setPaymentRequests(await paymentsRes.json());
@@ -550,7 +572,7 @@ export default function ProjectsHomePage() {
                             style={{ width: `${p.progress || 0}%` }}
                           />
                         </div>
-                        <span className="text-xs font-medium text-muted">{p.progress || 0}%</span>
+                        <span className="text-xs font-medium text-muted">{Math.round(p.progress || 0)}%</span>
                       </div>
                     </td>
                     {seesFinance && (

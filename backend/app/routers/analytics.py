@@ -350,9 +350,17 @@ def get_company_analytics(company_id: uuid.UUID, db: Session = Depends(get_db), 
     # the count of hourless logs so the data gap stays visible.
     total_hours = 0.0
     logs_without_hours = 0
+    # A day a supervisor marked by hand on the muster is a worked shift, not an
+    # open punch: count it as a standard 8-hour day (4 for a half day), scaled
+    # by its shift multiplier. Open GPS punches still count nothing.
     for log in attendance_logs:
+        status_text = (log.status or "").strip().lower()
         if log.hours_worked is not None:
             total_hours += _to_float(log.hours_worked)
+        elif getattr(log, "marked_manually", False) and status_text.startswith("present"):
+            total_hours += 8.0 * (_to_float(log.shift_multiplier) or 1.0)
+        elif getattr(log, "marked_manually", False) and status_text.startswith("half"):
+            total_hours += 4.0 * (_to_float(log.shift_multiplier) or 1.0)
         else:
             logs_without_hours += 1
 

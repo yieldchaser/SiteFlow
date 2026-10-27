@@ -113,6 +113,8 @@ export default function HRPayrollPage() {
   const companyId = params?.company_id as string;
   const { activeProjectId } = useProject();
   const projectId = activeProjectId;
+  // Staff Directory: the whole company by default, or only the pinned site.
+  const [allSites, setAllSites] = useState(true);
 
   const [tab, setTab] = useState<"employees" | "attendance" | "timesheets" | "payroll" | "leaves" | "holidays">("employees");
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -307,7 +309,7 @@ export default function HRPayrollPage() {
   const fetchEmployees = async () => {
     if (!companyId) return;
     try {
-      const url = projectId
+      const url = projectId && !allSites
         ? `${getApiHost()}/apis/v3/hr/employees/${projectId}`
         : `${getApiHost()}/apis/v3/hr/company/employees/${companyId}`;
       const res = await fetch(url, { headers: authHeaders() });
@@ -485,7 +487,7 @@ export default function HRPayrollPage() {
     if (companyId) {
       fetchEmployees();
     }
-  }, [companyId, projectId]);
+  }, [companyId, projectId, allSites]);
 
   useEffect(() => {
     if (companyId) {
@@ -990,6 +992,14 @@ export default function HRPayrollPage() {
           <div className="flex items-center gap-2">
             {tab === "employees" && (
               <>
+                <div className="flex rounded-lg border border-border-custom overflow-hidden text-xs font-bold" role="group" aria-label="Which staff to show">
+                  {[{ v: true, l: "All sites" }, { v: false, l: "This site" }].map((o) => (
+                    <button key={o.l} type="button" onClick={() => setAllSites(o.v)}
+                      className={`px-3 py-1.5 transition-colors cursor-pointer ${allSites === o.v ? "bg-primary text-white" : "text-muted hover:text-foreground hover:bg-elevated"}`}>
+                      {o.l}
+                    </button>
+                  ))}
+                </div>
                 <button onClick={() => setShowLibraryDrawer(true)}
                   className="px-3 py-1.5 rounded-lg border border-border-custom text-muted text-xs font-bold hover:text-foreground hover:bg-elevated transition-all cursor-pointer">
                   Workforce Library

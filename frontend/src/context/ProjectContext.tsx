@@ -243,6 +243,9 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
             // project-scoped screens such as Attendance open with no project at all.
             const matched =
               (candidateProjectId ? list.find((p) => p?.id === candidateProjectId) : undefined) ||
+              // With nothing remembered, open on a live site rather than
+              // whichever project happens to be first (often a cancelled one).
+              list.find((p) => isValidUuid(p?.id) && /ongoing|active|progress/i.test(String((p as { status?: string })?.status ?? ""))) ||
               list.find((p) => isValidUuid(p?.id));
 
             if (matched && matched.id) {
