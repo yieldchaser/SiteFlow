@@ -10,6 +10,8 @@ import Icon, { type IconName } from "@/components/marketing/Icon";
 import { usePermissions } from "@/context/PermissionsContext";
 import { useSidebar } from "@/context/SidebarContext";
 import CompanySwitcher from "@/components/CompanySwitcher";
+import AuthImage from "@/components/ui/AuthImage";
+import { authHeaders } from "@/lib/siteflow";
 import { isMissingOrDemoTenant, redirectToLogin } from "@/lib/company-guard";
 
 const GROUPS_STORAGE_KEY = "siteflow_nav_groups_state";
@@ -52,6 +54,9 @@ export default function Sidebar() {
   } = useSidebar();
 
   const [companyName, setCompanyName] = useState("Loading Company...");
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
   const [hoveredFlyout, setHoveredFlyout] = useState<string | null>(null);
 
   // Define domain groups
@@ -486,7 +491,10 @@ export default function Sidebar() {
         if (res.ok) {
           const data = await res.json();
           const resolvedCompanyName = data.name || "Workspace";
-          if (isActive) setCompanyName(resolvedCompanyName);
+          if (isActive) {
+            setCompanyName(resolvedCompanyName);
+            setLogoUrl(data.logo_url ? `/apis/v3${data.logo_url}` : null);
+          }
           if (typeof window !== "undefined") {
             localStorage.setItem("company_name", resolvedCompanyName);
             localStorage.setItem("company_name_for", companyId);
@@ -504,6 +512,41 @@ export default function Sidebar() {
       isActive = false;
     };
   }, [companyId]);
+
+  // The company's own logo in the header, or its first letter until one is uploaded.
+  const initial = companyName === "Loading Company..." ? "" : companyName.trim().charAt(0).toUpperCase();
+  const letterMark = (
+    <span className="flex h-full w-full items-center justify-center bg-primary text-sm font-bold text-white">{initial || "S"}</span>
+  );
+  // A wordmark logo needs width to be readable; the collapsed rail only fits a square.
+  const logoBoxWidth = logoUrl && (!desktopCollapsed || mobileOpen) ? "w-[68px]" : "w-9";
+  const logoMark = logoUrl ? (
+    <AuthImage src={logoUrl} alt={`${companyName} logo`} className="h-full w-full bg-white object-contain" fallback={letterMark} />
+  ) : letterMark;
+
+  const uploadLogo = async (file: File) => {
+    setLogoUploading(true);
+    setLogoError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`${getApiHost()}/apis/v3/settings/company-file/${companyId}?asset_type=logo`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: fd,
+      });
+      if (res.ok) {
+        setLogoUrl(`/apis/v3/settings/company-file/${companyId}/logo?v=${Date.now()}`);
+      } else {
+        const body = await res.json().catch(() => ({}));
+        setLogoError(typeof body.detail === "string" ? body.detail : "Could not upload the logo. Use a PNG or JPEG under 5 MB.");
+      }
+    } catch {
+      setLogoError("Could not upload the logo. Check your connection and try again.");
+    } finally {
+      setLogoUploading(false);
+    }
+  };
 
   // Filter items by user role permissions
   const isItemVisible = useCallback((item: NavItem) => {
@@ -585,15 +628,42 @@ export default function Sidebar() {
         <div className="flex flex-col overflow-y-auto flex-1 min-h-0">
           {/* Header */}
           <div className="p-3.5 flex items-center gap-3 border-b border-border-custom shrink-0">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary font-bold text-white text-sm">
-              S
-            </div>
+            {can("settings:manage") ? (
+              <label
+                className={`group relative flex h-9 ${logoBoxWidth} shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg`}
+                title={logoError || (logoUrl ? "Change company logo" : "Upload company logo")}
+              >
+                {logoMark}
+                <span className="absolute inset-0 flex items-center justify-center bg-black/55 text-[9px] font-bold text-white opacity-0 transition-opacity group-hover:opacity-100">
+                  {logoUploading ? "..." : logoUrl ? "Change" : "Logo"}
+                </span>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  className="hidden"
+                  aria-label="Upload company logo"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = "";
+                    if (f) uploadLogo(f);
+                  }}
+                />
+              </label>
+            ) : (
+              <div className={`flex h-9 ${logoBoxWidth} shrink-0 items-center justify-center overflow-hidden rounded-lg`}>{logoMark}</div>
+            )}
             {(!desktopCollapsed || mobileOpen) && (
               <div className="min-w-0 flex-1 animate-fade-in">
                 <CompanySwitcher currentCompanyId={companyId} fallbackName={companyName} />
-                <span className="text-[10px] text-muted uppercase tracking-wider font-medium block truncate">
-                  SiteFlow ERP
-                </span>
+                {logoError ? (
+                  <span className="text-[10px] text-red-600 font-medium block truncate" role="alert" title={logoError}>
+                    {logoError}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-muted uppercase tracking-wider font-medium block truncate">
+                    SiteFlow ERP
+                  </span>
+                )}
               </div>
             )}
           </div>
