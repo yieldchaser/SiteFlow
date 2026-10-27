@@ -70,6 +70,20 @@ interface DPRLog {
 // "/apis/v3/files/file/<id>#Quality Check". The fragment never reaches the server.
 const photoLabel = (path: string) => decodeURIComponent(path.split("#")[1] || "");
 
+// Measurement-book line: a dimension left at 0 is not measured, so the same
+// sheet gives running metres (L), area (L x W) or volume (L x W x H).
+type MbRow = { description: string; nos: number; l: number; w: number; h: number };
+const mbDims = (r: MbRow) => [r.l, r.w, r.h].filter((v) => v > 0);
+const mbQty = (r: MbRow) => {
+  const dims = mbDims(r);
+  return dims.length ? dims.reduce((acc, v) => acc * v, r.nos) : 0;
+};
+const MB_UNITS = ["", "m", "m²", "m³"];
+const mbTotalUnit = (rows: MbRow[]) => {
+  const units = new Set(rows.filter((r) => mbQty(r) > 0).map((r) => mbDims(r).length));
+  return units.size === 1 ? MB_UNITS[[...units][0]] : "";
+};
+
 const PHOTO_SLOTS: { label: string; icon: IconName; color: string }[] = [
   { label: "Site Progress", icon: "site", color: "bg-primary/15" },
   { label: "Material Delivery", icon: "truck", color: "bg-info/15" },
@@ -126,7 +140,7 @@ export default function DPRPage() {
   const [materialsConsumed, setMaterialsConsumed] = useState<ConsumedMaterialItem[]>([]);
   
   // Measurement Book (M.B.) takeoff items state
-  const [mbRows, setMbRows] = useState<any[]>([
+  const [mbRows, setMbRows] = useState<MbRow[]>([
     { description: "", nos: 1, l: 0, w: 0, h: 0 },
   ]);
 
@@ -666,7 +680,7 @@ export default function DPRPage() {
                 <h3 className="text-sm font-extrabold text-foreground inline-flex items-center gap-2">
                   <Icon name="ruler" className="w-5 h-5" /> Measurement Book (M.B.) Takeoff Sheet
                 </h3>
-                <p className="text-[10px] text-muted">Calculate quantities by structural dimensions (N × L × W × H)</p>
+                <p className="text-[10px] text-muted">Multiply the dimensions you measure: length for running metres, length × width for area, add height for volume</p>
               </div>
               <button onClick={() => setShowMBModal(false)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>
             </div>
@@ -680,13 +694,13 @@ export default function DPRPage() {
                     <th className="px-4 py-2 font-semibold">Length (m)</th>
                     <th className="px-4 py-2 font-semibold">Width (m)</th>
                     <th className="px-4 py-2 font-semibold">Height / Depth (m)</th>
-                    <th className="px-4 py-2 font-semibold text-right">Quantity (m³)</th>
+                    <th className="px-4 py-2 font-semibold text-right">Quantity</th>
                     <th className="px-4 py-2 font-semibold text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {mbRows.map((row, idx) => {
-                    const rowQty = row.nos * row.l * row.w * row.h;
+                    const rowQty = mbQty(row);
                     return (
                       <tr key={idx} className="border-b border-white/[0.02] hover:bg-elevated">
                         <td className="px-4 py-2">
@@ -751,7 +765,7 @@ export default function DPRPage() {
                           />
                         </td>
                         <td className="px-4 py-2 text-right font-sans text-muted">
-                          {fmtQty(rowQty)}
+                          {fmtQty(rowQty)} {rowQty > 0 ? MB_UNITS[mbDims(row).length] : ""}
                         </td>
                         <td className="px-4 py-2 text-center">
                           <button
@@ -774,14 +788,14 @@ export default function DPRPage() {
                 <button
                   type="button"
                   onClick={() => setMbRows([...mbRows, { description: "", nos: 1, l: 0, w: 0, h: 0 }])}
-                  className="px-3 py-1.5 bg-elevated hover:bg-elevated rounded-lg text-white font-bold cursor-pointer"
+                  className="px-3 py-1.5 bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 rounded-lg font-bold cursor-pointer"
                 >
                   + Add Dimension Row
                 </button>
                 <div className="text-right text-xs">
                   <span className="text-muted block uppercase text-[9px] tracking-wider">Total Takeoff Sum</span>
                   <strong className="text-lg font-black text-success font-sans">
-                    {fmtQty(mbRows.reduce((acc, r) => acc + (r.nos * r.l * r.w * r.h), 0))} m³
+                    {fmtQty(mbRows.reduce((acc, r) => acc + mbQty(r), 0))} {mbTotalUnit(mbRows)}
                   </strong>
                 </div>
               </div>
@@ -798,7 +812,7 @@ export default function DPRPage() {
               <button
                 type="button"
                 onClick={() => {
-                  const total = mbRows.reduce((acc, r) => acc + (r.nos * r.l * r.w * r.h), 0);
+                  const total = mbRows.reduce((acc, r) => acc + mbQty(r), 0);
                   setExecutedQty(total.toFixed(3));
                   setShowMBModal(false);
                 }}
