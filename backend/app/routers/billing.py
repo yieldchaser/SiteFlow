@@ -725,9 +725,15 @@ def _bills_query_and_serialize(
     bills = query.all()
 
     project_name_by_id = {p.id: p.name for p in db.query(Project.id, Project.name).all()}
+    # One query for every bill's deductions, not one per bill: per-row
+    # round trips to the database made a 44-bill list take ~10 s on prod.
+    deductions_by_bill: dict = {}
+    if bills:
+        for d in db.query(TransactionDeduction).filter(TransactionDeduction.bill_id.in_([b.id for b in bills])).all():
+            deductions_by_bill.setdefault(d.bill_id, []).append(d)
     res = []
     for b in bills:
-        deductions = db.query(TransactionDeduction).filter(TransactionDeduction.bill_id == b.id).all()
+        deductions = deductions_by_bill.get(b.id, [])
         ded_schemas = [
             DeductionResponseSchema(
                 id=d.id,
