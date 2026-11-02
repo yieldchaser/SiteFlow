@@ -293,6 +293,8 @@ def return_deployment(
     dep.end_date = payload.end_date or datetime.now(timezone.utc)
 
     if payload.end_meter is not None:
+        if dep.start_meter is not None and Decimal(str(payload.end_meter)) < dep.start_meter:
+            raise HTTPException(status_code=400, detail=f"Stop reading {payload.end_meter} is below the start reading {dep.start_meter}")
         dep.end_meter = Decimal(str(payload.end_meter))
     if payload.remarks:
         # Append rather than overwrite: the start remarks are the only record of
@@ -302,8 +304,11 @@ def return_deployment(
     # hours_used drives every cost calculation against Equipment.hourly_rate. An
     # explicit reading wins; otherwise fall back to wall-clock elapsed time so a
     # completed deployment is never silently free.
+    # Next best is the hour meter: wall-clock time bills a crane parked overnight.
     if payload.hours_used is not None:
         dep.hours_used = Decimal(str(payload.hours_used))
+    elif dep.start_meter is not None and dep.end_meter is not None:
+        dep.hours_used = dep.end_meter - dep.start_meter
     elif dep.hours_used in (None, 0) and dep.start_date and dep.end_date:
         start = dep.start_date
         end = dep.end_date

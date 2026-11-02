@@ -359,7 +359,9 @@ export default function MaterialTab() {
                   <input
                     value={unit}
                     onChange={(e) => setUnit(e.target.value)}
-                    placeholder="bags / ltr / kg"
+                    placeholder="e.g. Bag, kg, Liter"
+                    list="sf-units"
+                    autoComplete="off"
                     className="mt-1 w-full bg-input border border-border-custom rounded-lg px-3 py-2 text-sm text-foreground placeholder-muted"
                   />
                 </div>

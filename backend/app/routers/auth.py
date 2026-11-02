@@ -27,7 +27,7 @@ from app.auth import (
 from app.permissions import effective_permissions
 from app.config import settings
 from app.rate_limit import _rate_limit_key, limiter
-from app.routers.settings import _validate_gstin
+from app.routers.settings import _validate_gstin, add_missing_default_roles
 from app import models, sms, email_otp, security, firebase_auth
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -474,6 +474,13 @@ class EmailOTPVerifyRequest(BaseModel):
     code: str = Field(..., example="123456")
 
 
+def _revocation_stamp() -> datetime:
+    """Now, cut to whole seconds. Tokens carry iat in whole seconds, so a stamp
+    with microseconds was later than the token minted right after it: claiming
+    an invite logged the person straight back out on their first request."""
+    return datetime.now(timezone.utc).replace(microsecond=0)
+
+
 def _normalize_email(email: str) -> str:
     return (email or "").strip().lower()
 
@@ -692,7 +699,7 @@ def reset_password(request: Request, payload: ResetPasswordRequest, db: Session 
 
     user.password_hash = security.hash_password(payload.new_password)
     user.email_verified = True
-    user.tokens_revoked_at = datetime.now(timezone.utc)
+    user.tokens_revoked_at = _revocation_stamp()
     _add_provider(user, "password")
     db.commit()
     return {"success": True, "message": "Password updated. Please log in."}
@@ -810,6 +817,7 @@ def create_company(
         permissions={"all": True},
     )
     db.add(owner_role)
+    add_missing_default_roles(db, company.id)
     db.commit()
 
     membership = models.CompanyTeam(
@@ -1146,7 +1154,7 @@ def accept_invite(request: Request, payload: AcceptInviteRequest, db: Session = 
 
     user.password_hash = security.hash_password(payload.password)
     user.email_verified = True
-    user.tokens_revoked_at = datetime.now(timezone.utc)
+    user.tokens_revoked_at = _revocation_stamp()
     _add_provider(user, "password")
     db.commit()
 

@@ -5,7 +5,6 @@ import { useParams, useSearchParams } from "next/navigation";
 import { useProject } from "@/context/ProjectContext";
 import { getApiHost, readErrorDetail } from "@/lib/api";
 import { formatDate, fmtINR } from "@/lib/siteflow";
-import { UNITS } from "@/lib/units";
 import Badge from "@/components/ui/Badge";
 import Icon, { type IconName } from "@/components/marketing/Icon";
 import SegmentedTabs from "@/components/ui/Tabs";
@@ -1790,29 +1789,29 @@ export default function LibraryHubPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-muted uppercase tracking-wider block mb-1.5">Unit (UOM)</label>
-                  <select
+                  <input
                     required
+                    list="sf-units"
+                    autoComplete="off"
+                    placeholder="Pick or type a unit"
                     value={matUnit}
                     onChange={(e) => setMatUnit(e.target.value)}
                     className="input-field w-full px-3 py-2 text-xs focus:outline-none"
-                  >
-                    <option value="">Select unit</option>
-                    {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-                  </select>
+                  />
                 </div>
                 <div className="space-y-1">
                   {/* matAltUnit was in state and in the submit payload, and the
                       table has an Alternate UOM column, but there was no input
                       anywhere so the column could only ever read "-". */}
                   <label className="text-xs font-medium text-muted uppercase tracking-wider block mb-1.5">Alternate UOM</label>
-                  <select
+                  <input
+                    list="sf-units"
+                    autoComplete="off"
+                    placeholder="Pick or type a unit"
                     value={matAltUnit}
                     onChange={(e) => setMatAltUnit(e.target.value)}
                     className="input-field w-full px-3 py-2 text-xs focus:outline-none"
-                  >
-                    <option value="">None</option>
-                    {UNITS.filter((u) => u !== matUnit).map((u) => <option key={u} value={u}>{u}</option>)}
-                  </select>
+                  />
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-muted uppercase tracking-wider block mb-1.5">GST Rate (%)</label>
@@ -1939,15 +1938,15 @@ export default function LibraryHubPage() {
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-muted uppercase tracking-wider block mb-1.5">Unit (UOM)</label>
-                  <select
+                  <input
                     required
+                    list="sf-units"
+                    autoComplete="off"
+                    placeholder="Pick or type a unit"
                     value={rateUnit}
                     onChange={(e) => setRateUnit(e.target.value)}
                     className="input-field w-full px-3 py-2 text-xs focus:outline-none"
-                  >
-                    <option value="">Select unit</option>
-                    {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-                  </select>
+                  />
                 </div>
               </div>
 

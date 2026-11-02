@@ -485,26 +485,33 @@ def create_role(company_id: uuid.UUID, role_data: RoleCreate, db: Session = Depe
     return role
 
 
-@router.post("/roles/seed/{company_id}", response_model=List[RoleResponse])
-def seed_default_roles(company_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user), _: None = Depends(verify_company_access)):
-    require_permission(db, current_user, company_id, "settings:manage")
-    # Every company is born with an Owner role, so "no roles yet" never happens.
-    # Add whichever standard roles are missing and leave existing ones untouched.
+def add_missing_default_roles(db: Session, company_id: uuid.UUID) -> List[CompanyRole]:
+    """Add whichever standard roles the company lacks; existing ones are left
+    untouched. Caller commits. New companies get these at creation, so the
+    first "Add person" already offers Site Engineer, Accountant and the rest."""
     existing = {
         (r.role_name or "").strip().lower()
         for r in db.query(CompanyRole).filter(CompanyRole.company_id == company_id).all()
     }
-    missing = [name for name in DEFAULT_ROLES if name.lower() not in existing]
-    if not missing:
-        raise HTTPException(status_code=409, detail="The standard roles are already added for this company")
     created = []
-    for name in missing:
+    for name in DEFAULT_ROLES:
+        if name.lower() in existing:
+            continue
         # Seed with the real preset (not {}); fall back to read-only for any
         # role name without a preset.
         preset = DEFAULT_ROLE_PRESETS.get(name, default_view_permissions())
         role = CompanyRole(company_id=company_id, role_name=name, permissions=preset)
         db.add(role)
         created.append(role)
+    return created
+
+
+@router.post("/roles/seed/{company_id}", response_model=List[RoleResponse])
+def seed_default_roles(company_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user), _: None = Depends(verify_company_access)):
+    require_permission(db, current_user, company_id, "settings:manage")
+    created = add_missing_default_roles(db, company_id)
+    if not created:
+        raise HTTPException(status_code=409, detail="The standard roles are already added for this company")
     db.commit()
     for role in created:
         db.refresh(role)

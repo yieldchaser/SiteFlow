@@ -1501,7 +1501,7 @@ export default function ProcurementPage() {
                 </div>
                 <div className="space-y-1">
                   <label className="text-muted">Unit</label>
-                  <input type="text" value={newIndentUnit} onChange={(e) => setNewIndentUnit(e.target.value)} className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground" />
+                  <input type="text" list="sf-units" autoComplete="off" value={newIndentUnit} onChange={(e) => setNewIndentUnit(e.target.value)} className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground" />
                 </div>
               </div>
 

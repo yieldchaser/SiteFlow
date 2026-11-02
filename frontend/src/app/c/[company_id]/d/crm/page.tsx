@@ -1236,7 +1236,7 @@ export default function CRMPage() {
                         <td className="p-1"><input className={inputCls + " px-1 py-1"} value={it.item_name} onChange={(e) => qSetItem(idx, { item_name: e.target.value })} /></td>
                         <td className="p-1"><input className={inputCls + " px-1 py-1"} value={it.section_name} onChange={(e) => qSetItem(idx, { section_name: e.target.value })} /></td>
                         <td className="p-1"><input type="number" className={inputCls + " px-1 py-1 w-16"} value={it.qty} onChange={(e) => qSetItem(idx, { qty: Number(e.target.value) })} /></td>
-                        <td className="p-1"><input className={inputCls + " px-1 py-1 w-16"} value={it.unit} onChange={(e) => qSetItem(idx, { unit: e.target.value })} /></td>
+                        <td className="p-1"><input className={inputCls + " px-1 py-1 w-16"} list="sf-units" autoComplete="off" value={it.unit} onChange={(e) => qSetItem(idx, { unit: e.target.value })} /></td>
                         <td className="p-1"><input type="number" className={inputCls + " px-1 py-1 w-14"} value={it.length ?? ""} onChange={(e) => qSetItem(idx, { length: e.target.value === "" ? null : Number(e.target.value) })} /></td>
                         <td className="p-1"><input type="number" className={inputCls + " px-1 py-1 w-14"} value={it.width ?? ""} onChange={(e) => qSetItem(idx, { width: e.target.value === "" ? null : Number(e.target.value) })} /></td>
                         <td className="p-1"><input type="number" className={inputCls + " px-1 py-1 w-14"} value={it.height ?? ""} onChange={(e) => qSetItem(idx, { height: e.target.value === "" ? null : Number(e.target.value) })} /></td>

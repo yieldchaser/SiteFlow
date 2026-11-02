@@ -316,7 +316,7 @@ export default function DPRPage() {
             {[
               { label: "Workers on Latest DPR", value: logs.length > 0 ? fmtQty(logs[0].workers_deployed) : "—", desc: logs.length > 0 ? `As reported on ${formatDate(logs[0].dpr_date)}` : "No DPR yet", color: "border-primary/20 bg-primary/5 text-primary" },
               { label: "DPRs Logged", value: summary.activities_tracked || 0, desc: `${summary.issues_flagged || 0} with an issue flagged`, color: "border-secondary/20 bg-secondary/5 text-secondary" },
-              { label: "Material Received Today", value: (summary.material_received_today || 0) > 0 ? `${fmtQty(summary.material_received_today)} Units` : "No GRNs today", desc: "Material inward logged", color: "border-warning/20 bg-warning/5 text-warning" },
+              { label: "Material Received Today", value: (summary.material_received_today || 0) > 0 ? `${fmtQty(summary.material_received_today)} Units` : "Nothing received today", desc: "Material inward logged", color: "border-warning/20 bg-warning/5 text-warning" },
               { label: "Material Used Today", value: (summary.material_used_today || 0) > 0 ? `${fmtQty(summary.material_used_today)} Units` : "No consumption logged", desc: "On-site consumption", color: "border-primary/20 bg-primary/5 text-primary" }
             ].map((card, idx) => (
               <div key={idx} className={`p-4 rounded-lg border ${card.color} flex flex-col justify-between h-28`}>
@@ -570,6 +570,8 @@ export default function DPRPage() {
                               <input
                                 type="text"
                                 placeholder="e.g. bags"
+                                list="sf-units"
+                                autoComplete="off"
                                 value={matRow.unit}
                                 onChange={(e) => {
                                   const next = [...materialsConsumed];

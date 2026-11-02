@@ -224,6 +224,7 @@ export default function EquipmentTrackingPage() {
           project_id: projectId,
           start_date: new Date().toISOString(),
           hours_used: hoursNum >= 0 ? hoursNum : 0,
+          start_meter: parseFloat(startMeterVal),
           remarks: `Start reading: ${startMeterVal}. Photo Proof: ${isStartPhotoCaptured}`
         }),
       });
@@ -254,6 +255,7 @@ export default function EquipmentTrackingPage() {
         headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
         body: JSON.stringify({
           end_date: new Date().toISOString(),
+          end_meter: parseFloat(stopMeterVal),
           remarks: `Stop reading: ${stopMeterVal}. Photo Proof: ${isStopPhotoCaptured}. GPS Lock: ${isGpsLocked}`
         }),
       });
@@ -317,7 +319,9 @@ export default function EquipmentTrackingPage() {
   };
 
   // Compile Unified timeline (logs + fuels)
-  const projectFleet = fleet.filter(eq => deployments.some(d => d.equipment_id === eq.id));
+  // Machines that have worked here, plus any free to deploy. Listing only the
+  // first left a newly added machine invisible, so it could never be deployed.
+  const projectFleet = fleet.filter(eq => deployments.some(d => d.equipment_id === eq.id) || eq.status !== "deployed");
   const timelineEvents = [
     ...deployments.map(d => {
       const eq = fleet.find(e => e.id === d.equipment_id);

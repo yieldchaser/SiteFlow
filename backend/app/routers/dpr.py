@@ -8,7 +8,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.auth import get_current_user, verify_project_access, get_company_membership, require_any_permission, require_module_view, scope_projects
-from app.models import DailyProgressReport, Task, WarehouseInventory, MaterialTransaction, Project, User
+from app.models import DailyProgressReport, Task, BOQItem, WarehouseInventory, MaterialTransaction, Project, User
 from app.workflow_controls import enforce_entry_creation_window, enforce_entry_editing_window, enforce_stock_availability, get_company
 from app.inventory_reservation import release_reservation, rereserve_reservation
 from app.routers.delete_logs import log_deletion
@@ -20,6 +20,32 @@ router = APIRouter(
     tags=["Daily Progress Reports (DPR)"],
     dependencies=[Depends(get_current_user)]
 )
+
+
+def _sync_task_progress(db: Session, task_id) -> None:
+    """A task's physical progress follows the quantity reported in its daily
+    reports when it is linked to a BOQ line with a quantity: reported to date /
+    BOQ quantity. Reports used to leave progress at 0, so BOQ physical progress
+    and the dashboards never moved however much work was logged."""
+    if task_id is None:
+        return
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task or not task.boq_item_id:
+        return
+    item = db.query(BOQItem).filter(BOQItem.id == task.boq_item_id).first()
+    qty = float(item.quantity or 0) if item else 0.0
+    if qty <= 0:
+        return
+    done = float(
+        db.query(func.coalesce(func.sum(DailyProgressReport.executed_qty), 0))
+        .filter(DailyProgressReport.task_id == task.id).scalar() or 0
+    )
+    task.progress = round(min(100.0, done * 100.0 / qty), 2)
+    if task.progress >= 100.0:
+        task.status = "completed"
+    elif done > 0 and task.status == "not_started":
+        task.status = "in_progress"
+    db.add(task)
 
 
 class MaterialConsumptionSchema(BaseModel):
@@ -141,6 +167,7 @@ def create_dpr(req: DPRCreateRequest, db: Session = Depends(get_db), current_use
     )
     db.add(dpr)
     db.flush()
+    _sync_task_progress(db, dpr.task_id)
 
     # Process material consumption state updates
     saved_materials = []
@@ -437,6 +464,9 @@ def delete_dpr(dpr_id: uuid.UUID, db: Session = Depends(get_db), current_user: U
         summary=f"DPR for date {dpr.dpr_date.date() if dpr.dpr_date else 'N/A'} reported by {dpr.reported_by}",
         deleted_by=current_user.name or current_user.email or "Unknown",
     )
+    task_id = dpr.task_id
     db.delete(dpr)
+    db.flush()
+    _sync_task_progress(db, task_id)
     db.commit()
 

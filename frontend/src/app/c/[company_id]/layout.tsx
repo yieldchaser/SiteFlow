@@ -10,6 +10,7 @@ import Sidebar from "@/components/Sidebar";
 import PageAccessGuard from "@/components/rbac/PageAccessGuard";
 import { SidebarProvider } from "@/context/SidebarContext";
 import { isMissingOrDemoTenant } from "@/lib/company-guard";
+import { UNITS } from "@/lib/units";
 
 export default function CompanyLayout({ children }: { children: React.ReactNode }) {
   const params = useParams();
@@ -88,6 +89,9 @@ export default function CompanyLayout({ children }: { children: React.ReactNode 
               <main className="flex-1 flex flex-col h-full overflow-hidden relative">
                 <PageAccessGuard>{children}</PageAccessGuard>
               </main>
+              <datalist id="sf-units">
+                {UNITS.map((u) => <option key={u} value={u} />)}
+              </datalist>
             </div>
           </SidebarProvider>
         </PermissionsProvider>

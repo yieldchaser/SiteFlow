@@ -265,7 +265,7 @@ export default function WastagePage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-medium text-muted mb-1">Unit</label>
-                    <input type="text" required className="w-full bg-input border border-border-custom rounded-md px-4 py-2 text-foreground" value={form.unit} onChange={(e) => setForm({...form, unit: e.target.value})} />
+                    <input type="text" required className="w-full bg-input border border-border-custom rounded-md px-4 py-2 text-foreground" list="sf-units" autoComplete="off" value={form.unit} onChange={(e) => setForm({...form, unit: e.target.value})} />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-muted mb-1">Est. Value (₹)</label>

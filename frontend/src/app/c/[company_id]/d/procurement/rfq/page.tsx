@@ -5,7 +5,6 @@ import { useParams } from "next/navigation";
 import { useProject } from "@/context/ProjectContext";
 import { getApiHost, readErrorDetail } from "@/lib/api";
 import { authHeaders, formatDate, formatLabel, toLocalISODate } from "@/lib/siteflow";
-import { UNITS } from "@/lib/units";
 import Badge, { type BadgeTone } from "@/components/ui/Badge";
 import FieldHint from "@/components/ui/FieldHint";
 import PageShell from "@/components/layout/PageShell";
@@ -766,7 +765,9 @@ export default function RFQPage() {
 
                       <div>
                         <label className="text-[9px] text-muted font-bold block mb-1">Unit *</label>
-                        <select
+                        <input
+                          list="sf-units"
+                          autoComplete="off"
                           value={item.unit}
                           onChange={(e) => {
                             const updated = [...newItems];
@@ -774,13 +775,7 @@ export default function RFQPage() {
                             setNewItems(updated);
                           }}
                           className="w-full bg-input border border-border-custom rounded p-1.5 text-foreground text-xs"
-                        >
-                          {UNITS.map((u) => (
-                            <option key={u} value={u}>
-                              {u}
-                            </option>
-                          ))}
-                        </select>
+                        />
                       </div>
                     </div>
 

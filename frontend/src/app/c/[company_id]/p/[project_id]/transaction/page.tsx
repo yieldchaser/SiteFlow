@@ -8,7 +8,6 @@ import { readErrorDetail } from "@/lib/api";
 import { useCompanySettings } from "@/context/CompanySettingsContext";
 import ZatcaInvoicePanel from "@/components/ZatcaInvoicePanel";
 import { CustomFieldsSection, useCustomFields } from "@/components/CustomFieldsSection";
-import { UNITS } from "@/lib/units";
 import PageShell from "@/components/layout/PageShell";
 import PageHeader from "@/components/PageHeader";
 import { TableSkeleton } from "@/components/ui/Skeleton";
@@ -999,10 +998,7 @@ function NewTransactionModal({
                   <option value="">Cost Code</option>
                   {costCodes.map((c) => <option key={c.id} value={c.id}>{c.code} · {c.name}</option>)}
                 </select>
-                <select value={it.unit} onChange={(e) => setItems((s) => s.map((x, j) => j === i ? { ...x, unit: e.target.value } : x))} className="col-span-2 rounded-md border border-border-custom bg-background px-2 py-1.5 text-sm text-foreground">
-                  <option value="">Unit</option>
-                  {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-                </select>
+                <input list="sf-units" autoComplete="off" placeholder="Unit" value={it.unit} onChange={(e) => setItems((s) => s.map((x, j) => j === i ? { ...x, unit: e.target.value } : x))} className="col-span-2 rounded-md border border-border-custom bg-background px-2 py-1.5 text-sm text-foreground" />
                 <input type="number" placeholder="Qty" value={it.qty} onChange={(e) => setItems((s) => s.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} className="col-span-2 rounded-md border border-border-custom bg-background px-2 py-1.5 text-sm text-foreground" />
                 <input type="number" placeholder="Rate" value={it.rate} onChange={(e) => setItems((s) => s.map((x, j) => j === i ? { ...x, rate: e.target.value } : x))} className="col-span-2 rounded-md border border-border-custom bg-background px-2 py-1.5 text-sm text-foreground" />
                 <div className="col-span-1 flex items-center justify-end text-sm text-muted">
