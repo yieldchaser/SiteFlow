@@ -105,9 +105,9 @@ export default function CreateCompanyOnboardingPage() {
             </div>
             <div className="space-y-2.5">
               {[
-                { title: "Create organization profile", status: "In progress", active: true },
-                { title: "Initialize BOQ & cost codes", status: "Next step", active: false },
-                { title: "Invite site & office teams", status: "Pending", active: false },
+                { title: "Company details", status: "Now", active: true },
+                { title: "Type of work", status: "Next", active: false },
+                { title: "Invite your team from Settings", status: "After that", active: false },
               ].map((step, idx) => (
                 <div
                   key={idx}
@@ -129,9 +129,9 @@ export default function CreateCompanyOnboardingPage() {
 
           <ul className="space-y-2.5">
             {[
-              "16 operational modules pre-configured",
-              "Multi-user role & department access",
-              "Instant cloud deployment with isolated workspace",
+              "Unlimited users, each with their own login",
+              "Roles decide who sees money and which projects",
+              "Your company's data is kept apart from every other company",
             ].map((point) => (
               <li key={point} className="flex items-center gap-3 text-sm text-sky-900/90">
                 <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-sky-100 ring-1 ring-sky-200">
@@ -256,7 +256,7 @@ export default function CreateCompanyOnboardingPage() {
               <rect x="4" y="9" width="12" height="8" rx="1.5" />
               <path d="M6.5 9V6a3.5 3.5 0 0 1 7 0v3" />
             </svg>
-            Secure ERP workspace terminal with end-to-end encryption.
+            Everything you enter is sent over an encrypted connection.
           </p>
         </div>
       </div>

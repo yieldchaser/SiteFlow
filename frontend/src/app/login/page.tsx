@@ -923,7 +923,7 @@ export default function LoginPage() {
               <rect x="4" y="9" width="12" height="8" rx="1.5" />
               <path d="M6.5 9V6a3.5 3.5 0 0 1 7 0v3" />
             </svg>
-            Secure ERP workspace terminal with end-to-end encryption.
+            Everything you enter is sent over an encrypted connection.
           </p>
         </div>
       </div>

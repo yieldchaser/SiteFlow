@@ -25,11 +25,11 @@ const DEVELOPER_CATEGORIES = [
 
 export default function OnboardingPage() {
   const [companyName, setCompanyName] = useState("");
-  const [city, setCity] = useState("Bangalore");
-  const [selectedSegments, setSelectedSegments] = useState<string[]>(["Developer"]);
-  const [developerCategories, setDeveloperCategories] = useState<string[]>([
-    "Residential Real Estate",
-  ]);
+  const [city, setCity] = useState("");
+  // Nothing is ticked for the user: a contractor left on a preset "Developer"
+  // ended up labelled as one.
+  const [selectedSegments, setSelectedSegments] = useState<string[]>([]);
+  const [developerCategories, setDeveloperCategories] = useState<string[]>([]);
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -58,6 +58,10 @@ export default function OnboardingPage() {
           const data = await res.json();
           if (data.name) {
             setCompanyName(data.name);
+          }
+          // The city typed on the create-company step carries over.
+          if (data.onboarding_city) {
+            setCity((current) => current || data.onboarding_city);
           }
         }
       } catch {
@@ -161,32 +165,15 @@ export default function OnboardingPage() {
               Personalize your SiteFlow workspace.
             </h1>
             <p className="text-sm leading-relaxed text-sky-900/80">
-              Tell us about your construction segment to tailor BOQ templates, cost codes, and operational reports for your team.
+              Tell us what kind of work your company does. You can change this any time in Settings.
             </p>
-          </div>
-
-          {/* Testimonial preview card */}
-          <div className="rounded-xl border border-white bg-white/75 p-5 shadow-xl shadow-sky-900/5 space-y-3 backdrop-blur-sm">
-            <div className="flex items-center gap-2 text-amber-500">
-              {[...Array(5)].map((_, i) => (
-                <svg key={i} className="h-4 w-4 fill-current" viewBox="0 0 20 20" aria-hidden="true">
-                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                </svg>
-              ))}
-            </div>
-            <p className="text-xs italic leading-relaxed text-sky-950/90 font-medium">
-              "Material tracking and department-wise roles assignment have become effortless. No more material wastage and instant PO approvals."
-            </p>
-            <div className="text-[11px] font-semibold text-sky-700">
-              — Director of Projects, Apex Infra & Buildtech
-            </div>
           </div>
 
           <ul className="space-y-2.5">
             {[
-              "Pre-loaded Indian & Gulf construction BOQs",
-              "Automated RA billing & contractor retention",
-              "Real-time site DPRs with photo & GPS verification",
+              "Attendance, payroll, PF and ESI for your staff",
+              "RA bills for subcontractors and clients",
+              "Daily progress reports from every site, with photos",
             ].map((point) => (
               <li key={point} className="flex items-center gap-3 text-sm text-sky-900/90">
                 <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-sky-100 ring-1 ring-sky-200">
@@ -217,7 +204,7 @@ export default function OnboardingPage() {
           <div className="space-y-2 text-center">
             <h2 className="font-headline text-3xl sm:text-4xl font-bold tracking-tight text-alx-on-surface">Company Profile</h2>
             <p className="text-alx-on-surface-variant text-sm leading-relaxed">
-              Configure your workspace context for personalized construction calculators and reports.
+              Pick the kind of work you do. This is a label on your company profile and can be changed later.
             </p>
           </div>
 
@@ -265,7 +252,7 @@ export default function OnboardingPage() {
                 type="text"
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
-                placeholder="Enter City (e.g. Bangalore, Dubai)"
+                placeholder="e.g. Navi Mumbai"
                 required
                 disabled={loading}
                 className={inputClass}
@@ -370,7 +357,7 @@ export default function OnboardingPage() {
               <rect x="4" y="9" width="12" height="8" rx="1.5" />
               <path d="M6.5 9V6a3.5 3.5 0 0 1 7 0v3" />
             </svg>
-            Secure ERP workspace terminal with end-to-end encryption.
+            Everything you enter is sent over an encrypted connection.
           </p>
         </div>
       </div>
