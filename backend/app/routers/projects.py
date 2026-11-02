@@ -174,11 +174,13 @@ def _project_progress(db: Session, project_id: uuid.UUID) -> float:
 
 
 def _project_cash(db: Session, project_id: uuid.UUID):
-    # D3: billed revenue vs billed cost - settlement and movement never count
-    cash_in = db.query(func.coalesce(func.sum(models.Bill.total_payable), 0)).filter(
+    # D3: billed revenue vs billed cost - settlement and movement never count.
+    # Invoice value with GST (subtotal + GST), as the dashboard labels it.
+    # total_payable also took off TDS and retention, which were still billed.
+    cash_in = db.query(func.coalesce(func.sum(models.Bill.subtotal + models.Bill.gst_amount), 0)).filter(
         models.Bill.project_id == project_id, models.Bill.invoice_type.in_(REVENUE_INVOICE_TYPES), models.Bill.status != "Cancelled"
     ).scalar() or 0
-    cash_out = db.query(func.coalesce(func.sum(models.Bill.total_payable), 0)).filter(
+    cash_out = db.query(func.coalesce(func.sum(models.Bill.subtotal + models.Bill.gst_amount), 0)).filter(
         models.Bill.project_id == project_id, models.Bill.invoice_type.in_(EXPENSE_INVOICE_TYPES), models.Bill.status != "Cancelled"
     ).scalar() or 0
     return float(cash_in), float(cash_out)
@@ -638,6 +640,19 @@ def list_project_members(project_id: uuid.UUID, search: Optional[str] = None, db
         )
     )
     members = q.all()
+    # A party that was billed or paid on this project is on its Party register
+    # (project_parties) but was never made a member, so the Transaction screen
+    # could not record its next payment or note. List those parties too.
+    seen = {m.id for m in members}
+    register = [r[0] for r in db.query(models.ProjectParty.party_id).filter(models.ProjectParty.project_id == project_id).all()]
+    if register:
+        for team in db.query(models.CompanyTeam).filter(
+            models.CompanyTeam.company_id == p.company_id,
+            models.CompanyTeam.library_party_id.in_(register),
+        ).all():
+            if team.id not in seen:
+                seen.add(team.id)
+                members.append(team)
     result = []
     for m in members:
         user = db.query(models.User).filter(models.User.id == m.user_id).first() if m.user_id else None

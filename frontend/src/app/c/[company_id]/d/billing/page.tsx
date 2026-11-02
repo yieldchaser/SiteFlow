@@ -60,6 +60,7 @@ interface ThreeWayMatchOption {
 interface WorkOrder {
   id: string;
   woNumber: string;
+  subcontractorId: string;
   subcontractor: string;
   item: string;
   value: number;
@@ -132,6 +133,7 @@ export default function SubcontractorBillingPage() {
         const mapped = data.map((wo: any) => ({
           id: wo.id,
           woNumber: wo.wo_number,
+          subcontractorId: String(wo.subcontractor_id || ""),
           subcontractor: wo.subcontractor_name || nameMap[wo.subcontractor_id] || "Unassigned",
           item: wo.items && wo.items.length > 0 ? wo.items[0].description || wo.terms : wo.terms || "—",
           value: wo.estimated_work_amount,
@@ -323,9 +325,10 @@ export default function SubcontractorBillingPage() {
 
   // New Bill Modal & Forms
   const [showBillModal, setShowBillModal] = useState(false);
-  const [newBillNum, setNewBillNum] = useState("RA-BILL-003");
+  const [newBillNum, setNewBillNum] = useState("");
   const [newBillSub, setNewBillSub] = useState("");
-  const [newBillSubtotal, setNewBillSubtotal] = useState(100000);
+  const [newBillWo, setNewBillWo] = useState("");
+  const [newBillSubtotal, setNewBillSubtotal] = useState(0);
   const [newBillGstPct, setNewBillGstPct] = useState(18);
   const [newBillTdsPct, setNewBillTdsPct] = useState(2);
   const [newBillRetentionPct, setNewBillRetentionPct] = useState(5);
@@ -421,7 +424,7 @@ export default function SubcontractorBillingPage() {
         alert(err || "Failed to release retention");
         return;
       }
-      alert(`Retention of ₹${releaseAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} released successfully.`);
+      alert(`Retention of ₹${releaseAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} released. It is now due to the subcontractor: record a Payment Out to pay it.`);
       setRetentionModal(null);
       fetchBills(subconNameMap);
     } catch (err: any) {
@@ -442,8 +445,10 @@ export default function SubcontractorBillingPage() {
   //      code took retention off the GST-inclusive gross. TDS under the Income
   //      Tax Act is on the value of work, not on the GST component, and
   //      retention follows the same base.
-  //   2. Deductions cascade. One group is computed on the subtotal, the rest on
-  //      what is left. Which group goes first is the company's
+  //   2. TDS is always on the full subtotal (Sec 194C: retention held back is
+  //      still credited to the subcontractor). The contractual deductions
+  //      cascade: one group is computed on the subtotal, the rest on what is
+  //      left. Which group goes first is the company's
   //      pretax_deduction_retention setting, not the per-bill checkbox.
   //
   // The per-bill "Pre-Tax Deductions Order" checkbox only moves the GST base.
@@ -457,22 +462,12 @@ export default function SubcontractorBillingPage() {
     retentionFirst: boolean
   ) => {
     // Mirrors _sequential_deduction_calc(deductions, base=subtotal, pretax_order).
-    const retentionOf = (base: number) => base * (retentionPct / 100);
-    // "other" is everything that is not Retention: TDS, plus any advance
-    // recovery entered as a flat amount.
-    const otherOf = (base: number) => base * (tdsPct / 100) + advRecovery;
-
-    let retentionAmt: number;
-    let otherAmt: number;
-    if (retentionFirst) {
-      retentionAmt = retentionOf(subtotal);
-      otherAmt = otherOf(Math.max(0, subtotal - retentionAmt));
-    } else {
-      otherAmt = otherOf(subtotal);
-      retentionAmt = retentionOf(Math.max(0, subtotal - otherAmt));
-    }
-    const tdsAmt = Math.max(0, otherAmt - advRecovery);
-    const dedTotal = retentionAmt + otherAmt;
+    const tdsAmt = subtotal * (tdsPct / 100);
+    // Advance recovery is a flat amount, so the order only moves retention's base.
+    const retentionAmt = retentionFirst
+      ? subtotal * (retentionPct / 100)
+      : Math.max(0, subtotal - advRecovery) * (retentionPct / 100);
+    const dedTotal = Math.min(subtotal, tdsAmt + retentionAmt + advRecovery);
 
     const gstAmt = preTax
       ? (subtotal - dedTotal) * (gstPct / 100)
@@ -543,6 +538,10 @@ export default function SubcontractorBillingPage() {
       alert("Select a subcontractor before submitting the RA bill.");
       return;
     }
+    if (!(newBillSubtotal > 0)) {
+      alert("Enter the value of work billed.");
+      return;
+    }
     const subconId = newBillSub;
     const cfError = billCustomFields.validate();
     if (cfError) {
@@ -569,6 +568,7 @@ export default function SubcontractorBillingPage() {
           invoice_number: newBillNum,
           invoice_date: new Date().toISOString(),
           invoice_type: "subcon",
+          wo_id: newBillWo || null,
           subtotal: newBillSubtotal,
           gst_pct: newBillGstPct,
           deductions: deductions,
@@ -580,7 +580,9 @@ export default function SubcontractorBillingPage() {
       if (res.ok) {
         fetchBills(subconNameMap);
         setShowBillModal(false);
-        setNewBillNum(`RA-BILL-${Math.floor(1000 + Math.random() * 9000)}`);
+        setNewBillNum("");
+        setNewBillWo("");
+        setNewBillSubtotal(0);
       } else {
         const err = await readErrorDetail(res);
         alert(err || 'Action failed');
@@ -1235,7 +1237,7 @@ export default function SubcontractorBillingPage() {
                     <label className="text-[10px] uppercase font-bold text-muted block mb-1">Subcontractor</label>
                     <select
                       value={newBillSub}
-                      onChange={(e) => setNewBillSub(e.target.value)}
+                      onChange={(e) => { setNewBillSub(e.target.value); setNewBillWo(""); }}
                       className="w-full bg-card border border-border-custom rounded-md px-3 py-2 text-xs text-foreground outline-none font-semibold"
                     >
                       <option value="">Select subcontractor</option>
@@ -1247,6 +1249,22 @@ export default function SubcontractorBillingPage() {
                       <FieldHint text="No subcontractors yet. Add one in Subcontractors." href={`/c/${companyId}/d/subcon`} linkLabel="Go to Subcontractors" />
                     )}
                   </div>
+                  {newBillSub && (
+                    <div>
+                      <label className="text-[10px] uppercase font-bold text-muted block mb-1">Work Order</label>
+                      <select
+                        value={newBillWo}
+                        onChange={(e) => setNewBillWo(e.target.value)}
+                        className="w-full bg-card border border-border-custom rounded-md px-3 py-2 text-xs text-foreground outline-none font-semibold"
+                      >
+                        <option value="">{workOrders.filter((w) => w.subcontractorId === newBillSub).length === 1 ? "Its only work order" : "Not against a work order"}</option>
+                        {workOrders.filter((w) => w.subcontractorId === newBillSub).map((w) => (
+                          <option key={w.id} value={w.id}>{w.woNumber} • ₹{Number(w.value || 0).toLocaleString("en-IN")}</option>
+                        ))}
+                      </select>
+                      <p className="text-[10px] text-muted mt-1">The bill counts toward this work order&apos;s billed value and cannot take it past the order value.</p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1254,8 +1272,9 @@ export default function SubcontractorBillingPage() {
                     <label className="text-[10px] uppercase font-bold text-muted block mb-1">Billed Subtotal (₹)</label>
                     <input
                       type="number"
-                      value={newBillSubtotal}
-                      onChange={(e) => setNewBillSubtotal(parseInt(e.target.value))}
+                      min="0"
+                      value={newBillSubtotal || ""}
+                      onChange={(e) => setNewBillSubtotal(parseFloat(e.target.value) || 0)}
                       className="w-full bg-card border border-border-custom rounded-md px-3 py-2 text-xs text-foreground outline-none focus:border-secondary font-sans font-bold"
                     />
                   </div>

@@ -172,10 +172,10 @@ def consolidated_pnl(project_id: UUID, tower_id: Optional[UUID] = Query(None), d
         if budget:
             total_budget = float(budget.subcon_budget) + float(budget.material_budget) + float(budget.labour_budget) + float(budget.equipment_budget)
             pos_value = db.query(PurchaseOrder).filter(PurchaseOrder.project_id == project_id).all()
-            total_po_value = sum(float(p.total_amount) for p in pos_value)
+            total_po_value = sum(p.value_before_gst for p in pos_value)
             # Active bills only: a cancelled bill must not book revenue (R2-723).
             bills = _active_bills(db, project_id, REVENUE_INVOICE_TYPES).all()
-            total_billed = sum(float(b.total_payable) for b in bills)
+            total_billed = sum(float(b.subtotal) for b in bills)
             wos = db.query(WorkOrder).filter(WorkOrder.project_id == project_id).all()
             total_wo_value = sum(float(w.estimated_work_amount) for w in wos)
             return [ConsolidatedPNLItem(
@@ -191,10 +191,10 @@ def consolidated_pnl(project_id: UUID, tower_id: Optional[UUID] = Query(None), d
         return []
 
     pos_value = db.query(PurchaseOrder).filter(PurchaseOrder.project_id == project_id).all()
-    total_po_value = sum(float(p.total_amount) for p in pos_value)
+    total_po_value = sum(p.value_before_gst for p in pos_value)
     # Active bills only: a cancelled bill must not book revenue (R2-723).
     bills = _active_bills(db, project_id, REVENUE_INVOICE_TYPES).all()
-    total_billed = sum(float(b.total_payable) for b in bills)
+    total_billed = sum(float(b.subtotal) for b in bills)
     wos = db.query(WorkOrder).filter(WorkOrder.project_id == project_id).all()
     total_wo_value = sum(float(w.estimated_work_amount) for w in wos)
 

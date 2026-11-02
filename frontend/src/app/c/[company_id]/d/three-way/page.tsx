@@ -31,6 +31,7 @@ interface PO {
   id: string;
   po_number: string;
   total_amount: number;
+  vendor_id?: string | null;
 }
 
 interface GRN {
@@ -44,6 +45,8 @@ interface Bill {
   invoice_number: string;
   invoice_type: string;
   total_payable: number;
+  status: string;
+  party_company_user_id: string;
 }
 
 export default function ThreeWayPage() {
@@ -94,7 +97,7 @@ export default function ThreeWayPage() {
       if (grnsRes.ok) setGrns(await grnsRes.json());
       if (billsRes.ok) {
         const data: Bill[] = await billsRes.json();
-        setBills(data.filter((b) => b.invoice_type === "purchase" || b.invoice_type === "subcon"));
+        setBills(data.filter((b) => (b.invoice_type === "purchase" || b.invoice_type === "subcon") && (b.status || "").toLowerCase() !== "cancelled"));
       }
     } catch (e) {
       console.error("Failed to load reference data", e);
@@ -169,9 +172,26 @@ export default function ThreeWayPage() {
     } catch (e) { console.error("Failed to reject", e); }
   };
 
+  const handleRemove = async (m: Match) => {
+    if (!confirm(`Remove the match for ${m.po_number || "this PO"} / ${m.grn_number || "this GRN"}? You can then match the right bill.`)) return;
+    try {
+      const res = await fetch(`${getApiHost()}/apis/v3/three-way/${m.id}`, { method: "DELETE", headers: authHeaders() });
+      if (res.ok) {
+        setMessage("Match removed");
+        fetchMatches();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setMessage(detailToMessage(data.detail, "Failed to remove match"));
+      }
+    } catch (e) { console.error("Failed to remove", e); }
+  };
+
+  // Only the receipts on the chosen PO, and only bills from its supplier;
+  // the server refuses any other pairing.
   const selectedPo = pos.find((p) => p.id === form.po_id);
-  const selectedBill = bills.find((b) => b.id === form.invoice_id);
-  const autoVariance = selectedPo && selectedBill ? selectedBill.total_payable - selectedPo.total_amount : 0;
+  const grnChoices = selectedPo ? grns.filter((g) => g.po_id === selectedPo.id) : grns;
+  const billChoices = selectedPo?.vendor_id ? bills.filter((b) => b.party_company_user_id === selectedPo.vendor_id) : bills;
+  const selectedBill = billChoices.find((b) => b.id === form.invoice_id);
 
   const statusTones: Record<string, BadgeTone> = {
     matched: "success",
@@ -198,7 +218,7 @@ export default function ThreeWayPage() {
         <PageShell width="wide">
 
         {message && (
-          <div className={`mb-6 p-4 rounded-md ${message.includes("success") || message.includes("approved") || message.includes("rejected") ? "bg-success/10 text-success" : "bg-danger/10 text-danger"}`}>
+          <div className={`mb-6 p-4 rounded-md ${message.includes("success") || message.includes("approved") || message.includes("rejected") || message.includes("removed") ? "bg-success/10 text-success" : "bg-danger/10 text-danger"}`}>
             {message}
           </div>
         )}
@@ -209,7 +229,7 @@ export default function ThreeWayPage() {
               <tr>
                 <th className="px-6 py-4 font-medium">PO</th>
                 <th className="px-6 py-4 font-medium">GRN</th>
-                <th className="px-6 py-4 font-medium">PO Amount</th>
+                <th className="px-6 py-4 font-medium">Goods received</th>
                 <th className="px-6 py-4 font-medium">Invoiced</th>
                 <th className="px-6 py-4 font-medium">Variance</th>
                 <th className="px-6 py-4 font-medium">Status</th>
@@ -248,11 +268,14 @@ export default function ThreeWayPage() {
                       <Badge tone={statusTones[m.match_status] || "neutral"}>{formatLabel(m.match_status)}</Badge>
                     </td>
                     <td className="px-6 py-4 flex gap-2">
-                      {m.match_status === "pending" && (
+                      {(m.match_status === "matched" || m.match_status === "mismatch") && (
                         <>
                           <button onClick={() => handleApprove(m.id)} className="px-3 py-1 bg-success/10 text-success rounded-lg text-xs font-medium hover:bg-success/10 transition-all">Approve</button>
                           <button onClick={() => handleReject(m.id)} className="px-3 py-1 bg-danger/10 text-danger rounded-lg text-xs font-medium hover:bg-danger/10 transition-all">Reject</button>
                         </>
+                      )}
+                      {m.match_status !== "approved" && (
+                        <button onClick={() => handleRemove(m)} className="px-3 py-1 bg-elevated text-muted border border-border-custom rounded-lg text-xs font-medium hover:text-foreground transition-all">Remove</button>
                       )}
                     </td>
                   </tr>
@@ -269,7 +292,7 @@ export default function ThreeWayPage() {
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
                   <label className="block text-xs font-medium text-muted mb-1">Purchase Order</label>
-                  <select required className="w-full bg-input border border-border-custom rounded-md px-4 py-2 text-foreground" value={form.po_id} onChange={(e) => setForm({...form, po_id: e.target.value})}>
+                  <select required className="w-full bg-input border border-border-custom rounded-md px-4 py-2 text-foreground" value={form.po_id} onChange={(e) => setForm({...form, po_id: e.target.value, grn_id: "", invoice_id: ""})}>
                     <option value="">Select PO</option>
                     {pos.map((p) => <option key={p.id} value={p.id}>{p.po_number} — {fmtINR(p.total_amount)}</option>)}
                   </select>
@@ -281,23 +304,23 @@ export default function ThreeWayPage() {
                   <label className="block text-xs font-medium text-muted mb-1">Goods Receipt Note</label>
                   <select required className="w-full bg-input border border-border-custom rounded-md px-4 py-2 text-foreground" value={form.grn_id} onChange={(e) => setForm({...form, grn_id: e.target.value})}>
                     <option value="">Select GRN</option>
-                    {grns.map((g) => <option key={g.id} value={g.id}>{g.grn_number}</option>)}
+                    {grnChoices.map((g) => <option key={g.id} value={g.id}>{g.grn_number}</option>)}
                   </select>
-                  {grns.length === 0 && (
-                    <FieldHint text="No goods receipt notes yet. Record one in Procurement." href={`/c/${companyId}/d/procurement`} linkLabel="Go to Procurement" />
+                  {grnChoices.length === 0 && (
+                    <FieldHint text={selectedPo ? "Nothing received on this PO yet. Record the GRN in Procurement." : "No goods receipt notes yet. Record one in Procurement."} href={`/c/${companyId}/d/procurement`} linkLabel="Go to Procurement" />
                   )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-muted mb-1">Vendor Bill</label>
                   <select required className="w-full bg-input border border-border-custom rounded-md px-4 py-2 text-foreground" value={form.invoice_id} onChange={(e) => setForm({...form, invoice_id: e.target.value})}>
                     <option value="">Select bill</option>
-                    {bills.map((b) => <option key={b.id} value={b.id}>{b.invoice_number} — {fmtINR(b.total_payable)}</option>)}
+                    {billChoices.map((b) => <option key={b.id} value={b.id}>{b.invoice_number} — {fmtINR(b.total_payable)}</option>)}
                   </select>
-                  {bills.length === 0 && (
-                    <FieldHint text="No vendor bills yet. Add one in Billing." href={`/c/${companyId}/d/billing`} linkLabel="Go to Billing" />
+                  {billChoices.length === 0 && (
+                    <FieldHint text={selectedPo ? "No bill from this PO's supplier yet. Enter it as a Material Purchase on the project's Transaction page." : "No supplier bills yet. Enter one as a Material Purchase on the project's Transaction page."} href={`/c/${companyId}/p/${projectId}/transaction`} linkLabel="Go to Transactions" />
                   )}
-                  {selectedBill && selectedPo && (
-                    <p className="text-xs text-muted mt-1">Bill Amount: {fmtINR(selectedBill.total_payable)} • PO Amount: {fmtINR(selectedPo.total_amount)} • Variance: <span className={autoVariance < 0 ? "text-danger" : autoVariance > 0 ? "text-warning" : "text-success"}>{fmtINR(autoVariance)}</span></p>
+                  {selectedBill && (
+                    <p className="text-xs text-muted mt-1">Bill amount {fmtINR(selectedBill.total_payable)}. It is checked against the value of the goods on the GRN, with GST.</p>
                   )}
                 </div>
                 <div>

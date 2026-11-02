@@ -31,6 +31,7 @@ interface Employee {
   pfEmployerPct: number;
   esiApplicable: boolean;
   tdsMonthly: number;
+  uan: string;
   status: "active" | "inactive";
   joined: string;
 }
@@ -130,17 +131,33 @@ export default function HRPayrollPage() {
   const [showLibraryDrawer, setShowLibraryDrawer] = useState(false);
   const [showDetailsDrawer, setShowDetailsDrawer] = useState(false);
   const [selectedEmpDetail, setSelectedEmpDetail] = useState<any>(null);
-  const [detailsForm, setDetailsForm] = useState({ salaryAmount: "", shiftHours: "", otRate: "", designation: "" });
+  // Every field here is what payroll actually reads. The old drawer saved a
+  // "salary amount" to a profile payroll never looked at, so a raise entered
+  // here was silently not paid.
+  const emptyDetails = { basic: "", hra: "", allowances: "", tds: "", designation: "", department: "", mobile: "", uan: "", joined: "", otRate: "" };
+  const [detailsForm, setDetailsForm] = useState(emptyDetails);
 
-  const openDetailsDrawer = (emp: Employee & { grossMonthly?: number; shiftHours?: number; otRate?: number }) => {
+  const openDetailsDrawer = (emp: Employee) => {
     setSelectedEmpDetail(emp);
     setDetailsForm({
-      salaryAmount: emp.grossMonthly != null ? String(emp.grossMonthly) : "",
-      shiftHours: emp.shiftHours != null ? String(emp.shiftHours) : "8",
-      otRate: emp.otRate != null ? String(emp.otRate) : "150",
+      basic: String(emp.basic ?? 0),
+      hra: String(emp.hra ?? 0),
+      allowances: String(emp.allowances ?? 0),
+      tds: String(emp.tdsMonthly ?? 0),
       designation: emp.designation || "",
+      department: emp.department || "",
+      mobile: emp.mobile || "",
+      uan: emp.uan || "",
+      joined: emp.joined || "",
+      otRate: "",
     });
     setShowDetailsDrawer(true);
+    fetch(`${getApiHost()}/apis/v3/hr/payroll-profiles/${emp.id}`, { headers: authHeaders() })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((prof) => {
+        if (prof && Number(prof.overtime_rate) > 0) setDetailsForm((f) => ({ ...f, otRate: String(prof.overtime_rate) }));
+      })
+      .catch(() => {});
   };
   
   const [workforceForm, setWorkforceForm] = useState({
@@ -302,10 +319,11 @@ export default function HRPayrollPage() {
     designation: "",
     department: "",
     mobile: "",
-    basic: "18000",
-    hra: "3600",
-    allowances: "1800",
-    tds: "0",
+    basic: "",
+    hra: "",
+    allowances: "",
+    tds: "",
+    uan: "",
     joined: todayLocalISO()
   });
 
@@ -333,6 +351,7 @@ export default function HRPayrollPage() {
           pfEmployerPct: emp.pf_employer_pct,
           esiApplicable: emp.is_esi_applicable,
           tdsMonthly: emp.tds_monthly,
+          uan: emp.uan || "",
           status: emp.status === "active" ? "active" : "inactive",
           joined: emp.date_of_joining ? emp.date_of_joining.split("T")[0] : "",
         }));
@@ -522,6 +541,18 @@ export default function HRPayrollPage() {
   }, [projectId, companyId, tab, timesheetScope]);
 
   const handleSaveEmployee = async () => {
+    if (!empForm.name.trim()) {
+      alert("Enter the employee's name.");
+      return;
+    }
+    if (!(parseFloat(empForm.basic) > 0)) {
+      alert("Enter the basic salary. Payroll pays nothing without it.");
+      return;
+    }
+    if (empForm.uan.trim() && !/^\d{12}$/.test(empForm.uan.trim())) {
+      alert("UAN must be exactly 12 digits, or left blank.");
+      return;
+    }
     const dup = employees.find((e) => e.name.trim().toLowerCase() === empForm.name.trim().toLowerCase());
     if (dup) {
       const ok = window.confirm(`An employee named "${empForm.name}" already exists. Create another anyway?`);
@@ -547,6 +578,7 @@ export default function HRPayrollPage() {
           esi_employee_pct: 0.75,
           esi_employer_pct: 3.25,
           tds_monthly: parseFloat(empForm.tds) || 0,
+          uan: empForm.uan.trim() || null,
           is_esi_applicable:
             (parseFloat(empForm.basic) || 0) + (parseFloat(empForm.hra) || 0) + (parseFloat(empForm.allowances) || 0) <=
             21000,
@@ -562,10 +594,11 @@ export default function HRPayrollPage() {
           designation: "",
           department: "",
           mobile: "",
-          basic: "18000",
-          hra: "3600",
-          allowances: "1800",
-          tds: "0",
+          basic: "",
+          hra: "",
+          allowances: "",
+          tds: "",
+          uan: "",
           joined: todayLocalISO()
         });
       } else {
@@ -633,29 +666,40 @@ export default function HRPayrollPage() {
   const handleSaveEmployeeDetails = async () => {
     if (!selectedEmpDetail) return;
     try {
-      const [profRes, empRes] = await Promise.all([
-        fetch(`${getApiHost()}/apis/v3/hr/payroll-profiles/${selectedEmpDetail.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
-          body: JSON.stringify({
-            salary_amount: parseFloat(detailsForm.salaryAmount) || 0,
-            shift_hours: parseFloat(detailsForm.shiftHours) || 8,
-            overtime_rate: parseFloat(detailsForm.otRate) || 0,
-          }),
+      const uan = detailsForm.uan.trim();
+      if (uan && !/^\d{12}$/.test(uan)) {
+        alert("UAN must be exactly 12 digits.");
+        return;
+      }
+      const num = (v: string) => Math.max(0, parseFloat(v) || 0);
+      const empRes = await fetch(`${getApiHost()}/apis/v3/hr/employees/${selectedEmpDetail.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
+        body: JSON.stringify({
+          basic_salary: num(detailsForm.basic),
+          hra: num(detailsForm.hra),
+          other_allowances: num(detailsForm.allowances),
+          tds_monthly: num(detailsForm.tds),
+          designation: detailsForm.designation.trim() || null,
+          department: detailsForm.department.trim() || null,
+          mobile: detailsForm.mobile.trim() || null,
+          uan: uan || null,
+          date_of_joining: detailsForm.joined ? new Date(detailsForm.joined).toISOString() : null,
         }),
-        fetch(`${getApiHost()}/apis/v3/hr/employees/${selectedEmpDetail.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
-          body: JSON.stringify({ designation: detailsForm.designation || null }),
-        }),
-      ]);
+      });
+      const profRes = empRes.ok
+        ? await fetch(`${getApiHost()}/apis/v3/hr/payroll-profiles/${selectedEmpDetail.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
+            body: JSON.stringify({ overtime_rate: num(detailsForm.otRate) }),
+          })
+        : empRes;
       if (profRes.ok && empRes.ok) {
         setShowDetailsDrawer(false);
         fetchEmployees();
         triggerLocalToast("Details updated successfully");
       } else {
-        const err = await profRes.json().catch(() => ({}));
-        alert(`Failed to save details: ${detailToMessage(err.detail, "Server error")}`);
+        alert(`Failed to save details: ${(await readErrorDetail(profRes)) || "Server error"}`);
       }
     } catch (e) {
       console.error("Failed to save employee details", e);
@@ -2003,6 +2047,7 @@ export default function HRPayrollPage() {
                 { label: "HRA (₹)", type: "number", key: "hra", placeholder: "3600" },
                 { label: "Other Allowances (₹)", type: "number", key: "allowances", placeholder: "1800" },
                 { label: "TDS/Month (₹)", type: "number", key: "tds", placeholder: "0" },
+                { label: "UAN (12 digits, if any)", type: "text", key: "uan", placeholder: "100200300400" },
                 { label: "Date of Joining", type: "date", key: "joined", placeholder: "" },
               ].map(({ label, type, key, placeholder }) => (
                 <div key={label}>
@@ -2353,86 +2398,105 @@ export default function HRPayrollPage() {
               </div>
 
               <div className="space-y-4 text-xs">
-                <div>
-                  <label className="text-[10px] text-muted uppercase font-bold block mb-1">Salary Amount (₹)*</label>
-                  <div className="flex items-center gap-2">
+                <p className="text-[10px] text-muted uppercase font-bold">Monthly pay (₹)</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] text-muted uppercase font-bold block mb-1">Basic</label>
                     <input
-                      type="number"
-                      value={detailsForm.salaryAmount}
-                      onChange={(e) => setDetailsForm({ ...detailsForm, salaryAmount: e.target.value })}
+                      type="number" min={0}
+                      value={detailsForm.basic}
+                      onChange={(e) => setDetailsForm({ ...detailsForm, basic: e.target.value })}
                       className="w-full bg-background border border-border-custom rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-primary"
                     />
-                    <span className="text-xs text-muted shrink-0">per month</span>
                   </div>
-                  <span className="text-[10px] text-primary cursor-pointer hover:underline mt-1 block">Add Salary Breakup</span>
-                </div>
-
-                <div>
-                  <label className="text-[10px] text-muted uppercase font-bold block mb-1">Shift Timing</label>
-                  <select className="w-full bg-background border border-border-custom rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-primary">
-                    <option>09:00 AM - 05:00 PM</option>
-                    <option>08:00 AM - 04:00 PM</option>
-                    <option>10:00 AM - 06:00 PM</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[10px] text-muted uppercase font-bold block mb-1">Shift Hours</label>
-                  <div className="flex items-center gap-2">
+                  <div>
+                    <label className="text-[10px] text-muted uppercase font-bold block mb-1">HRA</label>
                     <input
-                      type="number"
-                      value={detailsForm.shiftHours}
-                      onChange={(e) => setDetailsForm({ ...detailsForm, shiftHours: e.target.value })}
+                      type="number" min={0}
+                      value={detailsForm.hra}
+                      onChange={(e) => setDetailsForm({ ...detailsForm, hra: e.target.value })}
                       className="w-full bg-background border border-border-custom rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-primary"
                     />
-                    <span className="text-xs text-muted shrink-0">per shift</span>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-muted uppercase font-bold block mb-1">Other allowances</label>
+                    <input
+                      type="number" min={0}
+                      value={detailsForm.allowances}
+                      onChange={(e) => setDetailsForm({ ...detailsForm, allowances: e.target.value })}
+                      className="w-full bg-background border border-border-custom rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-muted uppercase font-bold block mb-1">TDS per month</label>
+                    <input
+                      type="number" min={0}
+                      value={detailsForm.tds}
+                      onChange={(e) => setDetailsForm({ ...detailsForm, tds: e.target.value })}
+                      className="w-full bg-background border border-border-custom rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-primary"
+                    />
                   </div>
                 </div>
-
-                <div>
-                  <label className="text-[10px] text-muted uppercase font-bold block mb-1">Overtime (₹)</label>
-                  <div className="flex items-center gap-2">
+                <p className="text-muted">
+                  Gross {fmt((parseFloat(detailsForm.basic) || 0) + (parseFloat(detailsForm.hra) || 0) + (parseFloat(detailsForm.allowances) || 0))} a month. PF is 12% of basic up to ₹15,000; ESI applies while gross is ₹21,000 or less. A change applies to the next payroll run.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] text-muted uppercase font-bold block mb-1">Designation</label>
                     <input
-                      type="number"
+                      type="text"
+                      value={detailsForm.designation}
+                      onChange={(e) => setDetailsForm({ ...detailsForm, designation: e.target.value })}
+                      className="w-full bg-background border border-border-custom rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-muted uppercase font-bold block mb-1">Department</label>
+                    <input
+                      type="text"
+                      value={detailsForm.department}
+                      onChange={(e) => setDetailsForm({ ...detailsForm, department: e.target.value })}
+                      className="w-full bg-background border border-border-custom rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-muted uppercase font-bold block mb-1">Mobile</label>
+                    <input
+                      type="tel"
+                      value={detailsForm.mobile}
+                      onChange={(e) => setDetailsForm({ ...detailsForm, mobile: e.target.value })}
+                      className="w-full bg-background border border-border-custom rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-muted uppercase font-bold block mb-1">UAN (12 digits)</label>
+                    <input
+                      type="text" inputMode="numeric" maxLength={12}
+                      value={detailsForm.uan}
+                      onChange={(e) => setDetailsForm({ ...detailsForm, uan: e.target.value })}
+                      className="w-full bg-background border border-border-custom rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-muted uppercase font-bold block mb-1">Date of joining</label>
+                    <input
+                      type="date"
+                      value={detailsForm.joined}
+                      onChange={(e) => setDetailsForm({ ...detailsForm, joined: e.target.value })}
+                      className="w-full bg-background border border-border-custom rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-muted uppercase font-bold block mb-1">Overtime ₹ per hour</label>
+                    <input
+                      type="number" min={0} placeholder="1.5x basic"
                       value={detailsForm.otRate}
                       onChange={(e) => setDetailsForm({ ...detailsForm, otRate: e.target.value })}
                       className="w-full bg-background border border-border-custom rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-primary"
                     />
-                    <span className="text-xs text-muted shrink-0">per hour</span>
                   </div>
                 </div>
-
-                <div>
-                  <label className="text-[10px] text-muted uppercase font-bold block mb-1">Designation</label>
-                  <input
-                    type="text"
-                    value={detailsForm.designation}
-                    onChange={(e) => setDetailsForm({ ...detailsForm, designation: e.target.value })}
-                    className="w-full bg-background border border-border-custom rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-primary"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[10px] text-muted uppercase font-bold block mb-1">Leave Template</label>
-                  <select className="w-full bg-background border border-border-custom rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-primary">
-                    <option>Standard leave template</option>
-                    <option>Executive leave template</option>
-                    <option>Labour leave template</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[10px] text-muted uppercase font-bold block mb-1">Cost Code</label>
-                  <select className="w-full bg-background border border-border-custom rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-primary">
-                    <option>Select Cost Code</option>
-                    {costCodes.map((cc) => (
-                      <option key={cc.id}>{cc.code} ({cc.name})</option>
-                    ))}
-                  </select>
-                  {costCodes.length === 0 && (
-                    <FieldHint text="No cost codes yet. Define cost codes in Cost Codes." href={`/c/${companyId}/cost-codes`} linkLabel="Go to Cost Codes" />
-                  )}
-                </div>
+                <p className="text-muted">Leave blank overtime to pay 1.5 times the hourly basic. The UAN is needed before the PF return can be made.</p>
               </div>
             </div>
 

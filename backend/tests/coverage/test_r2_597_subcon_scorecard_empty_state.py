@@ -95,8 +95,8 @@ def test_billing_accuracy_computed_from_quoted_vs_billed(client, db, make_tenant
     assert r.status_code == 200, r.text
     card = next(c for c in r.json()["scorecards"] if c["subcontractor_id"] == str(sub.id))
 
-    # Quoted 1000 vs billed 1180 -> |1180-1000|/1000 = 18% deviation -> 82%.
-    assert float(card["total_billed"]) == 1180.0
-    assert float(card["billing_accuracy_pct"]) == 82.0
+    # Quoted 1000 vs billed 1000 of work: GST is not a billing deviation.
+    assert float(card["total_billed"]) == 1000.0
+    assert float(card["billing_accuracy_pct"]) == 100.0
     # The single bill is Paid -> settlement rate is genuinely 100% here.
     assert float(card["on_time_pct"]) == 100.0

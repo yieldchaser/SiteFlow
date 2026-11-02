@@ -542,10 +542,10 @@ def test_committed_costs_labour_and_equipment_actuals(client, db, make_tenant, a
     db.flush()
     db.add(models.PayrollLineItem(
         id=uuid.uuid4(), payroll_run_id=run.id, employee_id=user.id, days_present=10,
-        days_in_month=30, gross_salary=0.0, basic=0.0, hra=0.0, other_allowances=0.0,
-        overtime_amount=0.0, pf_employee=0.0, pf_employer=0.0, esi_employee=0.0,
+        days_in_month=30, gross_salary=Decimal("5000"), basic=Decimal("5000"), hra=0.0, other_allowances=0.0,
+        overtime_amount=0.0, pf_employee=Decimal("600"), pf_employer=0.0, esi_employee=0.0,
         esi_employer=0.0, tds=0.0, advance_recovery=0.0, other_deductions=0.0,
-        total_deductions=0.0, net_payable=Decimal("5000")))
+        total_deductions=Decimal("600"), net_payable=Decimal("4400")))
     db.add(models.Bill(
         id=uuid.uuid4(), company_id=comp.id, project_id=project.id,
         party_company_user_id=user.id, invoice_number="EQ-1", invoice_date=_utc(2026, 1, 1),

@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 from app import models
 
 EQUIPMENT = "/apis/v3/equipment"
-FINANCE_LOGGER = "app.routers.finance"
+FINANCE_LOGGER = "app.equipment_cost"
 
 
 def _equipment_payload(company_id, code, rate=100.0):
@@ -94,15 +94,16 @@ def test_zero_rate_machine_is_reported_not_silently_skipped(
     db.add(project)
     db.flush()
 
-    # A Hired machine with no rate configured: numerically it costs nothing,
-    # but it must not vanish from the statement without trace.
+    # An owned machine with no rate configured: numerically it costs nothing,
+    # but it must not vanish from the statement without trace. (A hired
+    # machine is costed by its hire bills, so it is skipped by design.)
     machine = models.Equipment(
         id=uuid.uuid4(),
         company_id=comp.id,
-        name="Hired Roller",
+        name="Own Roller",
         code="R-01",
         category="Roller",
-        ownership_type="Hired",
+        ownership_type="Owned",
         hourly_rate=0.0,
     )
     db.add(machine)

@@ -121,11 +121,13 @@ export default function LibraryHubPage() {
 
   // Form Fields: Material
   const [matName, setMatName] = useState("");
-  const [matUnit, setMatUnit] = useState("Bag");
+  const [matUnit, setMatUnit] = useState("");
   const [matGst, setMatGst] = useState(18.0);
-  const [matCategory, setMatCategory] = useState("Cement");
-  const [matCost, setMatCost] = useState(420.0);
-  const [matLeadTime, setMatLeadTime] = useState(2);
+  // No invented cost, category or lead time: a new item saved with the
+  // form's sample values became "Cement, Rs 420" whatever it really was.
+  const [matCategory, setMatCategory] = useState("");
+  const [matCost, setMatCost] = useState(0);
+  const [matLeadTime, setMatLeadTime] = useState(0);
   const [matHsn, setMatHsn] = useState("");
   const [matCode, setMatCode] = useState("");
   const [matSpecs, setMatSpecs] = useState("");
@@ -428,6 +430,10 @@ export default function LibraryHubPage() {
   const handleCreateMaterial = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!matName.trim()) return;
+    if (!matUnit) {
+      alert("Pick the unit this material is bought in.");
+      return;
+    }
 
     try {
       const url = editingId ? `${apiHost}/apis/v3/library/materials/${editingId}` : `${apiHost}/apis/v3/library/materials`;
@@ -600,12 +606,12 @@ export default function LibraryHubPage() {
   const handleEditMaterial = (item: any) => {
     setEditingId(item.id);
     setMatName(item.name || "");
-    setMatUnit(item.unit || "Bag");
+    setMatUnit(item.unit || "");
     setMatAltUnit(item.alternate_unit || "");
     setMatGst(item.gst_rate ?? 18.0);
-    setMatCategory(item.category || "Cement");
-    setMatCost(item.unit_cost ?? 420.0);
-    setMatLeadTime(item.lead_time_days ?? 2);
+    setMatCategory(item.category || "");
+    setMatCost(item.unit_cost ?? 0);
+    setMatLeadTime(item.lead_time_days ?? 0);
     setMatHsn(item.hsn_sac || "");
     setMatCode(item.item_code || "");
     setMatSpecs(item.specifications || "");
@@ -704,6 +710,11 @@ export default function LibraryHubPage() {
       setIsPartyDrawerOpen(true);
     } else if (targetTab === "material") {
       setMatName("");
+      setMatUnit("");
+      setMatCategory("");
+      setMatCost(0);
+      setMatLeadTime(0);
+      setMatGst(18);
       setMatHsn("");
       setMatCode("");
       setMatSpecs("");

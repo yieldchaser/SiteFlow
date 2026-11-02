@@ -14,6 +14,7 @@ from app.models import (
 from pydantic import BaseModel
 from app.bill_scope import _active_bills
 from app.constants import EXPENSE_INVOICE_TYPES
+from app.equipment_cost import owned_deployment_cost
 
 router = APIRouter(
     prefix="/budget",
@@ -82,7 +83,7 @@ def get_committed_costs(project_id: UUID, db: Session = Depends(get_db), _: None
         PurchaseOrder.project_id == project_id,
         PurchaseOrder.status.in_(("sent", "partial", "received")),
     ).all()
-    material_committed = sum(float(p.total_amount) for p in pos)
+    material_committed = sum(p.value_before_gst for p in pos)
 
     # Only approved, non-cancelled bills are actual spend (R2-233): an
     # unapproved bill must not book cost the moment it is typed.
@@ -94,7 +95,8 @@ def get_committed_costs(project_id: UUID, db: Session = Depends(get_db), _: None
     equipment_bill_total = 0.0
     other_actual = 0.0
     for b in bills_expense:
-        amount = float(b.total_payable or 0.0)
+        # Work value: before GST and before TDS/retention (still cost).
+        amount = float(b.subtotal or 0.0)
         if b.invoice_type == "purchase":
             material_actual += amount
         elif b.invoice_type == "subcon":
@@ -120,7 +122,9 @@ def get_committed_costs(project_id: UUID, db: Session = Depends(get_db), _: None
     labour_committed = 0.0
     # C2: only finalized payroll runs contribute to actual labour cost
     labour_actual = float(
-        db.query(func.sum(PayrollLineItem.net_payable))
+        # Cost to the company: gross pay plus employer PF and ESI. Net pay
+        # left out the employee PF, ESI and TDS the company still pays over.
+        db.query(func.sum(PayrollLineItem.gross_salary + PayrollLineItem.pf_employer + PayrollLineItem.esi_employer))
         .join(PayrollRun)
         .filter(PayrollRun.project_id == project_id, PayrollRun.status == "finalized")
         .scalar()
@@ -128,22 +132,7 @@ def get_committed_costs(project_id: UUID, db: Session = Depends(get_db), _: None
     )
 
     equipment_committed = 0.0
-    deployments = db.query(EquipmentDeployment).filter(EquipmentDeployment.project_id == project_id).all()
-    dep_cost = 0.0
-    for dep in deployments:
-        eq = db.query(Equipment).filter(Equipment.id == dep.equipment_id).first()
-        if eq and eq.hourly_rate:
-            rate = float(eq.hourly_rate)
-            # R2-727: same aware/naive normalization as finance.py (Postgres
-            # returns aware datetimes, SQLite naive); never mix them.
-            start = dep.start_date
-            if start.tzinfo is None:
-                start = start.replace(tzinfo=timezone.utc)
-            end = dep.end_date if dep.end_date else datetime.now(timezone.utc)
-            if end.tzinfo is None:
-                end = end.replace(tzinfo=timezone.utc)
-            hours = (end - start).total_seconds() / 3600.0
-            dep_cost += max(0.0, hours * rate)
+    dep_cost = owned_deployment_cost(db, project_id)
     fuel_cost = float(db.query(func.sum(FuelLog.total_cost)).filter(FuelLog.project_id == project_id).scalar() or 0.0)
     equipment_actual = equipment_bill_total + dep_cost + fuel_cost
 
@@ -192,13 +181,13 @@ def get_tower_budget(project_id: UUID, db: Session = Depends(get_db), _: None = 
             PurchaseOrder.project_id == project_id,
             PurchaseOrder.status.in_(("sent", "partial", "received")),
         ).all()
-        committed = sum(float(p.total_amount) for p in pos)
+        committed = sum(p.value_before_gst for p in pos)
         # Same gates as the main endpoint: approved bills only (R2-233) and
         # cancelled bills never book cost (R2-723); aligned by R2-604.
         bills = _active_bills(db, project_id, EXPENSE_INVOICE_TYPES).filter(
             Bill.approval_flag == "approved",
         ).all()
-        actual = sum(float(b.total_payable) for b in bills)
+        actual = sum(float(b.subtotal) for b in bills)
         return [TowerBudgetBreakdown(
             tower_id=None,
             tower_name="Overall Project",
@@ -213,12 +202,12 @@ def get_tower_budget(project_id: UUID, db: Session = Depends(get_db), _: None = 
     bills = _active_bills(db, project_id, EXPENSE_INVOICE_TYPES).filter(
         Bill.approval_flag == "approved",
     ).all()
-    actual = sum(float(b.total_payable) for b in bills)
+    actual = sum(float(b.subtotal) for b in bills)
     pos = db.query(PurchaseOrder).filter(
         PurchaseOrder.project_id == project_id,
         PurchaseOrder.status.in_(("sent", "partial", "received")),
     ).all()
-    po_committed = sum(float(p.total_amount) for p in pos)
+    po_committed = sum(p.value_before_gst for p in pos)
 
     # Documents carry no tower_id (CD-5), so per-tower attribution does not
     # exist: repeating the project's committed/actual on every tower row

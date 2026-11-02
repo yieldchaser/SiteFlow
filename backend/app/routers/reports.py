@@ -3,6 +3,7 @@
 Phase 11 — Client Portal & PDF Progress Reports Router
 """
 
+import json
 import logging
 import os
 import uuid
@@ -1546,7 +1547,8 @@ def _rep_equipment_library(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]
                 "Created Date": _clean(eq.created_at),
                 "Ownership Type": eq.ownership_type,
                 "Expected Mileage": "",
-                "Purchase Amount": _clean(eq.hourly_rate),
+                # No purchase price is recorded; the hourly rate is not one.
+                "Purchase Amount": "",
                 "Insurance Policy No.": "",
                 "Insurance Provider Name": "",
                 "Insurance Start Date": "",
@@ -1920,13 +1922,31 @@ def _rep_task_boq_billed_unbilled(db: Session, cid: uuid.UUID, pid: Optional[uui
 def _rep_budget_vs_actual_cost_code(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
     try:
         q = db.query(LibraryCostCode).filter(LibraryCostCode.company_id == cid)
+        # Every cost code used to get the same "actual": all the company's
+        # bills, sales and cancelled ones included. Actual is now the work
+        # value of the expense-bill lines booked to that cost code.
+        bills_q = db.query(Bill).filter(
+            Bill.company_id == cid,
+            Bill.invoice_type.in_(EXPENSE_INVOICE_TYPES),
+            Bill.status != "Cancelled",
+        )
+        if pid:
+            bills_q = bills_q.filter(Bill.project_id == pid)
+        cost_code_actuals: dict = {}
+        for b in bills_q.all():
+            try:
+                lines = json.loads(b.items_json) if b.items_json else []
+            except (ValueError, TypeError):
+                lines = []
+            for it in lines if isinstance(lines, list) else []:
+                if isinstance(it, dict) and it.get("cost_code_id"):
+                    amt = float(it.get("amount") or float(it.get("qty") or 0) * float(it.get("rate") or 0))
+                    key = str(it["cost_code_id"])
+                    cost_code_actuals[key] = cost_code_actuals.get(key, 0.0) + amt
         rows = []
         for cc in q.all():
             budget = float(cc.budget_amount or 0)
-            bills_q = db.query(Bill).filter(Bill.company_id == cid)
-            if pid:
-                bills_q = bills_q.filter(Bill.project_id == pid)
-            actual = sum(float(b.total_payable or 0) for b in bills_q.all())
+            actual = cost_code_actuals.get(str(cc.id), 0.0)
             variance = budget - actual
             status_str = "Within Budget" if actual <= budget else "Over Budget"
             rows.append({
@@ -2009,8 +2029,9 @@ def _rep_project_financial_summary(db: Session, cid: uuid.UUID, pid: Optional[uu
         for p in q.all():
             budget = float(p.project_value or 0)
             bills = db.query(Bill).filter(Bill.project_id == p.id, Bill.status != "Cancelled").all()
-            total_expense = sum(float(b.total_payable or 0) for b in bills if is_expense_invoice_type(b.invoice_type))
-            total_sales = sum(float(b.total_payable or 0) for b in bills if is_revenue_invoice_type(b.invoice_type))
+            # Work value, before GST and deductions, like the project margin.
+            total_expense = sum(float(b.subtotal or 0) for b in bills if is_expense_invoice_type(b.invoice_type))
+            total_sales = sum(float(b.subtotal or 0) for b in bills if is_revenue_invoice_type(b.invoice_type))
             payments = db.query(Payment).filter(Payment.project_id == p.id).all()
             pay_in = sum(float(pm.amount or 0) for pm in payments if pm.payment_type in ("in", "receipt"))
             pay_out = sum(float(pm.amount or 0) for pm in payments if pm.payment_type in ("out", "payout"))
@@ -2387,16 +2408,29 @@ def _rep_project_level_party_balance(db: Session, cid: uuid.UUID, pid: Optional[
             party_name = _team_user_name(db, ct.id)
             for p_id in (proj_ids if not pid else [pid]):
                 proj = db.query(Project).filter(Project.id == p_id).first()
-                bills = db.query(Bill).filter(Bill.project_id == p_id, Bill.party_company_user_id == ct.id).all()
-                mat_purch = sum(float(b.total_payable or 0) for b in bills if b.invoice_type == "material")
-                subcon_amt = sum(float(b.total_payable or 0) for b in bills if b.invoice_type == "subcon")
-                site_exp = sum(float(b.total_payable or 0) for b in bills if b.invoice_type in ("expense", "site_expense"))
-                sales_inv = sum(float(b.total_payable or 0) for b in bills if is_revenue_invoice_type(b.invoice_type))
+                # Cancelled bills owe nothing; "material" was never an
+                # invoice type, so material purchases always read 0. Equipment
+                # bills and the client side (sales against receipts) were left
+                # out of the balance, so a client who owed money read Settled.
+                bills = db.query(Bill).filter(Bill.project_id == p_id, Bill.party_company_user_id == ct.id, Bill.status != "Cancelled").all()
                 payments = db.query(Payment).filter(Payment.project_id == p_id, Payment.party_company_user_id == ct.id).all()
+                if not bills and not payments:
+                    continue
+
+                def _owed(types):
+                    return sum(float(b.total_payable or 0) for b in bills if b.invoice_type in types)
+
+                mat_purch = _owed(("purchase",))
+                subcon_amt = _owed(("subcon",))
+                site_exp = _owed(("expense",))
+                equip_exp = _owed(("equipment",))
+                sales_inv = _owed(("sale",))
+                mat_sale = _owed(("material_sale",))
                 party_rec = sum(float(p.amount or 0) for p in payments if p.payment_type in ("in", "receipt"))
                 party_paid = sum(float(p.amount or 0) for p in payments if p.payment_type in ("out", "payout"))
-                net_bal = (mat_purch + subcon_amt + site_exp) - party_paid
-                bal_type = "To Pay" if net_bal > 0 else ("Advance" if net_bal < 0 else "Settled")
+                # Positive: they owe us. Negative: we owe them.
+                net_bal = (sales_inv + mat_sale - party_rec) - (mat_purch + subcon_amt + site_exp + equip_exp - party_paid)
+                bal_type = "To Receive" if net_bal > 0.005 else ("To Pay" if net_bal < -0.005 else "Settled")
                 rows.append({
                     "Party Name": party_name,
                     "Party Type": ct.priority_type or "Vendor",
@@ -2406,12 +2440,12 @@ def _rep_project_level_party_balance(db: Session, cid: uuid.UUID, pid: Optional[
                     "Other Expense": 0.0,
                     "Subcon Amount": _clean(subcon_amt),
                     "Site Expense": _clean(site_exp),
-                    "Equipment Expense": 0.0,
+                    "Equipment Expense": _clean(equip_exp),
                     "Debit Note": 0.0,
                     "Sales Invoice": _clean(sales_inv),
                     "Net Retention": 0.0,
                     "Credit Note": 0.0,
-                    "Material Sale": 0.0,
+                    "Material Sale": _clean(mat_sale),
                     "Material Return": 0.0,
                     "Party Received": _clean(party_rec),
                     "Party Paid": _clean(party_paid),
@@ -2930,7 +2964,8 @@ def _rep_asset_status(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
                 "Assigned Qty": 1 if eq.status == "deployed" else 0,
                 "In Repair Qty": 1 if eq.status == "maintenance" else 0,
                 "Damaged Qty": 1 if eq.status == "inactive" else 0,
-                "Asset Value": _clean(float(eq.hourly_rate or 0) * 100),
+                # No asset value is recorded; it used to show hourly rate x 100.
+                "Asset Value": "",
                 "Created by": "",
                 "Creation Date": _clean(eq.created_at),
                 "Last Assigned To": last_proj.name if last_proj else "",
@@ -3149,14 +3184,35 @@ def _rep_ot_shift(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
         q = db.query(AttendanceLog).join(StaffEmployee, AttendanceLog.employee_id == StaffEmployee.id).filter(StaffEmployee.company_id == cid)
         if pid:
             q = q.filter(AttendanceLog.project_id == pid)
+        # Same overtime rule as payroll (hr._compute_payslip): the employee's
+        # own hourly overtime rate, else 1.5x basic per hour over that month's
+        # working days. The report used to divide by 30 and invent Rs 100/hour
+        # when basic was blank.
+        from app.routers.hr import _working_days_in_month
+        from app.models import Holiday, PayrollProfile
+        company = db.query(Company).filter(Company.id == cid).first()
+        weekly_offs = company.weekly_off_days if company else []
+        working_days: dict = {}
         rows = []
         for a in q.order_by(AttendanceLog.attendance_date.desc()).all():
             emp = db.query(StaffEmployee).filter(StaffEmployee.id == a.employee_id).first()
             proj = db.query(Project).filter(Project.id == a.project_id).first() if a.project_id else None
             ot_hrs = float(a.overtime_hours or 0)
-            basic = float(emp.basic_salary or 0) if emp else 0.0
-            hourly_rate = (basic / 30.0 / 8.0) if basic > 0 else 100.0
-            ot_earnings = ot_hrs * hourly_rate * 1.5
+            profile = db.query(PayrollProfile).filter(PayrollProfile.employee_id == a.employee_id).first()
+            if profile and float(profile.overtime_rate or 0) > 0:
+                ot_rate = float(profile.overtime_rate)
+            else:
+                d = a.attendance_date
+                month = f"{d.year:04d}-{d.month:02d}"
+                if month not in working_days:
+                    start = datetime(d.year, d.month, 1)
+                    end = datetime(d.year + (d.month == 12), d.month % 12 + 1, 1)
+                    hols = db.query(Holiday).filter(Holiday.company_id == cid, Holiday.date >= start, Holiday.date < end).all()
+                    working_days[month] = _working_days_in_month(month, weekly_offs, holidays=hols)
+                days = working_days[month]
+                basic = float(emp.basic_salary or 0) if emp else 0.0
+                ot_rate = (basic / days / 8.0) * 1.5 if days > 0 else 0.0
+            ot_earnings = round(ot_hrs * ot_rate, 2)
             rows.append({
                 "Project Name": proj.name if proj else "",
                 "Party Name": emp.name if emp else "",

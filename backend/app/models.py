@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, ForeignKey, DateTime, Date, Integer, Boolean, Table, Numeric, Float, Text, BigInteger, LargeBinary, UniqueConstraint
+from sqlalchemy import Column, String, ForeignKey, DateTime, Date, Integer, Boolean, Table, Numeric, Float, Text, BigInteger, LargeBinary, UniqueConstraint, Index, text
 from sqlalchemy.sql import func
 from app.database import Base, engine
 
@@ -486,6 +486,15 @@ class PurchaseOrder(Base):
     gross_amount = Column(Numeric(18, 2), default=0.0, nullable=False)
     tax_amount = Column(Numeric(18, 2), default=0.0, nullable=False)
     total_amount = Column(Numeric(18, 2), default=0.0, nullable=False)
+
+    @property
+    def value_before_gst(self) -> float:
+        """The order's value before GST, the basis bills and budgets compare
+        against. Older POs saved only a total, so fall back to total less tax."""
+        gross = float(self.gross_amount or 0.0)
+        if gross > 0:
+            return gross
+        return max(0.0, float(self.total_amount or 0.0) - float(self.tax_amount or 0.0))
     approval_flag = Column(String(50), default="pending", nullable=False) # pending, pending_approval, approved, rejected
     approval_rule_id = Column(UUID(as_uuid=True), ForeignKey("approval_rules.id", ondelete="SET NULL"), nullable=True)
     # R2-372: the approved indent this PO was raised from, when any. Null keeps
@@ -646,10 +655,26 @@ class WorkOrderItem(Base):
     amount = Column(Numeric(18, 2), nullable=True)
     created_at = Column(DateTime(timezone=True), default=func.now(), nullable=False)
 
+from app.constants import BILL_SUPPLIER_NUMBER_WHERE as _BILL_SUPPLIER_NUMBER_WHERE, BILL_OWN_NUMBER_WHERE as _BILL_OWN_NUMBER_WHERE  # noqa: E402
+
+
 class Bill(Base):
     __tablename__ = "bills"
     __table_args__ = (
-        UniqueConstraint("company_id", "invoice_number", name="uq_bills_company_id_invoice_number"),
+        # Supplier bills: unique per supplier among live bills. Own invoices:
+        # unique company-wide. See constants.SUPPLIER_NUMBERED_INVOICE_TYPES.
+        Index(
+            "uq_bills_supplier_invoice_number", "company_id", "party_company_user_id", "invoice_number",
+            unique=True,
+            postgresql_where=text(_BILL_SUPPLIER_NUMBER_WHERE),
+            sqlite_where=text(_BILL_SUPPLIER_NUMBER_WHERE),
+        ),
+        Index(
+            "uq_bills_own_invoice_number", "company_id", "invoice_number",
+            unique=True,
+            postgresql_where=text(_BILL_OWN_NUMBER_WHERE),
+            sqlite_where=text(_BILL_OWN_NUMBER_WHERE),
+        ),
     )
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)

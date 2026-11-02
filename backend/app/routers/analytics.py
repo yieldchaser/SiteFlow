@@ -260,7 +260,7 @@ def get_company_analytics(company_id: uuid.UUID, db: Session = Depends(get_db), 
                 + _to_float(budget.equipment_budget)
             )
 
-        project_spend = sum(_to_float(bill.total_payable) for bill in bills_by_project.get(project.id, []) if is_expense_invoice_type(bill.invoice_type) and bill.status != "Cancelled")
+        project_spend = sum(_to_float(bill.subtotal) for bill in bills_by_project.get(project.id, []) if is_expense_invoice_type(bill.invoice_type) and bill.status != "Cancelled")
         project_variance = project_budget_total - project_spend
         total_tasks = len(tasks_by_project.get(project.id, []))
         completed_tasks = sum(
@@ -600,7 +600,7 @@ def get_company_operational_analytics(company_id: uuid.UUID, project_id: Optiona
                 + _to_float(budget.subcon_budget)
                 + _to_float(budget.equipment_budget)
             )
-        spend = sum(_to_float(b.total_payable) for b in db.query(Bill).filter(Bill.project_id == p.id, Bill.invoice_type.in_(EXPENSE_INVOICE_TYPES), Bill.status != "Cancelled").all())
+        spend = sum(_to_float(b.subtotal) for b in db.query(Bill).filter(Bill.project_id == p.id, Bill.invoice_type.in_(EXPENSE_INVOICE_TYPES), Bill.status != "Cancelled").all())
 
         # Determine Health
         if p_status == "Completed":
@@ -776,8 +776,8 @@ def get_company_financial_analytics(company_id: uuid.UUID, project_id: Optional[
             )
 
         p_bills = [b for b in bills if b.project_id == p.id]
-        total_expense = sum(_to_float(b.total_payable) for b in p_bills if is_expense_invoice_type(b.invoice_type))
-        total_sales = sum(_to_float(b.total_payable) for b in p_bills if is_revenue_invoice_type(b.invoice_type))
+        total_expense = sum(_to_float(b.subtotal) for b in p_bills if is_expense_invoice_type(b.invoice_type))
+        total_sales = sum(_to_float(b.subtotal) for b in p_bills if is_revenue_invoice_type(b.invoice_type))
         # D3: settlement money direction is explicit - payment_in / i_received are
         # cash in, payment_out / i_paid are cash out. Do not mix all settlement
         # types into both sides.
@@ -815,11 +815,11 @@ def get_company_financial_analytics(company_id: uuid.UUID, project_id: Optional[
     for b in bills:
         m_label = b.invoice_date.strftime("%b %Y") if b.invoice_date else "Jan 2026"
         if is_revenue_invoice_type(b.invoice_type):
-            monthly_sales[m_label] += _to_float(b.total_payable)
+            monthly_sales[m_label] += _to_float(b.subtotal)
         elif is_expense_invoice_type(b.invoice_type):
-            monthly_expense[m_label] += _to_float(b.total_payable)
+            monthly_expense[m_label] += _to_float(b.subtotal)
             t_label = "Subcontractor Bill" if b.invoice_type == "subcon" else "Purchase Invoice"
-            expense_by_type[t_label] += _to_float(b.total_payable)
+            expense_by_type[t_label] += _to_float(b.subtotal)
         # settlement and movement do not book revenue or cost (D3)
 
         # D3: party outstanding is only revenue/expense accruals; settlement

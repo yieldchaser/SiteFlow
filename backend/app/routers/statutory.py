@@ -391,10 +391,16 @@ def export_pf_ecr(
         emp = employees_by_id.get(li.employee_id)
         if not emp:
             continue
-        pf_wages = min(float(li.basic or 0), 15000.0)  # PF capped at ₹15,000 wage ceiling
-        ee_pf = round(pf_wages * float(emp.pf_employee_pct or 12) / 100, 2)
-        er_pf = round(pf_wages * float(emp.pf_employer_pct or 12) / 100, 2)
-        eps_pf = round(pf_wages * 8.33 / 100, 2)
+        # File what the payslip deducted. Recomputing from today's employee
+        # percentages and a fixed Rs 15,000 ceiling disagreed with payroll
+        # whenever the company's PF wage ceiling or an employee's rate differed.
+        ee_pf = round(float(li.pf_employee or 0), 2)
+        er_pf = round(float(li.pf_employer or 0), 2)
+        ee_pct = float(emp.pf_employee_pct or 12)
+        pf_wages = round(ee_pf * 100 / ee_pct, 2) if ee_pct > 0 and ee_pf > 0 else min(float(li.basic or 0), 15000.0)
+        # Pension (EPS) is 8.33% of wages up to the statutory Rs 15,000, never
+        # more than the employer's share; the rest of that share is EPF.
+        eps_pf = min(round(min(pf_wages, 15000.0) * 8.33 / 100, 2), er_pf)
         epf_pf = round(er_pf - eps_pf, 2)
         ecr_lines.append({
             "uan": emp.uan,

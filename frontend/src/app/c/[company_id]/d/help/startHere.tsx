@@ -424,6 +424,11 @@ export function startHereCategory(companyId: string): HelpCategory {
                 Optional check: <L to="/d/three-way">Three-Way Match</L>{" "}compares the PO, the GRN and the invoice
                 and flags any difference before you pay.
               </li>
+              <li>
+                Approve the bill in <L to="/d/finance">Finance</L>. Then add a Payment Out to the vendor on the
+                project&apos;s Transaction tab. It is set against their approved bills, oldest first, and the bill
+                shows as Paid.
+              </li>
               <li>Material used on site is recorded with Log Usage or on the DPR, and stock goes down.</li>
             </Steps>
           </>

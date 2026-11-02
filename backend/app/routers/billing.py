@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Response, status, Query
 
 logger = logging.getLogger(__name__)
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.auth import get_current_user, verify_project_in_company, verify_project_access, verify_company_access, get_company_membership, require_permission, require_module_view
@@ -31,6 +31,7 @@ from app.constants import (
     INVOICE_TYPE_PATTERN,
     REVENUE_INVOICE_TYPES,
     SETTLEMENT_INVOICE_TYPES,
+    SUPPLIER_NUMBERED_INVOICE_TYPES,
     is_expense_invoice_type,
     is_revenue_invoice_type,
     is_settlement_invoice_type,
@@ -252,20 +253,25 @@ def _sequential_deduction_calc(deductions: List[DeductionItemSchema], base: floa
     """Settings -> Workflow Controls -> Finance Controls -> 'Pre-Tax Deduction/Retention'
     (Company.pretax_deduction_retention).
 
-    Splits the requested deductions into Retention vs everything else (TDS,
-    Security Deposit, Advance Recovery, Material Recovery, ...) and applies
-    them sequentially against `base` so the order actually changes the
-    result:
-      - pretax_order=True  -> TDS/other deductions computed first, Retention
+    TDS is always computed on the full `base`. Under Sec 194C it is due on
+    the whole sum credited to the contractor, and retention held back is
+    still credited to them, so taking TDS on the post-retention amount
+    under-deducted (2% of 95,000 instead of 2% of 1,00,000).
+
+    The contractual deductions are split into Retention vs everything else
+    (Security Deposit, Advance Recovery, Material Recovery, ...) and applied
+    sequentially against `base` so the order actually changes the result:
+      - pretax_order=True  -> other deductions computed first, Retention
         is then computed on the post-deduction amount.
-      - pretax_order=False (default) -> Retention computed first, TDS/other
+      - pretax_order=False (default) -> Retention computed first, other
         deductions are then computed on the post-retention amount.
 
     Returns (deduction_details, total_deducted) where deduction_details is a
     list of (DeductionItemSchema, calculated_amount) tuples in the same
     shape the caller previously built manually."""
+    tds_list = [d for d in deductions if d.deduction_type == "TDS"]
     retention_list = [d for d in deductions if d.deduction_type == "Retention"]
-    other_list = [d for d in deductions if d.deduction_type != "Retention"]
+    other_list = [d for d in deductions if d.deduction_type not in ("Retention", "TDS")]
 
     def _calc(d: DeductionItemSchema, on_amount: float) -> float:
         if d.percentage:
@@ -275,6 +281,12 @@ def _sequential_deduction_calc(deductions: List[DeductionItemSchema], base: floa
     first_list, second_list = (other_list, retention_list) if pretax_order else (retention_list, other_list)
 
     details = []
+    tds_total = 0.0
+    for d in tds_list:
+        amt = _calc(d, base)
+        tds_total += amt
+        details.append((d, amt))
+
     first_total = 0.0
     for d in first_list:
         amt = _calc(d, base)
@@ -291,7 +303,7 @@ def _sequential_deduction_calc(deductions: List[DeductionItemSchema], base: floa
         second_total += amt
         details.append((d, amt))
 
-    total_deducted = first_total + second_total
+    total_deducted = tds_total + first_total + second_total
     # Deductions must never exceed `base`, otherwise a bill's payable amount
     # could go negative due to overlapping fixed-amount deductions.
     total_deducted = min(total_deducted, base)
@@ -300,34 +312,25 @@ def _sequential_deduction_calc(deductions: List[DeductionItemSchema], base: floa
 
 def _compute_wo_billing(db: Session, wo_id: UUID, est_amount: float):
     # R2-762: Sum total_payable of non-cancelled bills raised against this work order
-    bills = db.query(Bill).filter(
-        Bill.wo_id == wo_id,
-        Bill.status != "Cancelled"
-    ).all()
-    billed_amount = round(sum(float(b.total_payable or 0.0) for b in bills), 2)
-    # Progress against the contract must compare like with like. estimated_work_amount
-    # is the GST-exclusive contract value, so the numerator has to be the billed
-    # WORK value (subtotal), not total_payable, which is GST-inclusive and net of
+    # Billed value and progress compare like with like. estimated_work_amount is
+    # the GST-exclusive contract value, so both use the billed WORK value
+    # (subtotal), not total_payable, which is GST-inclusive and net of
     # retention and TDS. Using total_payable overstated progress by roughly the
     # GST rate: 420,000 of work on a 1,250,000 order read 37.3% instead of 33.6%.
-    billed_work_value = round(sum(float(b.subtotal or 0.0) for b in bills), 2)
-    progress_pct = None
-    if float(est_amount) > 0:
-        progress_pct = round((billed_work_value / float(est_amount)) * 100.0, 1)
-    return billed_amount, progress_pct
+    return _compute_wo_billing_batch(db, [wo_id], {wo_id: est_amount})[wo_id]
 
 
 def _compute_wo_billing_batch(db: Session, wo_ids: List[UUID], est_amounts: Dict[UUID, float]) -> Dict[UUID, tuple]:
     if not wo_ids:
         return {}
-    bills = db.query(Bill.wo_id, Bill.total_payable).filter(
+    bills = db.query(Bill.wo_id, Bill.subtotal).filter(
         Bill.wo_id.in_(wo_ids),
         Bill.status != "Cancelled"
     ).all()
     totals_by_wo: Dict[UUID, float] = {wid: 0.0 for wid in wo_ids}
-    for b_wo_id, b_total_payable in bills:
+    for b_wo_id, b_subtotal in bills:
         if b_wo_id in totals_by_wo:
-            totals_by_wo[b_wo_id] += float(b_total_payable or 0.0)
+            totals_by_wo[b_wo_id] += float(b_subtotal or 0.0)
     result = {}
     for wid in wo_ids:
         billed_amt = round(totals_by_wo.get(wid, 0.0), 2)
@@ -681,6 +684,22 @@ def next_document_number(db: Session, company_id: UUID, invoice_type: str = "pur
         count += 1
         candidate = f"{prefix}-{year}-{count + 1:04d}"
     return candidate
+
+
+def invoice_number_clash(db: Session, company_id, invoice_type: str, party_id, inv_num: str) -> Optional[str]:
+    """Say why inv_num cannot be used, or None. Mirrors the two unique indexes
+    on bills: a supplier's bill number is unique for that supplier among bills
+    not cancelled; the company's own invoice numbers are unique company-wide."""
+    q = db.query(Bill.id).filter(Bill.company_id == company_id, Bill.invoice_number == inv_num)
+    if invoice_type in SUPPLIER_NUMBERED_INVOICE_TYPES:
+        hit = q.filter(
+            Bill.party_company_user_id == party_id,
+            Bill.invoice_type.in_(SUPPLIER_NUMBERED_INVOICE_TYPES),
+            func.lower(Bill.status) != "cancelled",
+        ).first()
+        return f"This party already has a bill numbered {inv_num} on record." if hit else None
+    hit = q.filter(Bill.invoice_type.notin_(SUPPLIER_NUMBERED_INVOICE_TYPES)).first()
+    return f"Invoice number {inv_num} is already used. Each of your invoices needs its own number." if hit else None
 
 
 @router.get("/next-number/{company_id}")
@@ -1332,13 +1351,9 @@ def create_bill(req: BillCreateRequest, db: Session = Depends(get_db), current_u
     if not inv_num or inv_num.lower() == "auto":
         inv_num = next_document_number(db, req.company_id, req.invoice_type)
 
-    # Check if invoice number already exists for company
-    existing = db.query(Bill).filter(
-        Bill.company_id == req.company_id,
-        Bill.invoice_number == inv_num
-    ).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Invoice number already exists for this company")
+    clash = invoice_number_clash(db, req.company_id, req.invoice_type, req.party_company_user_id, inv_num)
+    if clash:
+        raise HTTPException(status_code=400, detail=clash)
 
     # R2-401: reject tax invoices with no line items, and reconcile any
     # supplied lines against the subtotal before the bill is persisted.
@@ -1464,7 +1479,9 @@ def create_bill(req: BillCreateRequest, db: Session = Depends(get_db), current_u
             .scalar()
             or 0.0
         )
-        ceiling = float(po.total_amount or 0.0)
+        # Like with like: bill subtotals are before GST, so the PO's value
+        # before GST. total_amount let a bill run 18% past the order.
+        ceiling = po.value_before_gst
         if already_billed + float(req.subtotal) > ceiling:
             raise HTTPException(
                 status_code=422,
@@ -1766,6 +1783,18 @@ def release_retention(bill_id: UUID, deduction_id: UUID, req: Optional[Retention
     ded.released_amount = round(already + amount, 2)
     ded.released_at = datetime.now(timezone.utc)
     db.add(ded)
+    # Released retention is money owed to the party again. It goes back onto
+    # the bill's payable, so the bill reopens and the next payment settles it;
+    # before this the release was only a note and the party balance never moved.
+    bill.total_payable = round(float(bill.total_payable) + amount, 2)
+    paid = float(bill.paid_amount or 0.0)
+    if paid >= float(bill.total_payable) - 0.01:
+        bill.status = "Paid"
+    elif paid > 0:
+        bill.status = "Partially Paid"
+    else:
+        bill.status = "Unpaid"
+    db.add(bill)
     db.commit()
     db.refresh(ded)
     return DeductionResponseSchema(
@@ -2043,6 +2072,22 @@ def create_subcontractor(req: SubcontractorCreateRequest, db: Session = Depends(
 
 @router.get("/subcontractors", response_model=List[SubcontractorListResponse])
 def list_subcontractors(company_id: UUID, db: Session = Depends(get_db), _: None = Depends(verify_company_access)):
+    # A subcontractor registered in the Party Library has no team row until
+    # something needs one, so it never appeared here and had to be entered a
+    # second time. Give each such party its team row on first listing.
+    linked = {
+        r[0] for r in db.query(CompanyTeam.library_party_id)
+        .filter(CompanyTeam.company_id == company_id, CompanyTeam.library_party_id.isnot(None)).all()
+    }
+    lib_subcons = db.query(LibraryParty).filter(
+        LibraryParty.company_id == company_id,
+        func.lower(LibraryParty.party_type) == "subcontractor",
+    ).all()
+    missing = [lp for lp in lib_subcons if lp.id not in linked]
+    for lp in missing:
+        db.add(CompanyTeam(company_id=company_id, user_id=None, priority_type="subcontractor", library_party_id=lp.id))
+    if missing:
+        db.commit()
     rows = (
         db.query(
             CompanyTeam.id,
@@ -2057,7 +2102,10 @@ def list_subcontractors(company_id: UUID, db: Session = Depends(get_db), _: None
         .outerjoin(LibraryParty, LibraryParty.id == CompanyTeam.library_party_id)
         .filter(
             CompanyTeam.company_id == company_id,
-            CompanyTeam.priority_type == "subcontractor",
+            or_(
+                CompanyTeam.priority_type == "subcontractor",
+                func.lower(LibraryParty.party_type) == "subcontractor",
+            ),
         )
         .all()
     )

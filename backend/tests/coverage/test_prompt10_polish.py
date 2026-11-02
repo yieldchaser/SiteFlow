@@ -103,7 +103,7 @@ def test_duplicate_invoice_number_rejected(client, db, make_tenant, auth_headers
     assert r1.status_code == 201, r1.text
     r2 = client.post("/apis/v3/billing/bills", json=base, headers=hdr)
     assert r2.status_code == 400
-    assert "already exists" in r2.json()["detail"]
+    assert "already has a bill numbered DUP-INV-1" in r2.json()["detail"]
 
 
 # ── F3: deductions never push payable negative ───────────────────────────────

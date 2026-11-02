@@ -29,6 +29,7 @@ interface Indent {
   indentNumber: string;
   items: IndentItem[];
   status: "pending" | "approved" | "ordered" | "rejected" | "cancelled";
+  projectId?: string;
   requestedBy: string;
   date: string;
 }
@@ -55,6 +56,10 @@ interface PO {
   date: string;
   expectedDeliveryDate?: string | null;
 }
+
+// The parts of a /procurement/pos row the GRN list reads.
+interface ApiPOItemRow { id: string; material_name: string; unit: string; rate: number }
+interface ApiPORow { id: string; po_number: string; vendor_name?: string | null; vendor_id?: string | null; items?: ApiPOItemRow[] }
 
 interface GRNItem {
   name: string;
@@ -149,7 +154,7 @@ export default function ProcurementPage() {
           projectName: ind.project_id === projectId ? "Active Project" : `Project ${String(ind.project_id).slice(0, 8)}`,
           items: (ind.items || []).map((item: any) => ({ name: item.material_name, qty: item.quantity, unit: item.unit })),
           status: ind.status,
-          requestedBy: "Auto-synced",
+          requestedBy: teamMembers.find((t) => t.id === String(ind.requested_by))?.name || "Not recorded",
           date: ind.created_at ? ind.created_at.split("T")[0] : "",
         }));
         setIndents(mapped);
@@ -244,13 +249,18 @@ export default function ProcurementPage() {
           projectName: ind.project_id === projectId ? "Active Project" : `Project ${String(ind.project_id).slice(0, 8)}`,
           items: (ind.items || []).map((item: any) => ({ name: item.material_name, qty: item.quantity, unit: item.unit })),
           status: ind.status,
-          requestedBy: ind.requested_by ? (teamById[String(ind.requested_by)] || "Site Member") : "Auto-synced",
+          requestedBy: ind.requested_by ? (teamById[String(ind.requested_by)] || "Former member") : "Not recorded",
           date: ind.created_at ? ind.created_at.split("T")[0] : "",
         }));
         setIndents(mapped);
       }
+      // GRNs carry only po_id and po_item_id; their PO number, supplier, item
+      // names and rates come from the POs, or the Unbilled tab shows blanks,
+      // a value of zero and a false "Item mismatch" on every receipt.
+      let poRows: ApiPORow[] = [];
       if (posRes.ok) {
         const data = await posRes.json();
+        poRows = Array.isArray(data) ? data : [];
         const mapped = data.map((po: any) => ({
           id: po.id,
           poNumber: po.po_number,
@@ -275,17 +285,29 @@ export default function ProcurementPage() {
       }
       if (grnsRes.ok) {
         const data = await grnsRes.json();
-        const mapped = data.map((grn: any) => ({
+        const poById: Record<string, ApiPORow> = {};
+        const poItemById: Record<string, ApiPOItemRow> = {};
+        poRows.forEach((po) => {
+          poById[String(po.id)] = po;
+          (po.items || []).forEach((it) => (poItemById[String(it.id)] = it));
+        });
+        const mapped = data.map((grn: any) => {
+          const po = poById[String(grn.po_id)];
+          return {
           id: grn.id,
           grnNumber: grn.grn_number,
-          poNumber: "",
-          vendor: "",
+          poNumber: po?.po_number || "",
+          vendor: po ? (po.vendor_name || (po.vendor_id ? (vendorById[String(po.vendor_id)] || "") : "")) : "",
           receivedDate: grn.received_date ? grn.received_date.split("T")[0] : "",
-          receivedBy: grn.received_by ? (teamById[String(grn.received_by)] || "Store Incharge") : "Auto-synced",
-          items: (grn.items || []).map((item: any) => ({ name: "", qty: item.received_qty, unit: "", rate: 0 })),
+          receivedBy: grn.received_by ? (teamById[String(grn.received_by)] || "Former member") : "Not recorded",
+          items: (grn.items || []).map((item: any) => {
+            const poItem = poItemById[String(item.po_item_id)];
+            return { name: poItem?.material_name || "", qty: item.received_qty, unit: poItem?.unit || "", rate: poItem?.rate || 0 };
+          }),
           isBilled: billedGrnIds.has(String(grn.id)),
           isCancelled: cancelledGrnIds.has(String(grn.id)),
-        }));
+          };
+        });
         setGrns(mapped);
       }
       if (invRes.ok) {
@@ -340,7 +362,7 @@ export default function ProcurementPage() {
   // New Indent form state
   const [newIndentNum, setNewIndentNum] = useState("");
   const [newIndentMaterial, setNewIndentMaterial] = useState("");
-  const [newIndentQty, setNewIndentQty] = useState(50);
+  const [newIndentQty, setNewIndentQty] = useState(0);
   const [newIndentUnit, setNewIndentUnit] = useState("");
   const [newIndentSpec, setNewIndentSpec] = useState("");
   const [newIndentRequestedBy, setNewIndentRequestedBy] = useState("");
@@ -355,6 +377,9 @@ export default function ProcurementPage() {
     { name: "", qty: 0, unit: "", rate: 0, tax_pct: 18 }
   ]);
   const [newPOTerms, setNewPOTerms] = useState("");
+  // Set when the PO is raised from an approved indent, so the backend links
+  // the two, caps quantities at what was approved and marks the indent ordered.
+  const [poIndent, setPoIndent] = useState<Indent | null>(null);
   const [poDefaultTerms, setPoDefaultTerms] = useState("");
 
   useEffect(() => {
@@ -371,11 +396,15 @@ export default function ProcurementPage() {
   // D-010: gate photo upload removed until object storage exists
   // Material usage form state
   const [useMaterialName, setUseMaterialName] = useState("");
-  const [useQty, setUseQty] = useState(10);
+  const [useQty, setUseQty] = useState(0);
   const [useSourceRef, setUseSourceRef] = useState("");
 
   // Add Material Indent Submission
   const handleCreateIndent = async () => {
+    if (!(newIndentQty > 0)) {
+      alert("Enter the quantity needed.");
+      return;
+    }
     const requestedName = teamMembers.find(t => t.id === newIndentRequestedBy)?.name || "Site Engineer";
     const newIndent: Indent = {
       id: `IND-${Date.now()}`,
@@ -486,8 +515,37 @@ export default function ProcurementPage() {
     }
   };
 
+  const openPOFromIndent = (ind: Indent) => {
+    setPoIndent(ind);
+    setPoFormItems(ind.items.map(it => ({
+      name: it.name,
+      qty: it.qty,
+      unit: it.unit,
+      rate: 0,
+      tax_pct: materials.find(m => m.name === it.name)?.gst_rate ?? 18,
+    })));
+    setShowPOModal(true);
+  };
+
+  const closePOModal = () => {
+    setShowPOModal(false);
+    setPoIndent(null);
+    setPoFormItems([{ name: "", qty: 0, unit: "", rate: 0, tax_pct: 18 }]);
+  };
+
   // Add Purchase Order Submission (Multi-item support with line-item tax and delivery date)
   const handleCreatePO = async () => {
+    if (!newPOVendor) {
+      alert("Pick the supplier this order goes to.");
+      return;
+    }
+    const badLine = poFormItems.find(item => !item.name || !(item.qty > 0) || !(item.rate > 0));
+    if (badLine) {
+      alert(badLine.name
+        ? `Enter the quantity and rate for ${badLine.name}.`
+        : "Pick a material on every line, or remove the empty line.");
+      return;
+    }
     let gross = 0;
     let totalTax = 0;
     poFormItems.forEach(item => {
@@ -515,8 +573,10 @@ export default function ProcurementPage() {
 
     try {
       const apiHost = getApiHost();
-      const dupRes = await fetch(`${apiHost}/apis/v3/procurement/duplicate-po-check?company_id=${companyId}&po_number=${encodeURIComponent(newPONum)}`, { headers: authHeaders() });
-      if (dupRes.ok) {
+      const dupRes = newPONum.trim()
+        ? await fetch(`${apiHost}/apis/v3/procurement/duplicate-po-check?company_id=${companyId}&po_number=${encodeURIComponent(newPONum)}`, { headers: authHeaders() })
+        : null;
+      if (dupRes?.ok) {
         const dupData = await dupRes.json();
         if (dupData.is_duplicate) {
           alert(`Duplicate PO number: ${dupData.message}`);
@@ -545,11 +605,13 @@ export default function ProcurementPage() {
             tax_pct: typeof item.tax_pct === "number" ? item.tax_pct : 18.0,
           })),
           terms: newPOTerms || null,
+          indent_id: poIndent?.id || null,
         }),
       });
       if (res.ok) {
         const saved = await res.json();
         newPO.id = saved.id;
+        newPO.poNumber = saved.po_number;
       } else {
         const err = await readErrorDetail(res);
         alert(err || 'Action failed');
@@ -560,8 +622,10 @@ export default function ProcurementPage() {
     }
 
     setPos([newPO, ...pos]);
-    setShowPOModal(false);
-    setPoFormItems([{ name: "", qty: 0, unit: "", rate: 0, tax_pct: 18 }]);
+    if (poIndent) {
+      setIndents(indents.map(i => i.id === poIndent.id ? { ...i, status: "ordered" } : i));
+    }
+    closePOModal();
     setNewPOTerms("");
     setNewPONum("");
     setNewPOVendor("");
@@ -720,7 +784,10 @@ export default function ProcurementPage() {
   // Record material usage
   const handleRecordUsage = async () => {
     const qty = parseFloat(useQty as any) || 0;
-    if (qty <= 0) return;
+    if (qty <= 0) {
+      alert("Enter how much was used.");
+      return;
+    }
     if (!useMaterialName) {
       alert("Select a material first.");
       return;
@@ -750,11 +817,6 @@ export default function ProcurementPage() {
       console.error("Usage log error:", e);
       alert("Failed to log usage. Check your connection.");
     }
-  };
-
-  // Mark GRN as billed (Unbilled Materials tracker action)
-  const handleMarkAsBilled = (_grnId: string) => {
-    alert("GRN billing is reconciled server-side via 3-Way Matching against an invoice; this tracker now reflects matched GRNs and there is no manual mark-billed endpoint, so this action cannot persist.");
   };
 
   const [cancellingGrnId, setCancellingGrnId] = useState<string | null>(null);
@@ -960,7 +1022,7 @@ export default function ProcurementPage() {
                     </div>
 
                     <div className="flex justify-between items-center pt-2 border-t border-border-custom text-[11px] text-muted">
-                      <span>By {ind.requestedBy} on {formatDate(ind.date)}</span>
+                      <span>{ind.requestedBy === "Not recorded" ? "Raised" : `By ${ind.requestedBy}`} on {formatDate(ind.date)}</span>
                       {ind.status === "pending" && (
                         <div className="flex gap-2">
                           <button onClick={() => handleApproveIndent(ind.id)} className="px-3 py-1 bg-success/10 text-success border border-success/20 rounded font-bold hover:bg-success/20">Approve</button>
@@ -969,6 +1031,9 @@ export default function ProcurementPage() {
                       )}
                       {(ind.status === "approved" || ind.status === "ordered") && (
                         <div className="flex gap-2">
+                          {ind.status === "approved" && (!ind.projectId || ind.projectId === projectId) && (
+                            <button onClick={() => openPOFromIndent(ind)} className="px-3 py-1 bg-primary/10 text-primary border border-primary/20 rounded font-bold hover:bg-primary/20">Raise PO</button>
+                          )}
                           <button onClick={() => handleCancelIndent(ind.id)} className="px-3 py-1 bg-danger/10 text-danger border border-danger/20 rounded font-bold hover:bg-danger/20">Cancel Indent</button>
                         </div>
                       )}
@@ -1235,7 +1300,7 @@ export default function ProcurementPage() {
               <div className="flex items-start justify-between">
                 <div>
                   <h2 className="text-xs font-bold text-muted uppercase tracking-wider">Unbilled Materials Tracker</h2>
-                  <p className="text-[10px] text-muted mt-1 max-w-lg">GRNs received from vendors but not yet linked to a Material Purchase invoice. Review and mark as billed to reconcile Accounts Payable. Unmatched GRNs inflate stock figures without a corresponding payable.</p>
+                  <p className="text-[10px] text-muted mt-1 max-w-lg">Goods received that are not yet matched to a supplier bill. Enter the bill under Billing, then match it to the PO and GRN so the payable is on the books.</p>
                 </div>
                 {unbilledGRNs.length === 0 && (
                   <Badge tone="success" icon="check" className="font-bold">All GRNs Reconciled</Badge>
@@ -1249,7 +1314,7 @@ export default function ProcurementPage() {
                   <strong className={`text-xl font-extrabold mt-1 block ${unbilledGRNs.length > 0 ? "text-warning" : "text-success"}`}>{unbilledGRNs.length}</strong>
                 </div>
                 <div className="bg-input border border-border-custom rounded-md p-4">
-                  <span className="text-[9px] uppercase text-muted tracking-wider block">Unbilled Value (est.)</span>
+                  <span className="text-[9px] uppercase text-muted tracking-wider block">Unbilled Value (before GST)</span>
                   <strong className={`text-xl font-extrabold mt-1 block font-sans ${unbilledGRNs.length > 0 ? "text-warning" : "text-success"}`}>
                     ₹{unbilledGRNs.reduce((s, g) => s + g.items.reduce((a, i) => a + i.qty * i.rate, 0), 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                   </strong>
@@ -1287,7 +1352,7 @@ export default function ProcurementPage() {
                           <th className="px-5 py-2.5 font-semibold">Received Date</th>
                           <th className="px-5 py-2.5 font-semibold">Items</th>
                           <th className="px-5 py-2.5 text-center font-semibold">3-Way Match Check</th>
-                          <th className="px-5 py-2.5 text-right font-semibold">Value</th>
+                          <th className="px-5 py-2.5 text-right font-semibold">Value (before GST)</th>
                           <th className="px-5 py-2.5 text-right font-semibold">Action</th>
                         </tr>
                       </thead>
@@ -1301,7 +1366,7 @@ export default function ProcurementPage() {
                                 <span className="font-sans font-bold text-foreground">{grn.grnNumber}</span>
                                 <span className="block text-[9px] text-muted mt-0.5">PO: {grn.poNumber}</span>
                               </td>
-                              <td className="px-5 py-3 text-muted">{grn.receivedDate}</td>
+                              <td className="px-5 py-3 text-muted">{formatDate(grn.receivedDate)}</td>
                               <td className="px-5 py-3">
                                 {grn.items.map((item, i) => (
                                   <div key={i} className="text-muted">
@@ -1319,12 +1384,12 @@ export default function ProcurementPage() {
                                     <Badge tone="danger" className="font-bold">CANCELLED</Badge>
                                   ) : (
                                     <>
-                                      <button
-                                        onClick={() => handleMarkAsBilled(grn.id)}
+                                      <Link
+                                        href={`/c/${companyId}/d/three-way`}
                                         className="px-3 py-1.5 text-[10px] font-bold bg-success/10 hover:bg-success/20 border border-success/20 text-success rounded-lg transition-all inline-flex items-center gap-1 cursor-pointer"
                                       >
-                                        <Icon name="check" className="w-3 h-3" /> Mark as Billed
-                                      </button>
+                                        <Icon name="check" className="w-3 h-3" /> Match to bill
+                                      </Link>
                                       <button
                                         onClick={() => handleCancelGRN(grn)}
                                         disabled={cancellingGrnId === grn.id}
@@ -1359,7 +1424,7 @@ export default function ProcurementPage() {
                           <tr key={grn.id} className="border-b border-border-custom">
                             <td className="px-5 py-3 font-sans font-bold text-muted">{grn.grnNumber}</td>
                             <td className="px-5 py-3 text-muted">{grn.vendor}</td>
-                            <td className="px-5 py-3 text-muted">{grn.receivedDate}</td>
+                            <td className="px-5 py-3 text-muted">{formatDate(grn.receivedDate)}</td>
                             <td className="px-5 py-3 text-right">
                               {grn.isCancelled ? (
                                 <Badge tone="danger" className="font-bold">CANCELLED</Badge>
@@ -1398,7 +1463,7 @@ export default function ProcurementPage() {
               <div className="space-y-1">
                 <label className="text-muted">Requested By (Team Member)</label>
                 <select value={newIndentRequestedBy} onChange={(e) => setNewIndentRequestedBy(e.target.value)} className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground">
-                  <option value="">Select Team Member (Default: Site Engineer)</option>
+                  <option value="">Me</option>
                   {teamMembers.map((t) => (
                     <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
@@ -1432,7 +1497,7 @@ export default function ProcurementPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-muted">Required Quantity</label>
-                  <input type="number" value={newIndentQty} onChange={(e) => setNewIndentQty(parseFloat(e.target.value) || 0)} className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground" />
+                  <input type="number" value={newIndentQty || ""} min="0" onChange={(e) => setNewIndentQty(parseFloat(e.target.value) || 0)} className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground" />
                 </div>
                 <div className="space-y-1">
                   <label className="text-muted">Unit</label>
@@ -1476,7 +1541,7 @@ export default function ProcurementPage() {
               <div className="space-y-1">
                 <label className="text-muted">Received By (Store / Site Incharge)</label>
                 <select value={grnReceivedBy} onChange={(e) => setGrnReceivedBy(e.target.value)} className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground">
-                  <option value="">Select Team Member (Default: Incharge)</option>
+                  <option value="">Me</option>
                   {teamMembers.map((t) => (
                     <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
@@ -1516,7 +1581,7 @@ export default function ProcurementPage() {
               </div>
 
               <div className="rounded-lg border border-dashed border-border-custom bg-elevated/30 p-3 text-center">
-                <p className="text-[10px] text-muted">Gate photo upload is not available yet. Object storage is required and has not been configured. Photos are not stored.</p>
+                <p className="text-[10px] text-muted">Photos of the delivery cannot be attached yet.</p>
               </div>
             </div>
 
@@ -1553,7 +1618,7 @@ export default function ProcurementPage() {
 
               <div className="space-y-1">
                 <label className="text-muted">Usage Quantity</label>
-                <input type="number" value={useQty} onChange={(e) => setUseQty(parseFloat(e.target.value) || 0)} className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground" />
+                <input type="number" value={useQty || ""} min="0" onChange={(e) => setUseQty(parseFloat(e.target.value) || 0)} className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground" />
               </div>
 
               <div className="space-y-1">
@@ -1577,16 +1642,16 @@ export default function ProcurementPage() {
             <div className="flex justify-between items-center border-b border-border-custom pb-2">
               <div>
                 <h3 className="text-xs font-extrabold text-foreground">Create Purchase Order (PO)</h3>
-                <p className="text-[10px] text-muted mt-0.5">Procurement order with line-item tax and vendor promised delivery date</p>
+                <p className="text-[10px] text-muted mt-0.5">{poIndent ? `For indent ${poIndent.indentNumber}. Quantities cannot go above what was approved.` : "Procurement order with line-item tax and vendor promised delivery date"}</p>
               </div>
-              <button onClick={() => setShowPOModal(false)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>
+              <button onClick={closePOModal} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>
             </div>
 
             <div className="space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 <div className="space-y-1">
-                  <label className="text-muted font-bold">PO Number*</label>
-                  <input type="text" value={newPONum} onChange={(e) => setNewPONum(e.target.value)} required className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground" placeholder="PO-2026-001" />
+                  <label className="text-muted font-bold">PO Number</label>
+                  <input type="text" value={newPONum} onChange={(e) => setNewPONum(e.target.value)} required className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground" placeholder="Leave blank for the next number" />
                 </div>
                 <div className="space-y-1">
                   <label className="text-muted font-bold">Expected Delivery Date</label>
@@ -1603,7 +1668,7 @@ export default function ProcurementPage() {
                   ))}
                 </select>
                 {vendorOptions.length === 0 && (
-                  <FieldHint text="No vendors yet. Add one in Subcontractors." href={`/c/${companyId}/d/subcon`} linkLabel="Go to Subcontractors" />
+                  <FieldHint text="No suppliers yet. Add one in the Party Library." href={`/c/${companyId}/d/library`} linkLabel="Go to Library" />
                 )}
               </div>
 
@@ -1647,13 +1712,13 @@ export default function ProcurementPage() {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                       <div className="space-y-1">
                         <label className="text-muted text-[9px]">Quantity ({item.unit || "unit"})</label>
-                        <input type="number" value={item.qty}
+                        <input type="number" value={item.qty || ""} min="0"
                           onChange={e => { const next = [...poFormItems]; next[idx].qty = parseFloat(e.target.value) || 0; setPoFormItems(next); }}
                           className="w-full bg-input border border-border-custom rounded p-1 text-foreground text-[11px]" />
                       </div>
                       <div className="space-y-1">
                         <label className="text-muted text-[9px]">Rate (₹)</label>
-                        <input type="number" value={item.rate}
+                        <input type="number" value={item.rate || ""} min="0"
                           onChange={e => { const next = [...poFormItems]; next[idx].rate = parseFloat(e.target.value) || 0; setPoFormItems(next); }}
                           className="w-full bg-input border border-border-custom rounded p-1 text-foreground text-[11px]" />
                       </div>
@@ -1723,7 +1788,7 @@ export default function ProcurementPage() {
             </div>
 
             <div className="flex gap-2 justify-end border-t border-border-custom pt-4">
-              <button onClick={() => setShowPOModal(false)} className="px-4 py-2 bg-elevated text-muted hover:text-foreground rounded-md">Cancel</button>
+              <button onClick={closePOModal} className="px-4 py-2 bg-elevated text-muted hover:text-foreground rounded-md">Cancel</button>
               <button onClick={handleCreatePO} className="px-5 py-2.5 bg-primary text-white font-bold rounded-md">Save PO Draft</button>
             </div>
           </div>

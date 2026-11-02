@@ -57,7 +57,7 @@ def test_pin_R2_037_wastage_suppressed_without_consumption():
 
 def test_pin_R2_067_labour_and_equipment_actuals():
     src = _read("app/routers/budget.py")
-    assert "PayrollLineItem.net_payable" in src, "R2-067 labour actual regressed"
+    assert "PayrollLineItem.gross_salary" in src, "R2-067 labour actual regressed"
     assert 'b.invoice_type == "equipment"' in src, "R2-067 equipment actual regressed"
     # R2-233: only approved bills book as actual spend.
     assert 'Bill.approval_flag == "approved",' in src, "R2-067 approved-only actuals gate regressed"
@@ -1081,7 +1081,7 @@ def test_pin_R2_433_po_vendor_name():
 
 def test_pin_R2_559_doc_number_uniques():
     models = _read("app/models.py")
-    for uq in ("uq_bills_company_id_invoice_number", "uq_purchase_orders_company_id_po_number",
+    for uq in ("uq_bills_supplier_invoice_number", "uq_bills_own_invoice_number", "uq_purchase_orders_company_id_po_number",
                "uq_goods_receipt_notes_company_id_grn_number", "uq_material_indents_company_id_indent_number",
                "uq_work_orders_company_id_wo_number", "uq_library_cost_codes_company_id_code"):
         assert uq in models

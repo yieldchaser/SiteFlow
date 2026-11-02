@@ -140,3 +140,17 @@ def test_attendance_salary_report_counts_a_half_day_as_half(client, db, make_ten
     row = [x for x in r.json()["rows"] if x["Party Name"] == emp.name][0]
     # 25 present plus one half day; the paid leave is not a present day.
     assert row["Total Present Days"] == 25.5, row
+
+
+def test_overtime_uses_the_rate_set_on_payroll_details(client, db, make_tenant, auth_headers):
+    comp, project, emp, hdr = _setup(db, make_tenant, auth_headers, 8)
+    _mark_month(client, hdr, project, emp, {})
+    log = db.query(models.AttendanceLog).filter(models.AttendanceLog.employee_id == emp.id).first()
+    log.overtime_hours = 4
+    db.commit()
+    r = client.put(f"/apis/v3/hr/payroll-profiles/{emp.id}", headers=hdr, json={"overtime_rate": 200})
+    assert r.status_code == 200, r.text
+
+    slip = _run(client, hdr, comp, project).json()["payslips"][0]
+    assert slip["overtime_amount"] == 800.0, slip
+    assert slip["gross_salary"] == 27800.0, slip

@@ -370,7 +370,9 @@ def _build_doc_response(db: Session, d: BOQDocument) -> BOQDocumentResponse:
         .filter(Bill.project_id == d.project_id, Bill.boq_document_id == d.id, Bill.invoice_type.in_(BILLING_TYPES), Bill.status != "Cancelled")
         .all()
     )
-    billed_value = sum(float(b.total_payable) for b in bills)
+    # Work value billed (before GST and deductions), so it compares with the
+    # BOQ value, which is also before GST. total_payable read 18% high.
+    billed_value = sum(float(b.subtotal or 0) for b in bills)
 
     # Physical progress = value-weighted average of linked-task completion.
     item_ids = [i.id for i in items]

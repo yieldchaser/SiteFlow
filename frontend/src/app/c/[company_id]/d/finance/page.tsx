@@ -28,7 +28,7 @@ interface Transaction {
   ref: string;
   ref_invoice?: string;
   ledger: string;
-  status: "Pending" | "Approved" | "Rejected";
+  status: "Pending" | "Approved" | "Rejected" | "Unpaid" | "Partially Paid" | "Paid" | "Cancelled";
   cost_code?: string;
   photo_url?: string;
   settled_amount: number;
@@ -36,6 +36,10 @@ interface Transaction {
   project_id?: string;
   project_name?: string;
   due_date?: string;
+  // Present on rows from /finance/transactions.
+  kind?: "bill" | "payment";
+  approval?: string;
+  paid_amount?: number;
 }
 
 interface LedgerEntry {
@@ -757,18 +761,14 @@ export default function FinancePage() {
         headers: { "Content-Type": "application/json", ...(authHeaders() || {}) }
       });
       if (res.ok) {
-        const data = await res.json();
-        setTransactions(prev => prev.map(t => {
-          if (t.id === id) {
-            return { ...t, status: "Approved" as const, settled_amount: t.amount, balance_due: 0 };
-          }
-          return t;
-        }));
+        // Approving does not pay anything: the row stays owed until a payment
+        // settles it. Reload so status and balance come from the server.
         if (selectedVoucher?.id === id) {
-          setSelectedVoucher({ ...selectedVoucher, status: "Approved" as const, settled_amount: selectedVoucher.amount, balance_due: 0 });
+          setSelectedVoucher({ ...selectedVoucher, approval: "approved", status: selectedVoucher.kind ? selectedVoucher.status : ("Approved" as const) });
         }
+        fetchData();
       } else {
-        console.error("Approval failed:", res.status);
+        alert((await readErrorDetail(res)) || "Could not approve.");
       }
     } catch (err) {
       console.error("Approval error:", err);
@@ -1214,12 +1214,17 @@ export default function FinancePage() {
   // Header-chip counts (lifted from the inline IIFE so the header chips and the
   // toolbar buttons can share the same source of truth). Fix for R2-101.
   const txnsForHeader = txnSummary.transactions || [];
+  // Pending = not yet approved. A bill's status is about payment (Unpaid,
+  // Paid), so an approved but unpaid bill is not pending.
+  const isAwaitingApproval = (t: any) =>
+    (t.status || "").toLowerCase() !== "cancelled" &&
+    !["approved", "auto_approved"].includes(String(t.approval ?? t.status ?? "").toLowerCase());
   const unbilledCount = useMemo(
-    () => txnsForHeader.filter((t: any) => /material/i.test(t.type || "") && t.status && t.status !== "Paid").length,
+    () => txnsForHeader.filter((t: any) => t.type === "Material Purchase" && t.status && t.status !== "Paid" && t.status !== "Cancelled").length,
     [txnsForHeader]
   );
   const pendingCount = useMemo(
-    () => txnsForHeader.filter((t: any) => t.status && t.status !== "Paid" && t.status !== "Approved").length,
+    () => txnsForHeader.filter(isAwaitingApproval).length,
     [txnsForHeader]
   );
 
@@ -1383,7 +1388,7 @@ export default function FinancePage() {
             {/* Unbilled Materials Badge */}
             <div className="hidden sm:flex items-center gap-1.5 cursor-pointer hover:bg-elevated/40 px-2.5 py-1.5 rounded-lg border border-border-custom/50">
               <Icon name="trolley" className="w-3.5 h-3.5" />
-              <span className="text-[10px] text-muted uppercase font-bold tracking-wider">Unbilled Materials</span>
+              <span className="text-[10px] text-muted uppercase font-bold tracking-wider">Unpaid Material Bills</span>
               <span className="bg-primary/20 text-primary border border-primary/30 text-[9px] font-bold px-1.5 py-0.5 rounded-full">{unbilledCount}</span>
             </div>
 
@@ -1452,8 +1457,8 @@ export default function FinancePage() {
               const q = searchQuery.toLowerCase();
               const matchQ = !q || (t.party || "").toLowerCase().includes(q) || (t.details || "").toLowerCase().includes(q) || (t.ref || "").toLowerCase().includes(q);
               const matchD = !txnDateFilter || (t.date || "").startsWith(txnDateFilter);
-              const matchM = !showUnbilledOnly || (/material/i.test(t.type || "") && t.status && t.status !== "Paid");
-              const matchP = !showPendingOnly || (t.status && t.status !== "Paid" && t.status !== "Approved");
+              const matchM = !showUnbilledOnly || (t.type === "Material Purchase" && t.status && t.status !== "Paid" && t.status !== "Cancelled");
+              const matchP = !showPendingOnly || isAwaitingApproval(t);
               return matchQ && matchD && matchM && matchP;
             });
             const statusClass = (s: string) => {
@@ -1500,7 +1505,7 @@ export default function FinancePage() {
               <div className="flex flex-wrap items-center gap-2">
                 <input type="date" value={txnDateFilter} onChange={(e) => setTxnDateFilter(e.target.value)} className="py-1 px-2 border border-border-custom bg-card hover:bg-elevated rounded text-[11px] text-foreground focus:outline-none" />
                 <button onClick={() => setShowUnbilledOnly(!showUnbilledOnly)} className={`py-1 px-3 border border-border-custom hover:bg-elevated rounded text-[11px] font-medium transition-all flex items-center gap-1 cursor-pointer ${showUnbilledOnly ? "text-primary border-primary/60" : "text-foreground"}`}>
-                  <Icon name="trolley" className="w-3.5 h-3.5" /> Unbilled Materials <span className="bg-primary/20 text-primary text-[9px] font-bold px-1.5 py-0.5 rounded-full">New {unbilledCount}</span>
+                  <Icon name="trolley" className="w-3.5 h-3.5" /> Unpaid Material Bills <span className="bg-primary/20 text-primary text-[9px] font-bold px-1.5 py-0.5 rounded-full">{unbilledCount}</span>
                 </button>
                 <button onClick={() => setShowPendingOnly(!showPendingOnly)} className={`py-1 px-3 border border-border-custom hover:bg-elevated rounded text-[11px] font-medium transition-all flex items-center gap-1 cursor-pointer ${showPendingOnly ? "text-warning border-warning/60" : "text-foreground"}`}>
                   <Icon name="schedule" className="w-3.5 h-3.5" /> Pending Entries <span className="bg-warning/10 text-warning text-[9px] font-bold px-1.5 py-0.5 rounded-full">{pendingCount}</span>
@@ -2690,15 +2695,22 @@ export default function FinancePage() {
       {selectedVoucher && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-end">
           <div className="bg-background border-l border-border-custom w-full max-w-md h-full shadow-2xl flex flex-col overflow-hidden text-xs">
-            {selectedVoucher.status === "Pending" ? (
-              <div className="bg-warning px-6 py-2.5 text-center font-bold text-black uppercase tracking-wider text-[10px] inline-flex items-center justify-center gap-1.5 w-full">
-                <Icon name="warning" className="w-3.5 h-3.5" /> Pending Voucher Approval (Accrued Expense)
-              </div>
-            ) : (
-              <div className="bg-success px-6 py-2.5 text-center font-bold text-black uppercase tracking-wider text-[10px] inline-flex items-center justify-center gap-1.5 w-full">
-                <Icon name="check" className="w-3.5 h-3.5" /> Approved & Settled Ledger Voucher
-              </div>
-            )}
+            {(() => {
+              const v = selectedVoucher;
+              const cancelled = (v.status || "").toLowerCase() === "cancelled";
+              const approved = ["approved", "auto_approved"].includes((v.approval || "").toLowerCase()) || v.status === "Approved";
+              const paid = v.kind === "bill" && v.status === "Paid";
+              const text = cancelled ? "Cancelled"
+                : paid ? "Approved and paid"
+                : approved ? (v.kind === "bill" ? "Approved, waiting for payment" : "Approved")
+                : "Waiting for approval";
+              const tone = cancelled ? "bg-danger" : paid || (approved && v.kind !== "bill") ? "bg-success" : "bg-warning";
+              return (
+                <div className={`${tone} px-6 py-2.5 text-center font-bold text-black uppercase tracking-wider text-[10px] inline-flex items-center justify-center gap-1.5 w-full`}>
+                  <Icon name={approved && !cancelled ? "check" : "warning"} className="w-3.5 h-3.5" /> {text}
+                </div>
+              );
+            })()}
 
             <div className="px-6 py-4 border-b border-border-custom flex items-center justify-between bg-background">
               <div>
@@ -2726,38 +2738,25 @@ export default function FinancePage() {
                 )}
               </div>
 
-              {/* Approval steps */}
-              <div className="space-y-3 border-b border-border-custom pb-4">
-                <span className="text-muted uppercase text-[9px] tracking-wider block">Sequential Approvals</span>
-                <div className="space-y-3 mt-2">
-                  <div className="flex items-center gap-3">
-                    <div className="h-5 w-5 rounded-full bg-success/10 border border-success/20 text-success flex items-center justify-center font-bold text-[10px]"><Icon name="check" className="w-3 h-3" /></div>
-                    <div>
-                      <div className="text-[11px] font-bold text-foreground">1. Site Supervisor</div>
-                      <div className="text-[9px] text-muted">Verified upon entry & photo upload</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className={`h-5 w-5 rounded-full flex items-center justify-center font-bold text-[10px] ${selectedVoucher.status === "Approved" ? "bg-success/10 border-success/20 text-success" : "bg-warning/10 border-warning/20 text-warning"}`}>
-                      {selectedVoucher.status === "Approved" ? <Icon name="check" className="w-3 h-3" /> : <Icon name="schedule" className="w-3 h-3" />}
-                    </div>
-                    <div>
-                      <div className="text-[11px] font-bold text-foreground">2. Project Manager</div>
-                      <div className="text-[9px] text-muted">Required for values &gt; ₹50k</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              {selectedVoucher.kind === "bill" && !["approved", "auto_approved"].includes((selectedVoucher.approval || "").toLowerCase()) && (selectedVoucher.status || "").toLowerCase() !== "cancelled" && (
+                <p className="text-[11px] text-muted border-b border-border-custom pb-4">A payment you record is set against this bill only after the bill is approved.</p>
+              )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-input p-4 rounded-md border border-border-custom text-xs font-sans">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-input p-4 rounded-md border border-border-custom text-xs font-sans">
                 <div>
-                  <span className="text-muted block uppercase text-[9px] tracking-wider font-sans">Settled Amount</span>
-                  <strong className="text-success mt-1 block text-sm">₹{(selectedVoucher.settled_amount ?? 0).toLocaleString("en-IN")}</strong>
+                  <span className="text-muted block uppercase text-[9px] tracking-wider font-sans">Amount</span>
+                  <strong className="text-foreground mt-1 block text-sm">₹{(selectedVoucher.amount ?? 0).toLocaleString("en-IN")}</strong>
                 </div>
                 <div>
-                  <span className="text-muted block uppercase text-[9px] tracking-wider font-sans">Balance Due</span>
-                  <strong className="text-danger mt-1 block text-sm">₹{(selectedVoucher.balance_due ?? 0).toLocaleString("en-IN")}</strong>
+                  <span className="text-muted block uppercase text-[9px] tracking-wider font-sans">{selectedVoucher.kind === "payment" ? "Not yet set against bills" : "Paid"}</span>
+                  <strong className="text-success mt-1 block text-sm">₹{(selectedVoucher.kind === "payment" ? (selectedVoucher.balance_due ?? 0) : (selectedVoucher.paid_amount ?? selectedVoucher.settled_amount ?? 0)).toLocaleString("en-IN")}</strong>
                 </div>
+                {selectedVoucher.kind !== "payment" && (
+                  <div>
+                    <span className="text-muted block uppercase text-[9px] tracking-wider font-sans">Balance Due</span>
+                    <strong className="text-danger mt-1 block text-sm">₹{(selectedVoucher.balance_due ?? 0).toLocaleString("en-IN")}</strong>
+                  </div>
+                )}
               </div>
 
               {/* Photo preview */}
@@ -2772,18 +2771,22 @@ export default function FinancePage() {
             </div>
 
             <div className="px-6 py-4 border-t border-border-custom bg-background flex items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={() => handleDeletePayment(selectedVoucher.id)}
-                className="px-3.5 py-2 bg-danger/10 hover:bg-danger/20 border border-danger/20 text-danger rounded-md text-xs font-bold cursor-pointer inline-flex items-center gap-1.5"
-              >
-                <Icon name="trash" className="w-3.5 h-3.5" /> Delete Payment
-              </button>
+              {selectedVoucher.kind !== "bill" ? (
+                <button
+                  type="button"
+                  onClick={() => handleDeletePayment(selectedVoucher.id)}
+                  className="px-3.5 py-2 bg-danger/10 hover:bg-danger/20 border border-danger/20 text-danger rounded-md text-xs font-bold cursor-pointer inline-flex items-center gap-1.5"
+                >
+                  <Icon name="trash" className="w-3.5 h-3.5" /> Delete Payment
+                </button>
+              ) : <span />}
               <div className="flex items-center gap-2">
                 <button onClick={() => setSelectedVoucher(null)} className="px-4 py-2 text-xs font-bold text-muted hover:text-foreground cursor-pointer">Close</button>
-                {selectedVoucher.status === "Pending" && (
+                {(selectedVoucher.kind
+                  ? !["approved", "auto_approved"].includes((selectedVoucher.approval || "").toLowerCase()) && (selectedVoucher.status || "").toLowerCase() !== "cancelled"
+                  : selectedVoucher.status === "Pending") && (
                   <button onClick={() => handleApproveVoucher(selectedVoucher.id)} className="px-5 py-2.5 bg-success text-black font-extrabold rounded-md hover:opacity-90 inline-flex items-center gap-1.5 cursor-pointer">
-                    Approve Voucher <Icon name="thumbs_up" className="w-3.5 h-3.5" />
+                    {selectedVoucher.kind === "bill" ? "Approve Bill" : "Approve"} <Icon name="thumbs_up" className="w-3.5 h-3.5" />
                   </button>
                 )}
               </div>

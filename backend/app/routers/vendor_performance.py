@@ -178,6 +178,13 @@ def check_duplicate_po(
     db: Session = Depends(get_db),
     _: None = Depends(verify_company_access)
 ):
+    # Blank means "give me the next number", which create_po assigns, so it
+    # cannot clash. Matching it against old unnumbered POs blocked every save.
+    if not po_number.strip():
+        return DuplicatePOCheckResponse(
+            is_duplicate=False, po_number=po_number, existing_po_ids=[],
+            message="The next PO number will be assigned.",
+        )
     existing = db.query(PurchaseOrder).filter(
         PurchaseOrder.company_id == company_id,
         func.lower(func.trim(PurchaseOrder.po_number)) == func.lower(func.trim(po_number))

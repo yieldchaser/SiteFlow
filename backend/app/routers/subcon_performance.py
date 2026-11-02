@@ -225,7 +225,7 @@ def get_comparative(project_id: UUID, db: Session = Depends(get_db), _: None = D
 #                     whose end_date falls in the period AND status == "completed".
 #   tasks_delayed   : same-linked tasks in the period that are not completed and are past
 #                     their end_date (or explicitly status == "delayed").
-#   total_billed    : sum(Bill.total_payable) for invoice_type == "subcon" billed to this
+#   total_billed    : sum(Bill.subtotal) (work value) for invoice_type == "subcon" billed to this
 #                     subcontractor (party_company_user_id) within the period.
 #   disputes_count  : count(WorkOrderAmendment) raised on this subcontractor's WorkOrders
 #                     within the period (amendments are the only dispute-like signal present).
@@ -233,7 +233,7 @@ def get_comparative(project_id: UUID, db: Session = Depends(get_db), _: None = D
 #                     (settled = status in Paid/Partially Paid, or not yet past due_date).
 #                     0.0 when there are no subcon bills - absence of evidence is not a perfect score.
 #   billing_accuracy_pct : measured-vs-quoted where both signals exist (sum of
-#                     WorkOrder.estimated_work_amount vs Bill.total_payable), penalised by absolute
+#                     WorkOrder.estimated_work_amount vs Bill.subtotal), penalised by absolute
 #                     deviation from the quote; 0.0 when either signal is missing - never a constant.
 #   quality_score   : derived from real disputes proxy: max(0, 100 - 5 * disputes_count).
 #                     An empty period (no completed tasks AND nothing billed) scores 0 across every
@@ -269,7 +269,7 @@ def _compute_subcon_metrics(db: Session, project_id: UUID, subcontractor_id: UUI
         Bill.invoice_date >= period_start,
         Bill.invoice_date <= period_end,
     ).all()
-    total_billed = float(sum(float(b.total_payable) for b in bills))
+    total_billed = float(sum(float(b.subtotal) for b in bills))
 
     settled = 0
     for b in bills:

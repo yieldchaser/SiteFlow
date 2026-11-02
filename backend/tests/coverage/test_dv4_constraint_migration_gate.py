@@ -133,7 +133,9 @@ def test_migration_gate_covers_at_least_expected_constraints():
         "uq_purchase_orders_company_id_po_number",
         "uq_goods_receipt_notes_company_id_grn_number",
         "uq_work_orders_company_id_wo_number",
-        "uq_bills_company_id_invoice_number",
+        # 20261102: replaced company-wide uq_bills_company_id_invoice_number.
+        "uq_bills_supplier_invoice_number",
+        "uq_bills_own_invoice_number",
         "uq_library_cost_codes_company_id_code",
         "uq_company_team_company_id_user_id",
     ]

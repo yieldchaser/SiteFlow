@@ -86,7 +86,8 @@ class POCreateRequest(BaseModel):
     # picker was fed by /billing/subcontractors and offered subcontractors only.
     # Supplying the party id here resolves (or creates) the company_team link.
     vendor_party_id: Optional[UUID] = None
-    po_number: str
+    # Blank gets the next PO-#### number, as indents and GRNs do.
+    po_number: str = ""
     po_date: datetime
     expected_delivery_date: Optional[datetime] = None
     items: List[POCreateItemSchema] = Field(..., min_length=1)
@@ -379,6 +380,19 @@ def _company_team_id_for_party(db: Session, company_id: UUID, party_id: UUID) ->
     return team.id
 
 
+def _generate_po_number(db: Session, company_id: UUID) -> str:
+    """Running PO-#### sequence. A blank number was stored as "", so the PO
+    could not be quoted to the supplier or told apart from the next one."""
+    count = db.query(PurchaseOrder).filter(PurchaseOrder.company_id == company_id).count()
+    candidate = f"PO-{count + 1:04d}"
+    while db.query(PurchaseOrder).filter(
+        PurchaseOrder.company_id == company_id, PurchaseOrder.po_number == candidate
+    ).first():
+        count += 1
+        candidate = f"PO-{count + 1:04d}"
+    return candidate
+
+
 def _generate_indent_number(db: Session, company_id: UUID, project_id: UUID) -> str:
     """Running IND-#### sequence, mirroring _generate_grn_number.
 
@@ -398,7 +412,7 @@ def _generate_indent_number(db: Session, company_id: UUID, project_id: UUID) -> 
 
 @router.post("/indents", response_model=IndentResponse, status_code=201)
 def create_indent(req: IndentCreateRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    get_company_membership(db, current_user, req.company_id)
+    membership = get_company_membership(db, current_user, req.company_id)
     verify_project_in_company(db, req.project_id, req.company_id)
     require_permission(db, current_user, req.company_id, "procurement:edit")
     indent_number = (req.indent_number or "").strip() or _generate_indent_number(
@@ -416,7 +430,9 @@ def create_indent(req: IndentCreateRequest, db: Session = Depends(get_db), curre
     indent = MaterialIndent(
         company_id=req.company_id,
         project_id=req.project_id,
-        requested_by=req.requested_by,
+        # Nobody picked: the person raising it is the requester, not a blank
+        # the screen filled in as "Site Engineer" or "Auto-synced".
+        requested_by=req.requested_by or membership.id,
         indent_number=indent_number,
         status="pending",
         created_at=now,
@@ -679,6 +695,7 @@ def create_po(req: POCreateRequest, db: Session = Depends(get_db), current_user:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Material Purchase Order Restriction: purchase orders may only be raised from an approved material indent",
         )
+    req.po_number = (req.po_number or "").strip() or _generate_po_number(db, req.company_id)
     # Check if PO number already exists
     existing = db.query(PurchaseOrder).filter(
         PurchaseOrder.company_id == req.company_id,
@@ -843,6 +860,26 @@ def approve_po(po_id: UUID, db: Session = Depends(get_db), current_user: User = 
     return _po_response(db, po)
 
 
+def _release_indent(db: Session, po: PurchaseOrder) -> None:
+    """Raising a PO marks its indent ordered. When that PO is cancelled or
+    rejected the approved indent must be orderable again, or the material on
+    it can never be bought."""
+    if po.indent_id is None:
+        return
+    indent = db.query(MaterialIndent).filter(MaterialIndent.id == po.indent_id).first()
+    if indent is None or indent.status != "ordered":
+        return
+    other_live = db.query(PurchaseOrder).filter(
+        PurchaseOrder.indent_id == po.indent_id,
+        PurchaseOrder.id != po.id,
+        PurchaseOrder.status != "cancelled",
+        PurchaseOrder.approval_flag != "rejected",
+    ).count()
+    if not other_live:
+        indent.status = "approved"
+        db.add(indent)
+
+
 @router.post("/pos/{po_id}/reject", response_model=POResponse)
 def reject_po(po_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id).first()
@@ -868,6 +905,7 @@ def reject_po(po_id: UUID, db: Session = Depends(get_db), current_user: User = D
         )
 
     po.approval_flag = "rejected"
+    _release_indent(db, po)
     db.commit()
     db.refresh(po)
     return _po_response(db, po)
@@ -894,6 +932,7 @@ def cancel_po(po_id: UUID, db: Session = Depends(get_db), current_user: User = D
     po.cancelled_at = datetime.now(timezone.utc)
     po.cancelled_by = current_user.id
     db.add(po)
+    _release_indent(db, po)
     db.commit()
     db.refresh(po)
     return _po_response(db, po)
@@ -999,7 +1038,7 @@ def get_grns(project_id: UUID, db: Session = Depends(get_db), _: None = Depends(
 
 @router.post("/grns", response_model=GRNResponse, status_code=201)
 def create_grn(req: GRNCreateRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    get_company_membership(db, current_user, req.company_id)
+    membership = get_company_membership(db, current_user, req.company_id)
     require_permission(db, current_user, req.company_id, "procurement:edit")
     # Workflow Controls: Entry Controls (creation date window) — a GRN dated
     # outside the window must be rejected like any other back-dated entry.
@@ -1090,7 +1129,8 @@ def create_grn(req: GRNCreateRequest, db: Session = Depends(get_db), current_use
         po_id=req.po_id,
         grn_number=grn_number,
         received_date=req.received_date,
-        received_by=req.received_by
+        # Nobody picked: the person entering the receipt received it.
+        received_by=req.received_by or membership.id
     )
     db.add(grn)
     db.flush()

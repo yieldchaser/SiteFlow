@@ -62,8 +62,9 @@ def test_recompute_creates_real_scorecard(client, db, make_tenant, auth_headers)
     cards = r.json()["scorecards"]
     assert len(cards) >= 1
     card = next(c for c in cards if c["subcontractor_id"] == str(sub.id))
-    # Real derivation: total_billed must equal the subcon bill's total_payable.
-    assert float(card["total_billed"]) == 1180.0
+    # Real derivation: total_billed is the work value billed (subtotal, before
+    # GST and deductions), so it compares with the work order.
+    assert float(card["total_billed"]) == 1000.0
     assert isinstance(card["tasks_completed"], int)
     assert isinstance(card["disputes_count"], int)
     assert 0 <= float(card["on_time_pct"]) <= 100

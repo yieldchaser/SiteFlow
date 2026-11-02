@@ -1237,7 +1237,10 @@ export default function SubconPage() {
                                 const next = [...woForm.items];
                                 next[idx].boq_item_id = bId;
                                 if (selectedBOQ) {
-                                  next[idx].rate = Number(selectedBOQ.rate) || 0;
+                                  // The BOQ rate is what the client pays. The
+                                  // subcontractor's rate is entered by hand, or a
+                                  // hurried save prices them at the client rate.
+                                  next[idx].rate = 0;
                                   if (!next[idx].quantity || next[idx].quantity === 1) {
                                     next[idx].quantity = Number(selectedBOQ.quantity) || 1;
                                   }
@@ -1249,7 +1252,7 @@ export default function SubconPage() {
                               <option value="">Select BOQ item…</option>
                               {boqItems.map(b => (
                                 <option key={b.id} value={b.id}>
-                                  {b.section_name ? `${b.section_name} - ` : ""}{b.item_name} ({b.unit}) {b.rate ? `• ₹${b.rate}` : ""}
+                                  {b.section_name ? `${b.section_name} - ` : ""}{b.item_name} ({b.unit}) {b.rate ? `• client rate ₹${b.rate}` : ""}
                                 </option>
                               ))}
                             </select>
@@ -1304,7 +1307,8 @@ export default function SubconPage() {
                               type="number"
                               min="0"
                               step="any"
-                              value={item.rate}
+                              value={item.rate || ""}
+                              placeholder="Subcontract rate"
                               onChange={e => {
                                 const next = [...woForm.items];
                                 next[idx].rate = parseFloat(e.target.value) || 0;

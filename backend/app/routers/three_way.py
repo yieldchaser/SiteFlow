@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from decimal import Decimal
 from app.database import get_db
 from app.auth import get_current_user, verify_company_access, get_company_membership, require_permission
-from app.models import ThreeWayMatch, PurchaseOrder, PurchaseOrderItem, GoodsReceiptNote, GRNItem, User, Bill
+from app.models import ThreeWayMatch, PurchaseOrder, PurchaseOrderItem, GoodsReceiptNote, GRNItem, User, Bill, MaterialTransaction
 from app.routers.delete_logs import log_deletion
 
 router = APIRouter(prefix="/three-way", tags=["3-Way Matching"], dependencies=[Depends(get_current_user)])
@@ -112,6 +112,20 @@ def create_match(payload: ThreeWayMatchCreate, db: Session = Depends(get_db), cu
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invoice does not belong to the supplied company/project",
         )
+    # A match is the record that this bill pays for these goods on this
+    # order. A receipt against some other PO, anything cancelled, or another
+    # supplier's bill would put a wrong payable on the books, and the one
+    # match allowed per PO/GRN pair would then block the right bill.
+    if grn.po_id != po.id:
+        raise HTTPException(status_code=422, detail=f"{grn.grn_number} was received against a different purchase order")
+    if (po.status or "").lower() == "cancelled":
+        raise HTTPException(status_code=422, detail=f"{po.po_number} is cancelled")
+    if _grn_is_cancelled(db, grn.id):
+        raise HTTPException(status_code=422, detail=f"{grn.grn_number} is cancelled")
+    if (bill.status or "").lower() == "cancelled":
+        raise HTTPException(status_code=422, detail=f"Bill {bill.invoice_number} is cancelled")
+    if po.vendor_id is not None and bill.party_company_user_id != po.vendor_id:
+        raise HTTPException(status_code=422, detail=f"Bill {bill.invoice_number} is from a different supplier than {po.po_number}")
     invoiced_amount = float(bill.total_payable)
 
     # R2-594: a PO/GRN pair carries exactly one reconciliation record, so
@@ -241,9 +255,18 @@ def list_matches(company_id: uuid.UUID, project_id: Optional[uuid.UUID] = None, 
     return result
 
 
+def _grn_is_cancelled(db: Session, grn_id) -> bool:
+    # cancel_grn records the reversal as a grn_cancellation stock movement.
+    return db.query(MaterialTransaction).filter(
+        MaterialTransaction.source_ref_id == grn_id,
+        MaterialTransaction.type == "grn_cancellation",
+    ).first() is not None
+
+
 @router.get("/pos/{company_id}", response_model=List[PORef])
 def list_pos(company_id: uuid.UUID, project_id: Optional[uuid.UUID] = None, db: Session = Depends(get_db), _: None = Depends(verify_company_access)):
-    query = db.query(PurchaseOrder).filter(PurchaseOrder.company_id == company_id)
+    # Only what can still be matched: create_match refuses cancelled POs.
+    query = db.query(PurchaseOrder).filter(PurchaseOrder.company_id == company_id, PurchaseOrder.status != "cancelled")
     if project_id:
         query = query.filter(PurchaseOrder.project_id == project_id)
     return query.order_by(PurchaseOrder.created_at.desc()).limit(100).all()
@@ -251,7 +274,9 @@ def list_pos(company_id: uuid.UUID, project_id: Optional[uuid.UUID] = None, db: 
 
 @router.get("/grns/{company_id}", response_model=List[GRNRef])
 def list_grns(company_id: uuid.UUID, project_id: Optional[uuid.UUID] = None, db: Session = Depends(get_db), _: None = Depends(verify_company_access)):
-    query = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.company_id == company_id)
+    cancelled = db.query(MaterialTransaction.source_ref_id).filter(MaterialTransaction.type == "grn_cancellation")
+    query = db.query(GoodsReceiptNote).filter(
+        GoodsReceiptNote.company_id == company_id, GoodsReceiptNote.id.notin_(cancelled))
     if project_id:
         query = query.filter(GoodsReceiptNote.project_id == project_id)
     return query.order_by(GoodsReceiptNote.created_at.desc()).limit(100).all()

@@ -479,6 +479,9 @@ function SalaryBreakupModal({
         <div className="mt-3 border-t border-border-custom pt-3 text-sm font-semibold text-foreground">
           Net Amount (Per Month): {fmtINR(net, currencyDecimalPlaces)}
         </div>
+        <p className="mt-1 text-xs text-muted">
+          Saving sets this person&apos;s basic, HRA and other allowances. Payroll works out PF, ESI and TDS itself; deductions listed here are for your reference only.
+        </p>
       </div>
 
       <div className="mt-4 flex justify-end gap-2">
@@ -774,7 +777,15 @@ function PayrollDetailsDrawer({
   onBreakupSave: (b: Breakup) => void;
 }) {
   const [designationName, setDesignationName] = useState<string>(emp.designation || "");
-  const [salaryAmount, setSalaryAmount] = useState<number>(profile?.salary_amount ?? emp.basic_salary ?? 0);
+  // Basic, HRA, allowances and TDS live on the employee: they are what
+  // payroll pays. The old single "salary amount" went to a profile payroll
+  // never read, so a raise entered here was silently not paid.
+  const [basic, setBasic] = useState<number>(emp.basic_salary ?? 0);
+  const [hra, setHra] = useState<number>(emp.hra ?? 0);
+  const [allow, setAllow] = useState<number>(emp.other_allowances ?? 0);
+  const [tds, setTds] = useState<number>(emp.tds_monthly ?? 0);
+  const [uan, setUan] = useState<string>(emp.uan ?? "");
+  const salaryAmount = basic + hra + allow;
   const [shiftStart, setShiftStart] = useState<string>(profile?.shift_start ?? "");
   const [shiftEnd, setShiftEnd] = useState<string>(profile?.shift_end ?? "");
   const [shiftHours, setShiftHours] = useState<number>(profile?.shift_hours ?? 8);
@@ -787,7 +798,11 @@ function PayrollDetailsDrawer({
   const { currencyDecimalPlaces } = useCompanySettings();
 
   useEffect(() => {
-    setSalaryAmount(profile?.salary_amount ?? emp.basic_salary ?? 0);
+    setBasic(emp.basic_salary ?? 0);
+    setHra(emp.hra ?? 0);
+    setAllow(emp.other_allowances ?? 0);
+    setTds(emp.tds_monthly ?? 0);
+    setUan(emp.uan ?? "");
     setShiftStart(profile?.shift_start ?? "");
     setShiftEnd(profile?.shift_end ?? "");
     setShiftHours(profile?.shift_hours ?? 8);
@@ -799,9 +814,20 @@ function PayrollDetailsDrawer({
   const currentBreakup: Breakup | null = profile?.salary_breakup ? JSON.parse(profile.salary_breakup) : null;
 
   const save = async () => {
+    if (uan.trim() && !/^\d{12}$/.test(uan.trim())) {
+      alert("UAN must be exactly 12 digits, or left blank.");
+      return;
+    }
     setSaving(true);
     try {
-      await jput(`/hr/employees/${emp.id}`, { designation: designationName || null });
+      await jput(`/hr/employees/${emp.id}`, {
+        designation: designationName || null,
+        basic_salary: basic,
+        hra,
+        other_allowances: allow,
+        tds_monthly: tds,
+        uan: uan.trim() || null,
+      });
       await jput(`/hr/payroll-profiles/${emp.id}`, {
         salary_amount: salaryAmount,
         shift_start: shiftStart,
@@ -820,13 +846,23 @@ function PayrollDetailsDrawer({
 
   return (
     <Drawer title={emp.name} onClose={onClose}>
-      <Field label="Salary Amount">
-        <div className="flex gap-2">
-          <input type="number" className={inputCls} value={salaryAmount} onChange={(e) => setSalaryAmount(parseFloat(e.target.value) || 0)} />
-          <select className={inputCls} value="per month" disabled>
-            <option>per month</option>
-          </select>
-        </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Basic (per month)">
+          <input type="number" min={0} className={inputCls} value={basic} onChange={(e) => setBasic(Math.max(0, parseFloat(e.target.value) || 0))} />
+        </Field>
+        <Field label="HRA">
+          <input type="number" min={0} className={inputCls} value={hra} onChange={(e) => setHra(Math.max(0, parseFloat(e.target.value) || 0))} />
+        </Field>
+        <Field label="Other allowances">
+          <input type="number" min={0} className={inputCls} value={allow} onChange={(e) => setAllow(Math.max(0, parseFloat(e.target.value) || 0))} />
+        </Field>
+        <Field label="TDS per month">
+          <input type="number" min={0} className={inputCls} value={tds} onChange={(e) => setTds(Math.max(0, parseFloat(e.target.value) || 0))} />
+        </Field>
+      </div>
+      <p className="mb-3 text-xs text-muted">Gross {fmtINR(salaryAmount, currencyDecimalPlaces)} a month. A change applies to the next payroll run.</p>
+      <Field label="UAN (12 digits)">
+        <input className={inputCls} inputMode="numeric" maxLength={12} placeholder="Needed for the PF return" value={uan} onChange={(e) => setUan(e.target.value)} />
       </Field>
 
       <button className="mb-3 text-sm font-medium text-primary hover:underline" onClick={() => setBreakupOpen(true)}>
@@ -855,7 +891,7 @@ function PayrollDetailsDrawer({
             </select>
           </div>
         </Field>
-        <Field label="Overtime">
+        <Field label="Overtime ₹ per hour (blank = 1.5x basic)">
           <div className="flex gap-2">
             <input type="number" className={inputCls} value={otRate} onChange={(e) => setOtRate(parseFloat(e.target.value) || 0)} />
             <select className={inputCls} value="per hour" disabled>
@@ -1011,8 +1047,14 @@ function PeopleTab({
     if (!drawerEmp) return;
     (async () => {
       try {
+        // The breakup is what the person is paid, so it sets the pay payroll
+        // reads: basic, any HRA line, and the rest as other allowances.
+        const isHra = (n: string) => /\bhra\b|house rent/i.test(n);
+        const hraAmt = b.allowances.filter((a) => isHra(a.name)).reduce((t, a) => t + (Number(a.amount) || 0), 0);
+        const otherAmt = b.allowances.filter((a) => !isHra(a.name)).reduce((t, a) => t + (Number(a.amount) || 0), 0);
+        await jput(`/hr/employees/${drawerEmp.id}`, { basic_salary: b.basic, hra: hraAmt, other_allowances: otherAmt });
         await jput(`/hr/payroll-profiles/${drawerEmp.id}`, {
-          salary_amount: b.net,
+          salary_amount: b.gross,
           salary_breakup: JSON.stringify(b),
         });
         toast("Salary breakup saved");

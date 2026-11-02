@@ -929,7 +929,7 @@ def _working_days_in_month(payroll_month: str, weekly_off_days, holidays=None) -
     )
 
 
-def _compute_payslip(emp: StaffEmployee, days_present: float, days_in_month: int, overtime_hours: float = 0.0, pf_wage_ceiling: float = 15000.0) -> dict:
+def _compute_payslip(emp: StaffEmployee, days_present: float, days_in_month: int, overtime_hours: float = 0.0, pf_wage_ceiling: float = 15000.0, overtime_rate: float = 0.0) -> dict:
     """
     Compute one employee's payslip.
 
@@ -953,7 +953,12 @@ def _compute_payslip(emp: StaffEmployee, days_present: float, days_in_month: int
     full_gross = float(emp.basic_salary) + float(emp.hra) + float(emp.other_allowances)
     
     # Overtime Calculation
-    ot_rate = (float(emp.basic_salary) / days_in_month / 8.0) * 1.5 if days_in_month > 0 else 0.0
+    # An hourly overtime rate set on the employee's payroll details wins;
+    # without one, overtime is 1.5x the hourly basic.
+    if overtime_rate and float(overtime_rate) > 0:
+        ot_rate = float(overtime_rate)
+    else:
+        ot_rate = (float(emp.basic_salary) / days_in_month / 8.0) * 1.5 if days_in_month > 0 else 0.0
     ot_amount = round(float(overtime_hours) * ot_rate, 2)
 
     gross = round(full_gross * ratio, 2) + ot_amount
@@ -1168,7 +1173,11 @@ def run_payroll(payload: PayrollRunCreate, db: Session = Depends(get_db), curren
             attendance_source = "assumed"
             days_present = float(default_days) if effective_assume else 0.0
 
-        calc = _compute_payslip(emp, days_present, effective_days_in_month, float(total_ot), pf_wage_ceiling=effective_ceiling)
+        profile = db.query(PayrollProfile).filter(PayrollProfile.employee_id == emp.id).first()
+        calc = _compute_payslip(
+            emp, days_present, effective_days_in_month, float(total_ot), pf_wage_ceiling=effective_ceiling,
+            overtime_rate=float(profile.overtime_rate or 0) if profile else 0.0,
+        )
         calc["attendance_source"] = attendance_source
         # Separate string field before Decimal conversion so it stays verbatim.
         _calc_for_line = {k: (v if isinstance(v, int) else Decimal(str(v))) for k, v in calc.items() if k != "attendance_source"}

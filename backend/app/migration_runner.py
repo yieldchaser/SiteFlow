@@ -197,6 +197,7 @@ def _ensure_sqlite_unique_constraints(engine) -> None:
     import sqlalchemy as sa
 
     to_create: List[tuple] = []  # (table, name, columns)
+    partial_where: dict = {}
     for table in Base.metadata.tables.values():
         for cons in table.constraints:
             if isinstance(cons, sa.UniqueConstraint) and cons.name and cons.name.startswith("uq_"):
@@ -208,6 +209,11 @@ def _ensure_sqlite_unique_constraints(engine) -> None:
                 # Deduplicate: if same name already queued from constraints, skip.
                 if idx.name not in {n for _, n, _ in to_create}:
                     to_create.append((table.name, idx.name, cols))
+                    # A partial index keeps its WHERE, or the backfill would
+                    # make it stricter than the model says.
+                    where = idx.dialect_options["sqlite"].get("where")
+                    if where is not None:
+                        partial_where[idx.name] = str(where)
 
     if not to_create:
         return
@@ -252,6 +258,8 @@ def _ensure_sqlite_unique_constraints(engine) -> None:
 
             cols_sql = ", ".join(f'"{c}"' for c in cols)
             stmt = f'CREATE UNIQUE INDEX IF NOT EXISTS "{name}" ON "{table_name}" ({cols_sql})'
+            if name in partial_where:
+                stmt += f" WHERE {partial_where[name]}"
             try:
                 conn.exec_driver_sql(stmt)
                 print(f"[migration_runner] sqlite: created missing unique index {name} ON {table_name}({', '.join(cols)})")

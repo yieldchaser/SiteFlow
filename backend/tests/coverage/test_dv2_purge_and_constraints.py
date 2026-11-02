@@ -45,7 +45,19 @@ EXPECTED_CONSTRAINTS = [
 ]
 
 
-@pytest.mark.parametrize("model,table,name", EXPECTED_CONSTRAINTS, ids=[n for _, _, n in EXPECTED_CONSTRAINTS])
+# The historical migration still creates uq_bills_company_id_invoice_number, so
+# the migration-file checks keep it. The model no longer carries it:
+# 20261102_000001 replaced it with per-supplier and own-number unique indexes
+# (see test_bill_number_per_supplier.py).
+SUPERSEDED = {"uq_bills_company_id_invoice_number"}
+LIVE_CONSTRAINTS = [c for c in EXPECTED_CONSTRAINTS if c[-1] not in SUPERSEDED]
+
+
+def test_bills_carry_the_two_invoice_number_indexes():
+    names = {i.name for i in models.Bill.__table__.indexes if i.unique}
+    assert {"uq_bills_supplier_invoice_number", "uq_bills_own_invoice_number"} <= names
+
+@pytest.mark.parametrize("model,table,name", LIVE_CONSTRAINTS, ids=[n for _, _, n in LIVE_CONSTRAINTS])
 def test_constraint_exists_on_model_metadata(model, table, name):
     assert model.__tablename__ == table
     names = {c.name for c in model.__table__.constraints if c.name}

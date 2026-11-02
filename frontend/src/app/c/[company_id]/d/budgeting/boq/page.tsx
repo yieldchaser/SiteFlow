@@ -87,7 +87,7 @@ export default function BOQPage() {
 
   const [tab, setTab] = useState<"boq" | "variance" | "revisions">("boq");
   const [boqItems, setBoqItems] = useState<BOQItem[]>([]);
-  const [file, setFile] = useState<File | null>(null);
+  const [fileState, setFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState("");
   const [search, setSearch] = useState("");
@@ -140,8 +140,11 @@ export default function BOQPage() {
     return map;
   }, [filtered]);
 
-  const handleImport = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // picked: the file chosen from the header button. State set in the same
+  // handler is not visible yet, so it is passed straight in.
+  const handleImport = async (e: React.FormEvent | null, picked?: File) => {
+    e?.preventDefault();
+    const file = picked ?? fileState;
     if (!file) return;
     setImporting(true);
     const formData = new FormData();
@@ -335,7 +338,7 @@ export default function BOQPage() {
           {/* Import trigger */}
           <label className="px-3.5 py-1.5 bg-primary text-white text-xs font-bold rounded-lg hover:opacity-90 cursor-pointer transition-all inline-flex items-center gap-1.5">
             <Icon name="arrow_up" className="w-3.5 h-3.5" /> Import Excel
-            <input type="file" accept=".xlsx,.xlsm" className="hidden" onChange={e => { if (e.target.files?.[0]) { setFile(e.target.files[0]); handleImport(new Event("submit") as any); } }} />
+            <input type="file" accept=".xlsx,.xlsm" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) { handleImport(null, f); e.target.value = ""; } }} />
           </label>
         </div>
       </PageHeader>
@@ -427,7 +430,7 @@ export default function BOQPage() {
                         {inlineDSaving ? "Saving..." : "Save"}
                       </button>
                       <button onClick={() => { setShowInlineD(false); setInlineDError(null); resetInlineD(); }} className="px-3 py-1.5 bg-elevated border border-border-custom text-muted text-xs rounded-lg">Cancel</button>
-                      <span className="text-[10px] text-muted">Upload your BOQ spreadsheet (.xlsx or .csv) using the form below.</span>
+                      <span className="text-[10px] text-muted">Many lines? Use Import Excel instead.</span>
                     </div>
                   </div>
                 )}
@@ -720,10 +723,10 @@ export default function BOQPage() {
                 {importMsg && <div className="text-xs text-success">{importMsg}</div>}
                 <form onSubmit={handleImport} className="flex justify-center gap-2">
                   <label className="px-4 py-2 bg-elevated border border-border-custom text-muted text-xs rounded-lg cursor-pointer hover:bg-elevated/70">
-                    {file ? file.name : "Select Excel File"}
+                    {fileState ? fileState.name : "Select Excel File"}
                     <input type="file" accept=".xlsx,.xlsm" className="hidden" onChange={e => { if (e.target.files?.[0]) setFile(e.target.files[0]); }} />
                   </label>
-                  <button type="submit" disabled={!file || importing}
+                  <button type="submit" disabled={!fileState || importing}
                     className="px-4 py-2 bg-primary text-white text-xs font-bold rounded-lg disabled:opacity-40 hover:opacity-90">
                     {importing ? "Importing..." : "Import & Commit"}
                   </button>

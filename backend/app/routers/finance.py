@@ -40,6 +40,7 @@ from app.constants import (
 )
 from app.workflow_controls import enforce_entry_creation_window
 from app.party_names import resolve_party_name, resolve_party_names_batch
+from app.equipment_cost import owned_deployment_cost
 
 logger = logging.getLogger(__name__)
 
@@ -268,8 +269,9 @@ def create_payment(req: PaymentCreateRequest, db: Session = Depends(get_db), cur
     # the product starts approval_flag="pending"; flipping an unreviewed
     # bill to Paid is a control failure, so only approved bills are
     # eligible and the payment simply stays unsettled until review happens.
+    # A cancelled bill is owed nothing, even if it was approved first.
     query = db.query(Bill).filter(
-        Bill.status != "Paid",
+        Bill.status.notin_(["Paid", "Cancelled"]),
         Bill.approval_flag.in_(SETTLEMENT_APPROVAL_FLAGS),
     )
     if party_uuid:
@@ -542,9 +544,11 @@ def get_project_pl(project_id: uuid.UUID, db: Session = Depends(get_db), _: None
     sub_budget = float(budget.subcon_budget) if budget else 0.0
     eq_budget = float(budget.equipment_budget) if budget else 0.0
     
-    # Load actual values by summing corresponding entries in bills and salaries
+    # Load actual values by summing corresponding entries in bills and salaries.
+    # Bills count at their work value (subtotal): before GST, which is reclaimed
+    # as input credit, and before TDS and retention, which are still cost.
     # 1. Revenue: Client invoices & material sales (invoice_type in ["sale", "material_sale"])
-    revenue_actual = db.query(func.sum(Bill.total_payable)).filter(
+    revenue_actual = db.query(func.sum(Bill.subtotal)).filter(
         Bill.project_id == proj_uuid,
         Bill.invoice_type.in_(REVENUE_INVOICE_TYPES),
         Bill.status != "Cancelled"
@@ -553,7 +557,7 @@ def get_project_pl(project_id: uuid.UUID, db: Session = Depends(get_db), _: None
     # 2. Material Cost: Vendor purchase bills (invoice_type == "purchase") + wastage.
     # R2-749: Partition expense invoice types into their respective heads:
     # Material = purchase, Subcontractor = subcon, Plant & Machinery = equipment + deployments + fuel, Overhead = expense.
-    material_actual = db.query(func.sum(Bill.total_payable)).filter(
+    material_actual = db.query(func.sum(Bill.subtotal)).filter(
         Bill.project_id == proj_uuid,
         Bill.invoice_type == "purchase",
         Bill.status != "Cancelled"
@@ -565,7 +569,9 @@ def get_project_pl(project_id: uuid.UUID, db: Session = Depends(get_db), _: None
 
     # 3. Labour Cost: Salary expenses (C2: finalized payroll runs only)
     labour_actual = (
-        db.query(func.sum(PayrollLineItem.net_payable))
+        # Cost to the company: gross pay plus employer PF and ESI. Net pay
+        # left out the employee PF, ESI and TDS the company still pays over.
+        db.query(func.sum(PayrollLineItem.gross_salary + PayrollLineItem.pf_employer + PayrollLineItem.esi_employer))
         .join(PayrollRun)
         .filter(
             PayrollRun.project_id == proj_uuid,
@@ -576,62 +582,27 @@ def get_project_pl(project_id: uuid.UUID, db: Session = Depends(get_db), _: None
     )
 
     # 4. Subcontractor Cost: Subcon bills (invoice_type == "subcon")
-    subcon_actual = db.query(func.sum(Bill.total_payable)).filter(
+    subcon_actual = db.query(func.sum(Bill.subtotal)).filter(
         Bill.project_id == proj_uuid,
         Bill.invoice_type == "subcon",
         Bill.status != "Cancelled"
     ).scalar() or 0.0
 
     # 5. Plant & Machinery (Equipment bills + equipment deployment cost + fuel costs)
-    equipment_bills_actual = db.query(func.sum(Bill.total_payable)).filter(
+    equipment_bills_actual = db.query(func.sum(Bill.subtotal)).filter(
         Bill.project_id == proj_uuid,
         Bill.invoice_type == "equipment",
         Bill.status != "Cancelled"
     ).scalar() or 0.0
 
-    deployments = db.query(EquipmentDeployment).filter(EquipmentDeployment.project_id == proj_uuid).all()
-    dep_cost = 0.0
-    for dep in deployments:
-        eq = db.query(Equipment).filter(Equipment.id == dep.equipment_id).first()
-        if not eq:
-            continue
-        # R2-358a: this used to be `if eq and eq.hourly_rate:` -- a truthiness
-        # test on a Numeric column whose default is 0.0. A machine with no
-        # configured rate (the ordinary case for a Hired machine whose rate
-        # lives on the hire invoice) was skipped silently and contributed
-        # nothing forever, indistinguishable from a machine that was never
-        # deployed. The cost is still zero -- there is no rate to invent -- but
-        # the omission is now reported instead of swallowed.
-        rate = float(eq.hourly_rate or 0.0)
-        if rate <= 0.0:
-            logger.warning(
-                "P&L: equipment %s (%s) is deployed on project %s with no "
-                "hourly_rate configured, so its deployment contributes 0.00 "
-                "to Plant & Machinery.", eq.id, eq.code, proj_uuid,
-            )
-        if dep.hours_used is not None:
-            # R2-357: recorded engine/shift hours are the billed truth;
-            # wall-clock (24 h/day) is only the fallback when never recorded.
-            hours = float(dep.hours_used)
-        else:
-            # R2-727: EquipmentDeployment columns are timezone-aware on Postgres
-            # but round-trip naive on SQLite; normalize both operands so the
-            # "still deployed" fallback (end_date NULL) can't raise TypeError.
-            start = dep.start_date
-            if start.tzinfo is None:
-                start = start.replace(tzinfo=timezone.utc)
-            end = dep.end_date if dep.end_date else datetime.now(timezone.utc)
-            if end.tzinfo is None:
-                end = end.replace(tzinfo=timezone.utc)
-            hours = (end - start).total_seconds() / 3600.0
-        dep_cost += round(max(0.0, hours * rate), 2)
+    dep_cost = owned_deployment_cost(db, proj_uuid)
 
     fuel_logs = db.query(FuelLog).filter(FuelLog.project_id == proj_uuid).all()
     fuel_cost = sum(float(log.total_cost or 0.0) for log in fuel_logs)
     equipment_actual = round(float(equipment_bills_actual) + dep_cost + fuel_cost, 2)
 
     # 6. Overhead: General expense bills (invoice_type == "expense")
-    overhead_actual = db.query(func.sum(Bill.total_payable)).filter(
+    overhead_actual = db.query(func.sum(Bill.subtotal)).filter(
         Bill.project_id == proj_uuid,
         Bill.invoice_type == "expense",
         Bill.status != "Cancelled"
@@ -1277,6 +1248,12 @@ class TransactionRow(BaseModel):
     project_name: Optional[str] = None
     ref: str = ""
     due_date: Optional[str] = None
+    # What the row is and where it stands, so the detail drawer can offer the
+    # right action (approve a bill, delete a payment) and show what is owed.
+    kind: str = "bill"
+    approval: str = "pending"
+    paid_amount: float = 0.0
+    balance_due: float = 0.0
 
     class Config:
         from_attributes = True
@@ -1375,6 +1352,10 @@ def get_company_transactions(
             project_name=project_name_by_id.get(b.project_id) if b.project_id else None,
             ref=b.invoice_number or "",
             due_date=(b.due_date.strftime("%Y-%m-%d") if b.due_date else None),
+            kind="bill",
+            approval=b.approval_flag or "pending",
+            paid_amount=paid,
+            balance_due=outstanding,
         ))
 
     for p in payments:
@@ -1397,6 +1378,10 @@ def get_company_transactions(
             project_id=str(p.project_id) if p.project_id else None,
             project_name=project_name_by_id.get(p.project_id) if p.project_id else None,
             ref=p.reference_number or "",
+            kind="payment",
+            approval=p.approval_flag or "pending",
+            paid_amount=amt,
+            balance_due=float(p.unsettled_amount or 0.0),
         ))
 
     # Company balance = cash wallet + all bank account balances

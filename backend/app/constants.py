@@ -15,6 +15,17 @@ EXPENSE_INVOICE_TYPES = ("purchase", "subcon", "expense", "equipment")
 SETTLEMENT_INVOICE_TYPES = ("payment_in", "payment_out", "i_paid", "i_received")
 MOVEMENT_INVOICE_TYPES = ("material_transfer", "material_return")
 
+# Bills that carry the supplier's own invoice number. Two suppliers can both
+# send "1123", so these are unique per supplier, and a cancelled one frees its
+# number. Every other type is numbered by the company itself and stays unique
+# company-wide, cancelled or not (a GST invoice serial is never reused).
+SUPPLIER_NUMBERED_INVOICE_TYPES = EXPENSE_INVOICE_TYPES
+_SUPPLIER_TYPES_SQL = ", ".join(f"'{t}'" for t in SUPPLIER_NUMBERED_INVOICE_TYPES)
+BILL_SUPPLIER_NUMBER_WHERE = (
+    f"invoice_type IN ({_SUPPLIER_TYPES_SQL}) AND lower(status) <> 'cancelled'"
+)
+BILL_OWN_NUMBER_WHERE = f"invoice_type NOT IN ({_SUPPLIER_TYPES_SQL})"
+
 SETTLEMENT_MONEY_IN_TYPES = ("payment_in", "i_received")
 SETTLEMENT_MONEY_OUT_TYPES = ("payment_out", "i_paid")
 

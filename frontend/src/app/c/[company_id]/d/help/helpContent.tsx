@@ -482,23 +482,33 @@ export function getHelpCategories(companyId: string): HelpCategory[] {
           a: (
             <>
               <p>
-                You will need active vendors in your library and permission to view procurement.
+                Here is the whole path for buying material, start to finish.
               </p>
               <p className="mt-2">
-                Open the sidebar, navigate to "Procurement & Materials", and select{" "}
-                <Link className="help-link" href={c(companyId, "/d/three-way")}>
-                  "Three-Way Match"
+                1. The site raises a material indent in{" "}
+                <Link className="help-link" href={c(companyId, "/d/procurement")}>
+                  Procurement
                 </Link>
-                .
+                , and someone approves it.
               </p>
               <p className="mt-2">
-                The lifecycle flows from site indent to approved PO, goods receipt at site, and vendor bill entry, where three-way match reconciles ordered rates, accepted quantities, and invoiced totals.
+                2. On the approved indent, click "Raise PO". Pick the supplier and enter the rate. You cannot order more than the indent approved.
               </p>
               <p className="mt-2">
-                Loading the comparison highlights discrepancies in red whenever quantities or prices exceed your configured tolerance thresholds.
+                3. Approve the PO. When the lorry arrives, click "Record GRN" on the PO and enter what actually came. Part deliveries are fine.
               </p>
               <p className="mt-2">
-                Approve fully matched bills for payment release, or raise debit notes for material shortfalls.
+                4. When the supplier&apos;s bill comes, enter it as a Material Purchase on the project&apos;s Transaction page. The supplier must be on the project&apos;s Party tab first.
+              </p>
+              <p className="mt-2">
+                5. In{" "}
+                <Link className="help-link" href={c(companyId, "/d/three-way")}>
+                  Three-Way Match
+                </Link>
+                , pick the PO, the GRN and the bill. SiteFlow checks the bill against the value of the goods received, with GST, and shows any difference.
+              </p>
+              <p className="mt-2">
+                6. Approve the bill in Finance. Then add a Payment Out to the supplier on the project&apos;s Transaction page. It is set against their approved bills, oldest first, and the bill shows as Paid.
               </p>
             </>
           ),
@@ -506,6 +516,7 @@ export function getHelpCategories(companyId: string): HelpCategory[] {
           sources: [
             "frontend/src/components/Sidebar.tsx:237",
             "frontend/src/app/c/[company_id]/d/three-way/page.tsx:1",
+            "frontend/src/app/c/[company_id]/d/procurement/page.tsx:1035",
             "GET /apis/v3/three-way/pos/{company_id}",
           ],
         },
@@ -514,23 +525,20 @@ export function getHelpCategories(companyId: string): HelpCategory[] {
           a: (
             <>
               <p>
-                The supplier must be registered as a vendor in your library first.
+                The supplier must be in your Party Library first.
               </p>
               <p className="mt-2">
-                Open the sidebar, navigate to "Procurement & Materials", select{" "}
+                If the material came through an indent, open the Indent tab in{" "}
                 <Link className="help-link" href={c(companyId, "/d/procurement")}>
-                  "Procurement"
-                </Link>
-                , choose the "Purchase Orders" tab, and click "+ Purchase Order".
+                  Procurement
+                </Link>{" "}
+                and click "Raise PO" on the approved indent. The items and quantities are filled in for you. Otherwise click "+ Purchase Order".
               </p>
               <p className="mt-2">
-                Select the vendor, enter the PO number and date, and add line items with quantities, units, and unit rates, along with optional GST rates, delivery address, payment terms, and remarks.
+                Pick the supplier and enter the rate and GST for each line. Leave the PO number blank and the next number is given. The total with GST shows before you save.
               </p>
               <p className="mt-2">
-                Saving creates the order in pending status, and clicking the approve action authorizes the order for delivery.
-              </p>
-              <p className="mt-2">
-                From there you can receive delivered consignments against this approved order under the GRN tab.
+                The PO is saved as a draft. Click "Approve" on it, and then "Record GRN" when the goods arrive.
               </p>
             </>
           ),

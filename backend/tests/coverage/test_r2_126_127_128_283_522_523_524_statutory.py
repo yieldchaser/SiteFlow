@@ -296,11 +296,11 @@ def test_r2_523_pf_ecr_from_period_payslips_with_eps_split(client, db, make_tena
     e_part = _emp(db, comp, "Part Month", basic_salary=20000)
     _emp(db, comp, "Not Paid In July")   # active in master, no July payslip
     run_jul = _seed_payroll(db, comp, "2026-07", [
-        (e_full, dict(days_present=26, days_in_month=26, basic=15000)),
-        (e_part, dict(days_present=10, days_in_month=26, basic=6000)),
+        (e_full, dict(days_present=26, days_in_month=26, basic=15000, pf_employee=1800, pf_employer=1800)),
+        (e_part, dict(days_present=10, days_in_month=26, basic=6000, pf_employee=720, pf_employer=720)),
     ])
     # August pays only one of them at a different wage - the ECR must differ.
-    _seed_payroll(db, comp, "2026-08", [(e_part, dict(days_present=20, days_in_month=26, basic=8000))])
+    _seed_payroll(db, comp, "2026-08", [(e_part, dict(days_present=20, days_in_month=26, basic=8000, pf_employee=960, pf_employer=960))])
     db.commit()
     assert run_jul.status == "finalized"
 
@@ -404,3 +404,24 @@ def test_r2_524_26q_from_transaction_deduction_ledger(client, db, make_tenant, a
     r = client.get(f"/apis/v3/statutory/{comp.id}/tds-26q?quarter=QX&year=2026", headers=hdr)
     assert r.status_code == 422, r.text
 
+
+
+def test_pf_ecr_files_the_pf_the_payslip_deducted(client, db, make_tenant, auth_headers):
+    """A company that runs PF on wages above Rs 15,000 deducts 12% of the
+    higher wage on the payslip. The return used to refile it on a fixed
+    Rs 15,000 ceiling, so it disagreed with the money actually deducted."""
+    comp, user, hdr = _hdr(auth_headers, make_tenant, db, "ECRPAY")
+    emp = _emp(db, comp, "Rig Supervisor", basic_salary=20000)
+    _seed_payroll(db, comp, "2026-07", [
+        (emp, dict(days_present=26, days_in_month=26, basic=20000, pf_employee=2400, pf_employer=2400)),
+    ])
+    db.commit()
+    r = client.get(f"/apis/v3/statutory/{comp.id}/pf-ecr?month=7&year=2026", headers=hdr)
+    assert r.status_code == 200, r.text
+    line = r.json()["ecr_lines"][0]
+    assert line["pf_wages"] == 20000.0
+    assert line["ee_pf_contribution"] == 2400.0
+    assert line["er_pf_contribution"] == 2400.0
+    # Pension stays on the statutory Rs 15,000: 8.33% = 1,249.50.
+    assert line["eps_contribution"] == 1249.5
+    assert line["epf_contribution"] == 1150.5

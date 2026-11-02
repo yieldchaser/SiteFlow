@@ -34,6 +34,7 @@ from app.database import get_db
 from app.rate_limit import limiter
 from app.bill_scope import _active_bills
 from app import models
+from app.equipment_cost import owned_deployment_cost
 
 router = APIRouter(prefix="/integrations/bi", tags=["Integrations - BI Export"])
 
@@ -274,7 +275,7 @@ def feed_budget_variance(
         # Budget module can never disagree about the same project again.
         material_actual = subcon_actual = equipment_bill_total = other_actual = 0.0
         for b in _active_bills(db, p.id, EXPENSE_INVOICE_TYPES).all():
-            amount = float(b.total_payable or 0)
+            amount = float(b.subtotal or 0)
             if b.invoice_type == "purchase":
                 material_actual += amount
             elif b.invoice_type == "subcon":
@@ -285,7 +286,7 @@ def feed_budget_variance(
                 other_actual += amount
         # Labour actual: sum of payroll line-item net payables for this project's finalized runs (C2).
         labour_actual = float(
-            db.query(func.coalesce(func.sum(models.PayrollLineItem.net_payable), 0))
+            db.query(func.coalesce(func.sum(models.PayrollLineItem.gross_salary + models.PayrollLineItem.pf_employer + models.PayrollLineItem.esi_employer), 0))
             .join(models.PayrollRun)
             .filter(
                 models.PayrollRun.project_id == p.id,
@@ -298,21 +299,7 @@ def feed_budget_variance(
         # hourly cost + fuel cost (mirrors budget.py). Active bills only: a
         # cancelled bill must not book cost (R2-723).
         equipment_actual = equipment_bill_total
-        deployments = db.query(models.EquipmentDeployment).filter(models.EquipmentDeployment.project_id == p.id).all()
-        for dep in deployments:
-            eq = db.query(models.Equipment).filter(models.Equipment.id == dep.equipment_id).first()
-            if eq and eq.hourly_rate:
-                rate = float(eq.hourly_rate)
-                # R2-727: same aware/naive normalization as finance.py
-                # (Postgres returns aware datetimes, SQLite naive).
-                start = dep.start_date
-                if start.tzinfo is None:
-                    start = start.replace(tzinfo=timezone.utc)
-                end = dep.end_date if dep.end_date else datetime.now(timezone.utc)
-                if end.tzinfo is None:
-                    end = end.replace(tzinfo=timezone.utc)
-                hours = (end - start).total_seconds() / 3600.0
-                equipment_actual += max(0.0, hours * rate)
+        equipment_actual += owned_deployment_cost(db, p.id)
         fuel_logs = db.query(models.FuelLog).filter(models.FuelLog.project_id == p.id).all()
         equipment_actual += sum(float(log.total_cost or 0.0) for log in fuel_logs)
 

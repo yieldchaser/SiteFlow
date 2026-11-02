@@ -18,6 +18,7 @@ from app.routers.library import next_party_id_custom
 # so the second bill-creation surface (quotation conversion) bypassed every
 # check it enforces. Imported here so both surfaces cannot drift apart.
 from app.routers.billing import _validate_bill_line_items
+from app.constants import SUPPLIER_NUMBERED_INVOICE_TYPES
 from pydantic import BaseModel, Field, EmailStr, field_validator
 
 router = APIRouter(
@@ -1011,9 +1012,14 @@ def convert_quotation_to_invoice(quotation_id: uuid.UUID, req: QuotationConvertR
         )
 
     invoice_number = req.invoice_number or (f"INV-{quot.qt_no}" if quot.qt_no else f"INV-{str(quot.id)[:8]}")
+    # A sale invoice is the company's own number: unique company-wide.
     number_clash = (
         db.query(Bill)
-        .filter(Bill.company_id == lead.company_id, Bill.invoice_number == invoice_number)
+        .filter(
+            Bill.company_id == lead.company_id,
+            Bill.invoice_number == invoice_number,
+            Bill.invoice_type.notin_(SUPPLIER_NUMBERED_INVOICE_TYPES),
+        )
         .first()
     )
     if number_clash:

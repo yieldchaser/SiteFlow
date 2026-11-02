@@ -76,21 +76,23 @@ def test_deduction_order_default_retention_first():
     ]
     details, total = _sequential_deduction_calc(deductions, 118000.0, pretax_order=False)
     amts = {d.deduction_type: amt for d, amt in details}
-    # Default: Retention on gross, then TDS on the post-retention amount.
+    # TDS is on the full base (Sec 194C); retention on gross too.
     assert amts["Retention"] == 5900.0
-    assert amts["TDS"] == 11210.0
-    assert total == 17110.0
+    assert amts["TDS"] == 11800.0
+    assert total == 17700.0
 
 
 def test_deduction_order_pretax_tds_first():
-    # Same inputs, but pre-tax ordering flips the order and therefore the split.
+    # Pre-tax ordering flips the contractual deductions; TDS stays on the full base.
     deductions = [
         DeductionItemSchema(deduction_type="Retention", amount=0.0, percentage=5.0),
         DeductionItemSchema(deduction_type="TDS", amount=0.0, percentage=10.0),
+        DeductionItemSchema(deduction_type="Security Deposit", amount=0.0, percentage=10.0),
     ]
     details, total = _sequential_deduction_calc(deductions, 118000.0, pretax_order=True)
     amts = {d.deduction_type: amt for d, amt in details}
-    # Pre-tax: TDS on gross, then Retention on the post-TDS amount.
     assert amts["TDS"] == 11800.0
+    assert amts["Security Deposit"] == 11800.0
+    # Retention on what the deposit leaves: 5% of 106200.
     assert amts["Retention"] == 5310.0
-    assert total == 17110.0
+    assert total == 28910.0

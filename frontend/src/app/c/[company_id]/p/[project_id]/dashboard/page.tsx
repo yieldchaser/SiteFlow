@@ -44,6 +44,7 @@ type Bill = {
   invoice_type: string;
   status: string;
   subtotal: number;
+  gst_amount?: number;
   total_payable: number;
   paid_amount: number;
   items_json?: string | null;
@@ -350,8 +351,10 @@ export default function ProjectDashboardPage() {
   const sale = bills.filter((b) => REVENUE_INVOICE_TYPES.includes(b.invoice_type) && b.status !== "Cancelled");
   const purchase = bills.filter((b) => EXPENSE_INVOICE_TYPES.includes(b.invoice_type) && b.status !== "Cancelled");
 
+  // What the client still has to pay us, for the collected %.
   const saleTotal = sale.reduce((s, b) => s + (b.total_payable || 0), 0);
-  const expense = purchase.reduce((s, b) => s + (b.total_payable || 0), 0); // Total Expense (Till Date)
+  // Invoice value with GST. total_payable also takes off TDS and retention.
+  const expense = purchase.reduce((s, b) => s + (Number(b.subtotal) || 0) + (Number(b.gst_amount) || 0), 0);
 
   // D1 R2-021: margin on ex-GST subtotals, not GST-inclusive total_payable.
   // Billed In/Out remain accrual incl GST for display, margin is ex-GST.
@@ -455,7 +458,8 @@ export default function ProjectDashboardPage() {
   const expenseSlices = EXPENSE_SLICES.map((s) => ({
     label: s.label,
     color: s.color,
-    value: purchase.filter((b) => b.invoice_type === s.type).reduce((t, b) => t + (b.total_payable || 0), 0),
+    // Work value, before GST and deductions, like the margin.
+    value: purchase.filter((b) => b.invoice_type === s.type).reduce((t, b) => t + (Number(b.subtotal) || 0), 0),
   }));
 
   // Budget against actual spend for each budget head.
@@ -637,11 +641,11 @@ export default function ProjectDashboardPage() {
                 icon="inbox"
                 value={fmtINR(project.cash_in, currencyDecimalPlaces)}
                 tone="good"
-                sub={`${pct(saleTotal, boqValue)} of BOQ value · ${collectedPct.toFixed(0)}% collected`}
+                sub={`${pct(saleExGst, boqValue)} of BOQ value · ${collectedPct.toFixed(0)}% collected`}
                 onClick={() =>
                   setDrill({
                     title: "Billed In (Sales Invoices)",
-                    subtitle: `${fmtINR(saleTotal, currencyDecimalPlaces)} · ${pct(saleTotal, boqValue)} of Total BOQ Value (${fmtINR(boqValue, currencyDecimalPlaces)})`,
+                    subtitle: `${fmtINR(saleExGst, currencyDecimalPlaces)} of work billed, before GST · ${pct(saleExGst, boqValue)} of Total BOQ Value (${fmtINR(boqValue, currencyDecimalPlaces)})`,
                     cols: [
                       { key: "Invoice #", label: "Invoice #" },
                       { key: "Date", label: "Date" },
@@ -725,9 +729,9 @@ export default function ProjectDashboardPage() {
             {/* Where the money went */}
             <div className="lg:col-span-2 rounded-xl border border-border-custom bg-card p-5 shadow-sm">
               <SectionTitle title="Where the money went" hint="Bills till date" />
-              {expense > 0 ? (
+              {expenseExGst > 0 ? (
                 <div className="flex flex-col sm:flex-row items-center gap-5">
-                  <Donut slices={expenseSlices} centre={compactINR(expense)} centreSub="total spent" />
+                  <Donut slices={expenseSlices} centre={compactINR(expenseExGst)} centreSub="spent, before GST" />
                   <ul className="flex-1 w-full space-y-2.5">
                     {expenseSlices.map((s) => (
                       <li key={s.label} className="flex items-center gap-2 text-xs">
@@ -735,7 +739,7 @@ export default function ProjectDashboardPage() {
                         <span className="text-foreground">{s.label}</span>
                         <span className="ml-auto tabular-nums text-muted">{compactINR(s.value)}</span>
                         <span className="w-10 text-right tabular-nums font-medium text-foreground">
-                          {((s.value / expense) * 100).toFixed(0)}%
+                          {((s.value / expenseExGst) * 100).toFixed(0)}%
                         </span>
                       </li>
                     ))}

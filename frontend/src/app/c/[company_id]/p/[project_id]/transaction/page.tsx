@@ -17,7 +17,7 @@ import Icon from "@/components/marketing/Icon";
 import FieldHint from "@/components/ui/FieldHint";
 
 // ── Transaction taxonomy (exact list from build spec) ────────────────────────
-type Endpoint = "bill" | "debit" | "credit" | "request";
+type Endpoint = "bill" | "debit" | "credit" | "request" | "payment";
 type TxnType = {
   key: string;
   label: string;
@@ -33,8 +33,10 @@ const EXPENSE_TYPES = ["purchase", "subcon", "expense", "equipment"];
 const SETTLEMENT_TYPES = ["payment_in", "payment_out", "i_paid", "i_received"];
 
 const TAXONOMY: TxnType[] = [
-  { key: "payment_in", label: "Payment In", endpoint: "bill", direction: "in", paymentMode: true },
-  { key: "payment_out", label: "Payment Out", endpoint: "bill", direction: "out", paymentMode: true },
+  // Recorded as real payments so they settle the party's approved bills and
+  // move the party balance. A bill-shaped voucher did neither.
+  { key: "payment_in", label: "Payment In", endpoint: "payment", direction: "in", paymentMode: true },
+  { key: "payment_out", label: "Payment Out", endpoint: "payment", direction: "out", paymentMode: true },
   { key: "debit_note", label: "Debit Note", endpoint: "debit", direction: "out" },
   { key: "credit_note", label: "Credit Note", endpoint: "credit", direction: "in" },
   { key: "party_to_party_payment", label: "Party-to-Party Payment", endpoint: "request", direction: "out" },
@@ -277,6 +279,8 @@ export default function TransactionPage() {
     let totalIn = 0, totalOut = 0, sales = 0, expense = 0;
     for (const b of bills) {
       const t = b.invoice_type;
+      // A cancelled bill or voucher moved no money and earned or cost nothing.
+      if ((b.status || "").toLowerCase() === "cancelled") continue;
 
       if (SETTLEMENT_TYPES.includes(t)) {
         const amt = Number(b.total_payable) || 0;
@@ -580,6 +584,8 @@ function NewTransactionModal({
       ? "Notes (Debit Note remarks)"
       : cfg.endpoint === "credit"
       ? "Notes (Credit Note remarks)"
+      : cfg.endpoint === "payment"
+      ? "Notes"
       : "Details / Purpose";
 
   const addressingPlaceholder =
@@ -589,6 +595,8 @@ function NewTransactionModal({
       ? "Optional notes / reason for debit note"
       : cfg.endpoint === "credit"
       ? "Optional notes / reason for credit note"
+      : cfg.endpoint === "payment"
+      ? "Optional, for example which bill this is for"
       : "Purpose of payment request / details";
 
   // Custom Fields (Settings → Custom Fields, entity_type="invoice") — only surfaced
@@ -623,6 +631,7 @@ function NewTransactionModal({
   const [bankName, setBankName] = useState("");
   const [txnRef, setTxnRef] = useState("");
   const [chequeNo, setChequeNo] = useState("");
+  const [payAmount, setPayAmount] = useState("");
 
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -654,6 +663,7 @@ function NewTransactionModal({
     if (!partyId) { setErr("Select a party."); return; }
     if (!invoiceNumber && cfg.endpoint === "bill") { setErr("Invoice / reference number is required."); return; }
     if (subtotal <= 0 && cfg.endpoint === "bill") { setErr("Add at least one line item with qty × rate > 0."); return; }
+    if (cfg.endpoint === "payment" && !((parseFloat(payAmount) || 0) > 0)) { setErr("Enter the amount paid."); return; }
     if (isSalesInvoice) {
       const cfError = customFields.validate();
       if (cfError) { setErr(cfError); return; }
@@ -699,7 +709,24 @@ function NewTransactionModal({
       }
 
       let res: Response;
-      if (cfg.endpoint === "bill") {
+      if (cfg.endpoint === "payment") {
+        const ref = (payMode === "Cheque" ? chequeNo : payMode === "Bank" ? txnRef : "") || invoiceNumber;
+        res = await fetch(getApi(`/finance/payments`), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
+          body: JSON.stringify({
+            company_id: cid,
+            project_id: projectId,
+            party_company_user_id: member.company_team_id,
+            payment_type: cfg.direction,
+            amount: parseFloat(payAmount),
+            payment_method: payMode,
+            reference_number: ref.trim() || null,
+            description: [payMode !== "Cash" && bankName ? bankName : "", shipTo].filter(Boolean).join(". ") || null,
+            payment_date: dt,
+          }),
+        });
+      } else if (cfg.endpoint === "bill") {
         const canonicalType = {
           sales_invoice: "sale",
           material_sales: "material_sale",
@@ -798,8 +825,7 @@ function NewTransactionModal({
 
       if (res.ok) onCreated();
       else {
-        const body = await res.text();
-        setErr(`Save failed (${res.status}): ${body.slice(0, 200)}`);
+        setErr((await readErrorDetail(res)) || "Could not save. Please try again.");
       }
     } catch (e: any) {
       setErr(e?.message || "Save failed");
@@ -822,7 +848,7 @@ function NewTransactionModal({
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="col-span-2">
-          <Lbl>Party (Bill To)</Lbl>
+          <Lbl>{cfg.endpoint === "payment" ? (cfg.direction === "in" ? "Received From" : "Paid To") : cfg.direction === "out" ? "Party (Bill From)" : "Party (Bill To)"}</Lbl>
           <select value={partyId} onChange={(e) => setPartyId(e.target.value)} className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground">
             <option value="">Select party</option>
             {members.map((m) => (
@@ -830,7 +856,7 @@ function NewTransactionModal({
             ))}
           </select>
           {members.length === 0 && (
-            <FieldHint text="No parties available. Invite members in Settings." href={`/c/${companyId}/settings`} linkLabel="Go to Settings" />
+            <FieldHint text="No parties on this project yet. Add suppliers, subcontractors and clients on the Party tab." href={`/c/${companyId}/p/${projectId}/party`} linkLabel="Go to Party" />
           )}
         </div>
 
@@ -873,10 +899,17 @@ function NewTransactionModal({
           </div>
         )}
 
-        <div>
-          <Lbl>{cfg.endpoint === "bill" ? "Invoice / Reference #" : "Reference #"}</Lbl>
-          <input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground" />
-        </div>
+        {cfg.endpoint === "payment" ? (
+          <div>
+            <Lbl>Amount</Lbl>
+            <input type="number" min="0" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground" />
+          </div>
+        ) : (
+          <div>
+            <Lbl>{cfg.endpoint === "bill" ? "Invoice / Reference #" : "Reference #"}</Lbl>
+            <input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground" />
+          </div>
+        )}
         <div>
           <Lbl>Date</Lbl>
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground" />
@@ -911,6 +944,13 @@ function NewTransactionModal({
                 </button>
               ))}
             </div>
+            {cfg.endpoint === "payment" && (
+              <p className="text-xs text-muted mb-2">
+                {cfg.direction === "out"
+                  ? "The payment is set against this party's approved bills, oldest first."
+                  : "The receipt is set against this party's approved invoices, oldest first."}
+              </p>
+            )}
             {payMode !== "Cash" && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
