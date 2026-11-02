@@ -57,6 +57,7 @@ type LeaveTemplate = {
   casual_leave_days: number;
   sick_leave_days: number;
   earned_leave_days: number;
+  leave_types?: { type: string; days: number }[];
   created_at: string;
 };
 type Holiday = { id: string; company_id: string; name: string; date: string; created_at: string };
@@ -1472,7 +1473,15 @@ function TeamLeavesTab({ companyId }: { companyId: string }) {
 
   const yearLeaves = leaves.filter((l) => l.start_date.slice(0, 4) === String(year));
   const decide = async (id: string, status: string) => {
-    await jput(`/hr/leaves/approve/${id}`, { status });
+    try {
+      await jput(`/hr/leaves/approve/${id}`, { status });
+    } catch (e) {
+      // jput throws the raw body; show the server's sentence, e.g. "no casual leave left".
+      const raw = e instanceof Error ? e.message : "";
+      let msg = raw;
+      try { msg = JSON.parse(raw).detail || raw; } catch { /* plain text body */ }
+      alert(typeof msg === "string" && msg ? msg : "Could not update the leave");
+    }
     load();
   };
 
@@ -1579,10 +1588,12 @@ function MyLeavesTab({
     jget(`/hr/payroll-profiles/${me.id}`)
       .then((p) => {
         if (!active) return;
+        // No policy assigned to this person: the company's first policy applies,
+        // the same fallback the balances and approval use.
         const t = leaveTemplates.find((x) => x.id === p.leave_template_id);
-        setAssignedTemplate(t || null);
+        setAssignedTemplate(t || leaveTemplates[0] || null);
       })
-      .catch(() => active && setAssignedTemplate(null))
+      .catch(() => active && setAssignedTemplate(leaveTemplates[0] || null))
       .finally(() => active && setTemplateLoading(false));
     return () => {
       active = false;
@@ -1594,15 +1605,23 @@ function MyLeavesTab({
       alert("No linked employee staff record found for your user account. Please contact HR to link your profile before applying for leave.");
       return;
     }
-    await jpost(`/hr/leaves/${companyId}`, {
-      employee_id: me.id,
-      employee_name: me.name || userName,
-      leave_type: type,
-      start_date: isoDateTime(from),
-      end_date: isoDateTime(to),
-      days_count: days,
-      reason: reason.trim() || null,
-    });
+    try {
+      await jpost(`/hr/leaves/${companyId}`, {
+        employee_id: me.id,
+        employee_name: me.name || userName,
+        leave_type: type,
+        start_date: isoDateTime(from),
+        end_date: isoDateTime(to),
+        days_count: days,
+        reason: reason.trim() || null,
+      });
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : "";
+      let msg = raw;
+      try { msg = JSON.parse(raw).detail || raw; } catch { /* plain text body */ }
+      alert(typeof msg === "string" && msg ? msg : "Could not apply for leave");
+      return;
+    }
     setReason("");
     load();
   };
@@ -1623,8 +1642,15 @@ function MyLeavesTab({
       ) : (
         <>
           <p className="mb-4 text-sm text-muted">
-            Template: {assignedTemplate.name} · Casual {assignedTemplate.casual_leave_days} · Sick{" "}
-            {assignedTemplate.sick_leave_days} · Earned {assignedTemplate.earned_leave_days}
+            Leave policy: {assignedTemplate.name} ·{" "}
+            {(assignedTemplate.leave_types?.length
+              ? assignedTemplate.leave_types
+              : [
+                  { type: "Casual", days: assignedTemplate.casual_leave_days },
+                  { type: "Sick", days: assignedTemplate.sick_leave_days },
+                  { type: "Earned", days: assignedTemplate.earned_leave_days },
+                ]
+            ).map((r) => `${r.type} ${r.days}`).join(" · ")} days a year
           </p>
           <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2 rounded-md border border-border-custom p-3">
             <Field label="Leave Type">
@@ -1632,6 +1658,7 @@ function MyLeavesTab({
                 <option>Casual</option>
                 <option>Sick</option>
                 <option>Earned</option>
+                <option value="Unpaid">Unpaid Leave (LOP)</option>
               </select>
             </Field>
             <Field label="From">

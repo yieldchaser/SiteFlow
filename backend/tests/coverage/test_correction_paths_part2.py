@@ -328,12 +328,15 @@ def test_operational_records_correction_paths_part2(client, db, make_tenant, aut
     # -------------------------------------------------------------
     # 9. HR Leaves Withdrawal
     # -------------------------------------------------------------
+    leave_emp = models.StaffEmployee(id=uuid.uuid4(), company_id=comp.id, name="Leave Tester", status="active")
+    db.add(leave_emp)
+    db.commit()
     leave_res = client.post(
         f"/apis/v3/hr/leaves/{cid}",
         headers=hdr,
         json={
             "project_id": pid,
-            "employee_id": str(uuid.uuid4()),
+            "employee_id": str(leave_emp.id),
             "employee_name": "Leave Tester",
             "leave_type": "Casual",
             "start_date": datetime.now(timezone.utc).isoformat(),

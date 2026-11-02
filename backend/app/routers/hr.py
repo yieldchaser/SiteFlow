@@ -1134,13 +1134,21 @@ def run_payroll(payload: PayrollRunCreate, db: Session = Depends(get_db), curren
         ).all()
         approved_leave_days = 0.0
         leave_dates = set()
+        month_first, month_after = month_start.date(), month_end.date()
         for lr in approved_leaves:
             if (lr.leave_type or "").strip().lower() in PAID_LEAVE_TYPES:
-                approved_leave_days += float(lr.days_count or 0.0)
+                # A leave crossing a month end is paid once, split by its days
+                # in each month; the whole days_count used to land in both.
                 d, last = _aware_utc(lr.start_date).date(), _aware_utc(lr.end_date).date()
+                span = (last - d).days + 1
+                in_month = 0
                 while d <= last:
-                    leave_dates.add(d)
+                    if month_first <= d < month_after:
+                        leave_dates.add(d)
+                        in_month += 1
                     d += timedelta(days=1)
+                if span > 0:
+                    approved_leave_days += float(lr.days_count or 0.0) * in_month / span
 
         # A muster "Paid Leave" on a day an approved leave request already
         # covers is the same day, so it is not paid twice.
@@ -1451,6 +1459,14 @@ def list_leaves(company_id: uuid.UUID, db: Session = Depends(get_db), _: None = 
 def create_leave_request(company_id: uuid.UUID, data: LeaveRequestCreate, db: Session = Depends(get_db),     _: None = Depends(verify_company_access), current_user: User = Depends(get_current_user)):
     if data.project_id:
         verify_project_in_company(db, data.project_id, company_id)
+    if data.end_date < data.start_date:
+        raise HTTPException(status_code=400, detail="The leave ends before it starts. Check the dates.")
+    span = (data.end_date.date() - data.start_date.date()).days + 1
+    if data.days_count <= 0 or data.days_count > span:
+        raise HTTPException(status_code=400, detail=f"Leave days must be between 0.5 and {span} for these dates.")
+    emp = db.query(StaffEmployee).filter(StaffEmployee.id == data.employee_id, StaffEmployee.company_id == company_id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found in this company")
     # Workflow Controls: Entry Controls (creation date window)
     enforce_entry_creation_window(db, company_id, data.start_date)
     new_leave = LeaveRequest(
@@ -1470,6 +1486,64 @@ def create_leave_request(company_id: uuid.UUID, data: LeaveRequestCreate, db: Se
     return new_leave
 
 
+_LEAVE_ALIASES = {
+    "casual": ("casual", "casual leave", "cl"),
+    "sick": ("sick", "sick leave", "sl"),
+    "earned": ("earned", "earned leave", "el", "privilege", "privilege leave", "pl"),
+}
+
+
+def _template_entitlement(template: LeaveTemplate, key: str) -> float:
+    """Yearly days of one leave kind in a policy. The Leave Policy screen saves
+    named rows (leave_types); the fixed columns are the older API shape and are
+    used only when no row names this kind."""
+    for row in template.leave_types or []:
+        name = str((row or {}).get("type") or "").strip().lower()
+        if name in _LEAVE_ALIASES[key]:
+            return float((row or {}).get("days") or 0.0)
+    return float(getattr(template, f"{key}_leave_days") or 0.0)
+
+
+def _check_leave_within_policy(db: Session, leave: LeaveRequest) -> None:
+    """Refuse approving casual/sick/earned leave beyond the employee's yearly
+    quota. No leave policy set up means nothing to check against."""
+    key = (leave.leave_type or "").strip().lower()
+    if key not in ("casual", "sick", "earned") or leave.employee_id is None:
+        return
+    prof = db.query(PayrollProfile).filter(PayrollProfile.employee_id == leave.employee_id).first()
+    template = None
+    if prof and prof.leave_template_id:
+        template = db.query(LeaveTemplate).filter(LeaveTemplate.id == prof.leave_template_id).first()
+    if template is None:
+        template = (db.query(LeaveTemplate).filter(LeaveTemplate.company_id == leave.company_id)
+                    .order_by(LeaveTemplate.created_at).first())
+    if template is None:
+        return
+    entitled = _template_entitlement(template, key)
+    start = _aware_utc(leave.start_date)
+    year_start = datetime(start.year, 1, 1, tzinfo=timezone.utc)
+    year_end = datetime(start.year + 1, 1, 1, tzinfo=timezone.utc)
+    used = sum(
+        float(lr.days_count or 0.0)
+        for lr in db.query(LeaveRequest).filter(
+            LeaveRequest.company_id == leave.company_id,
+            LeaveRequest.employee_id == leave.employee_id,
+            LeaveRequest.id != leave.id,
+            func.lower(LeaveRequest.status) == "approved",
+            func.lower(LeaveRequest.leave_type) == key,
+        ).all()
+        if year_start <= _aware_utc(lr.start_date) < year_end
+    )
+    left = entitled - used
+    if float(leave.days_count or 0.0) > left + 1e-9:
+        raise HTTPException(
+            status_code=400,
+            detail=(f"{leave.employee_name} has {max(left, 0):g} day(s) of {key} leave left this year "
+                    f"and this request is for {float(leave.days_count):g}. Reject it, or ask them to apply "
+                    f"for the extra days as unpaid leave."),
+        )
+
+
 @router.put("/leaves/approve/{leave_id}", response_model=LeaveRequestResponse)
 def update_leave_status(leave_id: uuid.UUID, data: LeaveStatusUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     leave = db.query(LeaveRequest).filter(LeaveRequest.id == leave_id).first()
@@ -1478,6 +1552,8 @@ def update_leave_status(leave_id: uuid.UUID, data: LeaveStatusUpdate, db: Sessio
     get_company_membership(db, current_user, leave.company_id)
     require_permission(db, current_user, leave.company_id, "payroll:edit")
 
+    if data.status == "Approved" and leave.status != "Approved":
+        _check_leave_within_policy(db, leave)
     leave.status = data.status
     db.commit()
     db.refresh(leave)
@@ -2030,9 +2106,8 @@ def get_leave_balances(
 
         entitled = {"casual": 0.0, "sick": 0.0, "earned": 0.0}
         if template is not None:
-            entitled["casual"] = float(template.casual_leave_days or 0.0)
-            entitled["sick"] = float(template.sick_leave_days or 0.0)
-            entitled["earned"] = float(template.earned_leave_days or 0.0)
+            for k in entitled:
+                entitled[k] = _template_entitlement(template, k)
 
         # R2-527: merge BOTH buckets instead of the either/or fallback. One
         # employee can carry id-keyed leave and legacy name-matched (NULL-id)

@@ -101,6 +101,9 @@ export default function EquipmentTrackingPage() {
   const [fuelDate, setFuelDate] = useState("");
   const [fuelLiters, setFuelLiters] = useState("");
   const [fuelRate, setFuelRate] = useState("");
+  // Set when fuel is logged straight after a return: stamped at the return time,
+  // because a fuel entry after the deployment closed is refused.
+  const [fuelAt, setFuelAt] = useState<string | null>(null);
   const [fuelOdo, setFuelOdo] = useState("");
   const [fuelRemarks, setFuelRemarks] = useState("");
 
@@ -250,11 +253,12 @@ export default function EquipmentTrackingPage() {
       // Find active deployment
       const dep = deployments.find(d => d.equipment_id === activeStoppingEq.id && d.end_date === null);
       if (!dep) return;
+      const returnedAt = new Date().toISOString();
       const res = await fetch(`${getApiHost()}/apis/v3/equipment/deployments/${dep.id}/return`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
         body: JSON.stringify({
-          end_date: new Date().toISOString(),
+          end_date: returnedAt,
           end_meter: parseFloat(stopMeterVal),
           remarks: `Stop reading: ${stopMeterVal}. Photo Proof: ${isStopPhotoCaptured}. GPS Lock: ${isGpsLocked}`
         }),
@@ -267,6 +271,7 @@ export default function EquipmentTrackingPage() {
         loadData();
 
         if (andAddFuel) {
+          setFuelAt(returnedAt);
           setFuelOdo(stopMeterVal);
           setActiveFuelingEq(targetEq);
         }
@@ -294,7 +299,7 @@ export default function EquipmentTrackingPage() {
         body: JSON.stringify({
           equipment_id: activeFuelingEq.id,
           project_id: projectId,
-          logged_date: new Date().toISOString(),
+          logged_date: fuelAt ?? new Date().toISOString(),
           liters: litersVal,
           cost_per_liter: rateVal,
           total_cost: total,
@@ -304,6 +309,7 @@ export default function EquipmentTrackingPage() {
       });
       if (res.ok) {
         setActiveFuelingEq(null);
+        setFuelAt(null);
         setFuelLiters("");
         setFuelRate("");
         setFuelOdo("");
@@ -478,7 +484,7 @@ export default function EquipmentTrackingPage() {
                             )}
 
                             <button
-                              onClick={() => { setActiveFuelingEq(eq); setFuelLiters(""); setFuelRate(""); }}
+                              onClick={() => { setActiveFuelingEq(eq); setFuelAt(null); setFuelLiters(""); setFuelRate(""); }}
                               className="text-[10px] bg-elevated border border-border-custom text-muted hover:text-foreground px-2.5 py-1.5 rounded-md transition-all inline-flex items-center gap-1"
                             >
                               <Icon name="fuel_pump" className="w-3 h-3" />Refuel
@@ -745,7 +751,7 @@ export default function EquipmentTrackingPage() {
                             <td colSpan={7} className="p-8">
                               <EmptyState
                                 title="No equipment expense bills recorded"
-                                description="Billed equipment maintenance, rentals, and fuel adjustments will appear here."
+                                description="Hire charges and repair bills for machines appear here. To add one, open Transaction, click Add Transaction and pick Equipment Expense."
                               />
                             </td>
                           </tr>

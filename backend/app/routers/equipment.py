@@ -349,7 +349,7 @@ def log_fuel(
     # R2-570: temporal, relational and odometer guards before anything is written.
     logged_at = _as_aware(payload.logged_date)
     if logged_at > datetime.now(timezone.utc):
-        raise HTTPException(status_code=400, detail="logged_date cannot be in the future")
+        raise HTTPException(status_code=400, detail="The fuel date cannot be in the future.")
     # Workflow Controls: Entry Controls (creation date window)
     enforce_entry_creation_window(db, eq.company_id, payload.logged_date)
     deployments = db.query(EquipmentDeployment).filter(
@@ -364,7 +364,7 @@ def log_fuel(
     if not covered:
         raise HTTPException(
             status_code=400,
-            detail="Equipment has no deployment on this project covering logged_date",
+            detail="Fuel can only be logged for the time this machine is deployed on this project. Deploy it first, or pick a date within its deployment.",
         )
     if payload.odometer_hours is not None:
         prev = db.query(FuelLog).filter(
@@ -374,7 +374,7 @@ def log_fuel(
         if prev is not None and float(payload.odometer_hours) < float(prev.odometer_hours):
             raise HTTPException(
                 status_code=400,
-                detail=f"odometer_hours cannot be lower than the machine's previous reading ({float(prev.odometer_hours)})",
+                detail=f"The meter reading cannot be lower than the machine's previous reading ({float(prev.odometer_hours):g}).",
             )
 
     data = payload.model_dump()

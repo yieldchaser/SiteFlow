@@ -69,7 +69,7 @@ def test_r2_570_fuel_log_guards(client, db, make_tenant, auth_headers):
     # Fuel for a machine with no deployment on the charged project is refused.
     r = _log_fuel(client, hdr, eq.id, other_project.id)
     assert r.status_code == 400, r.text
-    assert "no deployment" in r.json()["detail"], r.text
+    assert "deployed on this project" in r.json()["detail"], r.text
 
     # A valid log inside the deployment window goes through...
     r = _log_fuel(client, hdr, eq.id, project.id, odometer_hours=9000.0)

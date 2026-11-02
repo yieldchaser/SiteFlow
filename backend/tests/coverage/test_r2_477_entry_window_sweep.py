@@ -258,10 +258,13 @@ def test_backdated_leave_is_rejected_and_recent_passes(client, db, make_tenant, 
     comp, user, _ = make_tenant(company_name="R477I", user_name="U477I")
     hdr = auth_headers(user, comp)
     _enable_window(db, comp, 1)
+    worker = models.StaffEmployee(id=uuid.uuid4(), company_id=comp.id, name="R477 Worker", status="active")
+    db.add(worker)
+    db.commit()
 
     def _leave(date_iso):
         return {
-            "employee_id": str(uuid.uuid4()),
+            "employee_id": str(worker.id),
             "employee_name": "R477 Worker",
             "leave_type": "CL",
             "start_date": date_iso,

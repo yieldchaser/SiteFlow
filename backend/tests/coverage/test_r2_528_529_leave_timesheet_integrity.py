@@ -47,12 +47,15 @@ def test_invalid_leave_status_rejected_with_vocabulary(client, db, make_tenant, 
         mobile=f"+9197{_SUFFIX}", email=f"r2528a-{_SUFFIX}@test.com",
     )
     hdr = auth_headers(user, comp)
+    emp = models.StaffEmployee(id=uuid.uuid4(), company_id=comp.id, name=f"E-{_SUFFIX}", status="active")
+    db.add(emp)
+    db.commit()
 
     r = client.post(
         f"/apis/v3/hr/leaves/{comp.id}",
         headers=hdr,
         json={
-            "employee_id": str(uuid.uuid4()),
+            "employee_id": str(emp.id),
             "employee_name": f"E-{_SUFFIX}",
             "leave_type": "Sick",
             "start_date": "2026-08-10T00:00:00Z",

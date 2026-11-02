@@ -489,6 +489,7 @@ export default function HRPayrollPage() {
       });
       if (res.ok) {
         fetchLeaves();
+        fetchLeaveBalances();
       } else {
         const err = await readErrorDetail(res);
         alert(err || 'Action failed');
@@ -2094,7 +2095,7 @@ export default function HRPayrollPage() {
                 >
                   <option value="">Select employee</option>
                   {employees.map((emp) => (
-                    <option key={emp.id} value={emp.id}>{emp.name} ({emp.code})</option>
+                    <option key={emp.id} value={emp.id}>{emp.name}{emp.code ? ` (${emp.code})` : ""}</option>
                   ))}
                 </select>
                 {employees.length === 0 && (
@@ -2112,6 +2113,7 @@ export default function HRPayrollPage() {
                   <option value="Casual">Casual Leave</option>
                   <option value="Sick">Sick Leave</option>
                   <option value="Earned">Earned Leave</option>
+                  <option value="Unpaid">Unpaid Leave (LOP)</option>
                 </select>
               </div>
 
