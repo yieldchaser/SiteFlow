@@ -36,9 +36,9 @@ from app.models import (
     StaffEmployee, AttendanceLog, Timesheet,
     TimesheetEntry, PayrollRun, PayrollLineItem, Project, LeaveRequest,
     Holiday, Designation, LeaveTemplate, PayrollProfile, User, Company,
-    CompanyPayrollSettings
+    CompanyPayrollSettings, StatutoryReport
 )
-from app.workflow_controls import enforce_entry_creation_window
+from app.workflow_controls import enforce_entry_creation_window, enforce_entry_editing_window
 
 router = APIRouter(prefix="/hr", tags=["HR, Attendance & Payroll"], dependencies=[Depends(get_current_user)])
 
@@ -72,6 +72,20 @@ def _ist_day_bounds(day: date):
     at 00:00Z of their day, which also falls inside this window."""
     start = datetime(day.year, day.month, day.day, tzinfo=_IST).astimezone(timezone.utc)
     return start, start + timedelta(days=1)
+
+
+def _ist_date(dt: datetime) -> date:
+    """Indian calendar day of a stored attendance instant."""
+    return _aware_utc(dt).astimezone(_IST).date()
+
+
+# How much of a paid day each attendance status is worth in a payroll run.
+_PAID_DAY_WEIGHT = {
+    "Present": 1.0,
+    "Present (Off-Site)": 1.0,
+    "Paid Leave": 1.0,
+    "Half Day": 0.5,
+}
 
 
 def _utc_midnight(dt: datetime) -> datetime:
@@ -378,6 +392,7 @@ class PayslipResponse(BaseModel):
     payroll_run_id: uuid.UUID
     employee_id: uuid.UUID
     employee_name: str
+    designation: str = ""
     days_present: float
     days_in_month: int
     gross_salary: float
@@ -1067,13 +1082,15 @@ def run_payroll(payload: PayrollRunCreate, db: Session = Depends(get_db), curren
 
     payslips = []
     for emp in employees:
-        # Count attendance days this month
-        att_count = db.query(AttendanceLog).filter(
+        # Count attendance days this month. The supervisor muster offers Half
+        # Day and Paid Leave too: a half day is half a paid day and a muster
+        # paid leave is a full one. Counting only Present docked both.
+        att_rows = db.query(AttendanceLog.attendance_date, AttendanceLog.status).filter(
             AttendanceLog.employee_id == emp.id,
             AttendanceLog.attendance_date >= att_start,
             AttendanceLog.attendance_date < att_end,
-            AttendanceLog.status.in_(["Present", "Present (Off-Site)"])
-        ).count()
+            AttendanceLog.status.in_(list(_PAID_DAY_WEIGHT))
+        ).all()
 
         # Sum overtime hours this month
         total_ot = db.query(func.sum(AttendanceLog.overtime_hours)).filter(
@@ -1111,9 +1128,22 @@ def run_payroll(payload: PayrollRunCreate, db: Session = Depends(get_db), curren
             LeaveRequest.end_date >= month_start,
         ).all()
         approved_leave_days = 0.0
+        leave_dates = set()
         for lr in approved_leaves:
             if (lr.leave_type or "").strip().lower() in PAID_LEAVE_TYPES:
                 approved_leave_days += float(lr.days_count or 0.0)
+                d, last = _aware_utc(lr.start_date).date(), _aware_utc(lr.end_date).date()
+                while d <= last:
+                    leave_dates.add(d)
+                    d += timedelta(days=1)
+
+        # A muster "Paid Leave" on a day an approved leave request already
+        # covers is the same day, so it is not paid twice.
+        att_count = 0.0
+        for att_date, att_status in att_rows:
+            if att_status == "Paid Leave" and _ist_date(att_date) in leave_dates:
+                continue
+            att_count += _PAID_DAY_WEIGHT[att_status]
 
         # D2 + R2-431: zero-attendance payroll POLICY.
         # Company setting assume_full_month_when_no_attendance defaults OFF (no punch = zero pay).
@@ -1149,7 +1179,7 @@ def run_payroll(payload: PayrollRunCreate, db: Session = Depends(get_db), curren
             **_calc_for_line
         )
         db.add(line)
-        payslips.append({"employee_id": emp.id, "employee_name": emp.name, **calc})
+        payslips.append({"employee_id": emp.id, "employee_name": emp.name, "designation": emp.designation or "", **calc})
 
     # Aggregate totals
     run.total_gross = Decimal(str(round(sum(p["gross_salary"] for p in payslips), 2)))
@@ -1219,6 +1249,52 @@ def get_payslips(run_id: uuid.UUID, db: Session = Depends(get_db), current_user:
     return result
 
 
+@router.delete("/payroll/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+def undo_payroll_run(run_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Undo a payroll run so the month can be run again.
+
+    A run is finalized the moment it is computed, and one run per month is
+    allowed, so a run made before the muster was complete (or with the wrong
+    working days) had no way back. Refused once a PF or ESI return for that
+    month is marked filed, since the filed figures came from this run. The
+    removal is written to the Delete Logs."""
+    run = db.query(PayrollRun).filter(PayrollRun.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Payroll run not found")
+    get_company_membership(db, current_user, run.company_id)
+    require_permission(db, current_user, run.company_id, "payroll:run")
+
+    year, month = map(int, run.payroll_month.split("-"))
+    month_end = datetime(year + (month == 12), month % 12 + 1, 1, tzinfo=timezone.utc)
+    enforce_entry_editing_window(db, run.company_id, month_end)
+
+    filed = db.query(StatutoryReport).filter(
+        StatutoryReport.company_id == run.company_id,
+        StatutoryReport.return_period == run.payroll_month,
+        func.lower(StatutoryReport.status) == "filed",
+    )
+    if run.project_id:
+        filed = filed.filter((StatutoryReport.project_id == run.project_id) | (StatutoryReport.project_id.is_(None)))
+    filed = filed.first()
+    if filed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"The {filed.report_type.upper()} return for {run.payroll_month} is already filed from this payroll. "
+                "Mark that return as not filed first if you really need to redo the payroll."
+            ),
+        )
+
+    from app.routers.delete_logs import log_deletion
+    log_deletion(
+        db, run.company_id, "payroll_run", run.id,
+        f"Payroll {run.payroll_month}: net {float(run.total_net or 0):,.2f}",
+        deleted_by=current_user.name,
+    )
+    db.query(PayrollLineItem).filter(PayrollLineItem.payroll_run_id == run.id).delete(synchronize_session=False)
+    db.delete(run)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/payroll/{run_id}/payslips/export")

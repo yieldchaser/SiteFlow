@@ -869,9 +869,16 @@ export function getHelpCategories(companyId: string): HelpCategory[] {
               <p className="mt-2">
                 Supervisors see names and trades only, never salaries. Each punch counts on the Indian calendar day it was made, even just after midnight, and feeds the monthly payroll.
               </p>
+              <p className="mt-2">
+                No phones on site? Mark the register from the office instead. Open{" "}
+                <Link className="help-link" href={c(companyId, "/d/payroll-attendance")}>
+                  Payroll
+                </Link>
+                , choose the Attendance tab and Site Staff, and pick the date. Set the few people who were absent, on half day or on leave, then click the &quot;Mark the other ... present&quot; button for everyone else. These entries show who marked them, so they are not mistaken for phone punches.
+              </p>
             </>
           ),
-          text: "supervisor mark attendance worker punch in punch out labour daily site staff who can mark attendance phone location",
+          text: "supervisor mark attendance worker punch in punch out labour daily site staff who can mark attendance phone location register muster no phone half day office",
           sources: [
             "frontend/src/app/c/[company_id]/d/attendance/page.tsx:691",
             "frontend/src/app/c/[company_id]/d/attendance/page.tsx:1384",
@@ -944,31 +951,31 @@ export function getHelpCategories(companyId: string): HelpCategory[] {
           ],
         },
         {
-          q: "How do I run payroll and export payslips?",
+          q: "How do I run payroll and get payslips?",
           a: (
             <>
               <p>
-                You will need active employees and recorded monthly attendance logs.
+                First mark the whole month&apos;s attendance. Pay is worked out from it: a present day or a paid leave counts as one day, a half day as half, and an unmarked day as nothing.
               </p>
               <p className="mt-2">
-                Open the sidebar, navigate to "Finance & Billing", select{" "}
+                Set your weekly off once under Settings, Holiday &amp; Weekoff. Without it every day of the month counts as a working day and everyone looks short.
+              </p>
+              <p className="mt-2">
+                Then open the sidebar, go to &quot;Finance &amp; Billing&quot;, select{" "}
                 <Link className="help-link" href={c(companyId, "/d/hr")}>
-                  "HR & Staff"
+                  &quot;HR &amp; Staff&quot;
                 </Link>
-                , choose the "Payroll Runs" tab, and click "Compute Payroll".
+                {" "}and choose the &quot;Payroll Runs&quot; tab. Pick the month, check the working days shown, and click &quot;Run Payroll&quot;.
               </p>
               <p className="mt-2">
-                Select the payroll month and year.
+                Each person gets basic, HRA and allowances for the days worked, less their PF, ESI and TDS. The company&apos;s own PF and ESI share is shown on the payslip separately, since it is not cut from the salary.
               </p>
               <p className="mt-2">
-                Running payroll calculates gross earnings (basic salary, HRA, allowances) minus statutory deductions (EPF, ESI, professional tax, and unpaid leave days) and finalizes the period.
-              </p>
-              <p className="mt-2">
-                Export bank transfer payout sheets and bulk PDF payslips for your team.
+                Click a name to see the payslip and print it or save it as a PDF. If the numbers are wrong, fix the attendance, click &quot;Undo run&quot; and run the month again. Once the PF or ESI return for that month is marked filed, the run can no longer be undone.
               </p>
             </>
           ),
-          text: "run payroll payslips salary epf esi pt deductions basic hra bank payout export compute",
+          text: "run payroll payslips salary epf esi tds deductions basic hra half day working days weekly off undo print pdf",
           sources: [
             "frontend/src/components/Sidebar.tsx:300",
             "frontend/src/app/c/[company_id]/d/hr/page.tsx:1",

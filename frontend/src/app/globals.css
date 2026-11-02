@@ -3867,3 +3867,10 @@ html:has(.alexandria) { scroll-behavior: smooth; }
     linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 45%, #bae6fd 100%);
 }
 
+
+/* Printing a payslip prints the payslip, not the dashboard behind it. */
+@media print {
+  body:has(.payslip-print) * { visibility: hidden; }
+  .payslip-print, .payslip-print * { visibility: visible; }
+  .payslip-print { position: absolute; left: 0; top: 0; width: 100%; max-width: none; border: none; }
+}

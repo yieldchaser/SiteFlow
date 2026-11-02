@@ -1140,7 +1140,11 @@ function AttendanceTab({
   employees: Emp[];
   holidays: Holiday[];
 }) {
-  const [staffType, setStaffType] = useState<"office" | "site">("office");
+  // Open on the group that has people in it: a company whose staff are all
+  // on sites used to land on an empty Office list.
+  const [staffType, setStaffType] = useState<"office" | "site">(() =>
+    employees.some((e) => e.status === "active" && !e.project_id) || !employees.some((e) => e.status === "active") ? "office" : "site"
+  );
   const [statusFilter, setStatusFilter] = useState("All");
   const [date, setDate] = useState(todayStr());
   const [logs, setLogs] = useState<Att[]>([]);
@@ -1148,6 +1152,7 @@ function AttendanceTab({
   const [loadError, setLoadError] = useState(false);
   const [leaves, setLeaves] = useState<Leave[]>([]);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [bulkSaving, setBulkSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1232,9 +1237,10 @@ function AttendanceTab({
   }, [employees, presentMap, leaves, staffType, holidaySet, date]);
 
   const counts = useMemo(() => {
-    const c = { present: 0, absent: 0, paid: 0, weekoff: 0 };
+    const c = { present: 0, half: 0, absent: 0, paid: 0, weekoff: 0 };
     rows.forEach((r) => {
       if (r.status === "Present" || r.status === "Present (Off-Site)") c.present++;
+      else if (r.status === "Half Day") c.half++;
       else if (r.status === "Paid Leave") c.paid++;
       else if (r.status === "Week Off") c.weekoff++;
       else c.absent++;
@@ -1249,6 +1255,31 @@ function AttendanceTab({
   };
 
   const filtered = rows.filter((r) => statusFilter === "All" || r.status === statusFilter);
+
+  // Most days nearly everyone turns up: mark the rest present in one go and
+  // change only the exceptions. People on approved leave, a holiday, or with a
+  // day already marked are left as they are.
+  const unmarked = rows.filter((r) => !r.log && r.status === "Absent" && r.emp.project_id);
+  const markRestPresent = async () => {
+    if (!unmarked.length) return;
+    if (!window.confirm(`Mark ${unmarked.length} ${unmarked.length === 1 ? "person" : "people"} present for ${date}?`)) return;
+    setBulkSaving(true);
+    let failed = 0;
+    try {
+      for (const r of unmarked) {
+        const res = await fetch(`${getApiHost()}/apis/v3/hr/attendance/manual`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
+          body: JSON.stringify({ employee_id: r.emp.id, project_id: r.emp.project_id, attendance_date: date, status: "Present" }),
+        });
+        if (!res.ok) failed++;
+      }
+      await load();
+      if (failed) alert(`${failed} could not be marked. Check them and try again.`);
+    } finally {
+      setBulkSaving(false);
+    }
+  };
 
   return (
     <div>
@@ -1281,10 +1312,16 @@ function AttendanceTab({
         {!loadError && (
           <div className="ml-auto flex items-center gap-3 text-sm">
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-success" /> {counts.present} Present</span>
+            {counts.half > 0 && <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-success/50" /> {counts.half} Half Day</span>}
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-danger" /> {counts.absent} Absent</span>
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-warning" /> {counts.paid} Paid Leave</span>
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-primary" /> {counts.weekoff} Week Off</span>
           </div>
+        )}
+        {!loadError && unmarked.length > 0 && (
+          <button className={btnGhost + " whitespace-nowrap"} onClick={markRestPresent} disabled={bulkSaving}>
+            {bulkSaving ? "Marking…" : `Mark the other ${unmarked.length} present`}
+          </button>
         )}
       </div>
 
@@ -1314,6 +1351,8 @@ function AttendanceTab({
                         className={
                           r.status === "Present" || r.status === "Present (Off-Site)"
                             ? "text-success"
+                            : r.status === "Half Day"
+                            ? "text-success/70"
                             : r.status === "Paid Leave"
                             ? "text-warning"
                             : r.status === "Week Off"
@@ -1353,7 +1392,11 @@ function AttendanceTab({
                 {!loading && filtered.length === 0 && (
                   <tr>
                     <td colSpan={3} className="px-3 py-6 text-center text-muted">
-                      No records for this day.
+                      {rows.length > 0
+                        ? "Nobody matches this filter for this day."
+                        : staffType === "office"
+                          ? "No office staff. Anyone assigned to a site is under Site Staff."
+                          : "No site staff. Assign people to a site from People to mark them here."}
                     </td>
                   </tr>
                 )}

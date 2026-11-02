@@ -132,16 +132,16 @@ export default function HRPayrollPage() {
   const [selectedEmpDetail, setSelectedEmpDetail] = useState<any>(null);
   const [detailsForm, setDetailsForm] = useState({ salaryAmount: "", shiftHours: "", otRate: "", designation: "" });
 
-  useEffect(() => {
-    if (selectedEmpDetail) {
-      setDetailsForm({
-        salaryAmount: selectedEmpDetail.grossMonthly != null ? String(selectedEmpDetail.grossMonthly) : "",
-        shiftHours: selectedEmpDetail.shiftHours != null ? String(selectedEmpDetail.shiftHours) : "8",
-        otRate: selectedEmpDetail.otRate != null ? String(selectedEmpDetail.otRate) : "150",
-        designation: selectedEmpDetail.designation || "",
-      });
-    }
-  }, [showDetailsDrawer]);
+  const openDetailsDrawer = (emp: Employee & { grossMonthly?: number; shiftHours?: number; otRate?: number }) => {
+    setSelectedEmpDetail(emp);
+    setDetailsForm({
+      salaryAmount: emp.grossMonthly != null ? String(emp.grossMonthly) : "",
+      shiftHours: emp.shiftHours != null ? String(emp.shiftHours) : "8",
+      otRate: emp.otRate != null ? String(emp.otRate) : "150",
+      designation: emp.designation || "",
+    });
+    setShowDetailsDrawer(true);
+  };
   
   const [workforceForm, setWorkforceForm] = useState({
     workerType: "",
@@ -282,7 +282,10 @@ export default function HRPayrollPage() {
   };
   const [selectedDate, setSelectedDate] = useState(todayLocalISO());
   const [payrollMonth, setPayrollMonth] = useState(todayLocalISO().slice(0, 7));
-  const [daysInMonth, setDaysInMonth] = useState(26);
+  // null means "work it out": the month's days less the company's weekly offs
+  // and declared holidays. A fixed 26 overpaid anyone short of a 27-day month.
+  const [daysOverride, setDaysOverride] = useState<number | null>(null);
+  const [weeklyOff, setWeeklyOff] = useState<string[]>([]);
   const [payrollRun, setPayrollRun] = useState<PayrollRun | null>(null);
   const [showAddEmp, setShowAddEmp] = useState(false);
   const [selectedPayslip, setSelectedPayslip] = useState<PayslipLine | null>(null);
@@ -493,6 +496,10 @@ export default function HRPayrollPage() {
     if (companyId) {
       fetchHolidays();
       fetchCostCodes();
+      fetch(`${getApiHost()}/apis/v3/settings/company/${companyId}`, { headers: authHeaders() })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((c) => setWeeklyOff(Array.isArray(c?.weekly_off_days) ? c.weekly_off_days : []))
+        .catch(() => setWeeklyOff([]));
     }
   }, [companyId]);
 
@@ -821,7 +828,99 @@ export default function HRPayrollPage() {
     }
   };
 
+  const monthWorkingDays = (() => {
+    const [y, m] = payrollMonth.split("-").map(Number);
+    if (!y || !m) return { total: 0, offs: 0, hols: 0, working: 0 };
+    const total = new Date(y, m, 0).getDate();
+    const offKeys = new Set(weeklyOff.map((d) => d.trim().toLowerCase().slice(0, 3)));
+    const holDays = new Set(holidays.filter((h) => h.date?.startsWith(payrollMonth)).map((h) => Number(h.date.slice(8, 10))));
+    let offs = 0, hols = 0;
+    for (let d = 1; d <= total; d++) {
+      const key = new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "short" }).toLowerCase();
+      if (offKeys.has(key)) offs++;
+      else if (holDays.has(d)) hols++;
+    }
+    return { total, offs, hols, working: total - offs - hols };
+  })();
+  const daysInMonth = daysOverride ?? monthWorkingDays.working;
+  const monthLabel = (() => {
+    const [y, m] = payrollMonth.split("-").map(Number);
+    return y && m ? new Date(y, m - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" }) : payrollMonth;
+  })();
+
+  const mapPayslip = (p: any): PayslipLine => ({
+    employeeId: p.employee_id,
+    employeeName: p.employee_name,
+    designation: p.designation || p.employee_designation || "",
+    daysPresent: p.days_present,
+    daysInMonth: p.days_in_month,
+    gross: p.gross_salary,
+    basic: p.basic,
+    hra: p.hra,
+    allowances: p.other_allowances,
+    pfEmployee: p.pf_employee,
+    pfEmployer: p.pf_employer,
+    esiEmployee: p.esi_employee,
+    esiEmployer: p.esi_employer,
+    tds: p.tds,
+    totalDeductions: p.total_deductions,
+    netPayable: p.net_payable
+  });
+
+  // After a refresh the last run is still there to check, export or undo.
+  const loadLatestRun = async () => {
+    try {
+      const res = await fetch(`${getApiHost()}/apis/v3/hr/payroll/latest/${companyId}`, { headers: authHeaders() });
+      if (!res.ok) return;
+      const latest = await res.json();
+      if (!latest.run_id) { setPayrollRun(null); return; }
+      const sr = await fetch(`${getApiHost()}/apis/v3/hr/payroll/${latest.run_id}/payslips`, { headers: authHeaders() });
+      if (!sr.ok) return;
+      const payslips = (await sr.json()).map(mapPayslip);
+      const sum = (k: keyof PayslipLine) => payslips.reduce((a: number, p: PayslipLine) => a + (Number(p[k]) || 0), 0);
+      setPayrollRun({
+        id: latest.run_id,
+        month: latest.payroll_month,
+        status: "finalized",
+        totalGross: sum("gross"),
+        totalDeductions: sum("totalDeductions"),
+        totalNet: sum("netPayable"),
+        payslips
+      });
+    } catch (e) {
+      console.error("Failed to load the last payroll run", e);
+    }
+  };
+
+  useEffect(() => {
+    if (companyId && tab === "payroll") loadLatestRun();
+  }, [companyId, tab]);
+
+  const handleUndoPayroll = async () => {
+    if (!payrollRun) return;
+    const ok = window.confirm(
+      `Undo the ${payrollRun.month} payroll? The payslips are removed and you can run the month again after fixing attendance. This is recorded in Delete Logs.`
+    );
+    if (!ok) return;
+    const res = await fetch(`${getApiHost()}/apis/v3/hr/payroll/${payrollRun.id}`, { method: "DELETE", headers: authHeaders() });
+    if (res.ok) {
+      setPayrollRun(null);
+      setSelectedPayslip(null);
+      triggerLocalToast("Payroll run undone");
+    } else {
+      alert((await readErrorDetail(res)) || "Could not undo the payroll run");
+    }
+  };
+
   const handleRunPayroll = async () => {
+    const ok = window.confirm(
+      `Run payroll for ${monthLabel} with ${daysInMonth} working days?
+
+` +
+      "Pay is worked out from the attendance marked so far, so check the muster first. " +
+      "If something is wrong you can undo the run, until the PF or ESI return for the month is marked filed."
+    );
+    if (!ok) return;
     setLoading(true);
     try {
       const res = await fetch(`${getApiHost()}/apis/v3/hr/payroll/run`, {
@@ -836,24 +935,7 @@ export default function HRPayrollPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        const mappedPayslips = data.payslips.map((p: any) => ({
-          employeeId: p.employee_id,
-          employeeName: p.employee_name,
-          designation: p.designation || "—",
-          daysPresent: p.days_present,
-          daysInMonth: p.days_in_month,
-          gross: p.gross_salary,
-          basic: p.basic,
-          hra: p.hra,
-          allowances: p.other_allowances,
-          pfEmployee: p.pf_employee,
-          pfEmployer: p.pf_employer,
-          esiEmployee: p.esi_employee,
-          esiEmployer: p.esi_employer,
-          tds: p.tds,
-          totalDeductions: p.total_deductions,
-          netPayable: p.net_payable
-        }));
+        const mappedPayslips = data.payslips.map(mapPayslip);
         setPayrollRun({
           id: data.id,
           month: data.payroll_month,
@@ -1077,7 +1159,7 @@ export default function HRPayrollPage() {
                       </tr>
                     ) : (
                       employees.map(emp => (
-                      <tr key={emp.id} className="hover:bg-elevated transition-colors cursor-pointer" onClick={() => { setSelectedEmpDetail(emp); setShowDetailsDrawer(true); }}>
+                      <tr key={emp.id} className="hover:bg-elevated transition-colors cursor-pointer" onClick={() => openDetailsDrawer(emp)}>
                         <td className="px-3 py-2.5 font-sans text-muted">{emp.code}</td>
                         <td className="px-3 py-2.5 font-semibold text-foreground">{emp.name}</td>
                         <td className="px-3 py-2.5 text-muted">{emp.designation}</td>
@@ -1515,17 +1597,17 @@ export default function HRPayrollPage() {
                 <div className="flex items-end gap-4">
                   <div>
                     <label className="text-[10px] text-muted font-bold uppercase block mb-1.5">Payroll Month</label>
-                    <input type="month" value={payrollMonth} onChange={e => setPayrollMonth(e.target.value)}
+                    <input type="month" value={payrollMonth} onChange={e => { setPayrollMonth(e.target.value); setDaysOverride(null); }}
                       className="bg-background border border-border-custom rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary" />
                   </div>
                   <div>
                     <label className="text-[10px] text-muted font-bold uppercase block mb-1.5">Working Days</label>
-                    <input type="number" min={1} max={31} value={daysInMonth} onChange={e => setDaysInMonth(Number(e.target.value))}
+                    <input type="number" min={1} max={31} value={daysInMonth} onChange={e => setDaysOverride(e.target.value === "" ? null : Number(e.target.value))}
                       className="w-24 bg-background border border-border-custom rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary" />
                   </div>
-                  <button onClick={handleRunPayroll}
-                    className="px-5 py-2 bg-primary rounded-lg text-white text-sm font-bold hover:bg-primary/90 transition-all">
-                    Compute Payroll
+                  <button onClick={handleRunPayroll} disabled={loading || daysInMonth < 1}
+                    className="px-5 py-2 bg-primary rounded-lg text-white text-sm font-bold hover:bg-primary/90 transition-all disabled:opacity-60">
+                    Run Payroll
                   </button>
                   <button
                     onClick={() => document.getElementById("payroll-csv-file-input")?.click()}
@@ -1541,6 +1623,14 @@ export default function HRPayrollPage() {
                     <Icon name="inbox" className="w-4 h-4" /> Import Payroll CSV
                   </button>
                 </div>
+                <p className="text-xs text-muted mt-3">
+                  {daysOverride !== null
+                    ? `You set ${daysOverride} working days. Clear the box to go back to ${monthWorkingDays.working}.`
+                    : weeklyOff.length === 0
+                      ? `No weekly off is set in Settings, so all ${monthWorkingDays.total} days of ${monthLabel} count as working days. If your sites rest on Sunday, set the weekly off in Settings first.`
+                      : `${monthLabel} has ${monthWorkingDays.total} days. Less ${monthWorkingDays.offs} weekly off${monthWorkingDays.offs === 1 ? "" : "s"}${monthWorkingDays.hols ? ` and ${monthWorkingDays.hols} holiday${monthWorkingDays.hols === 1 ? "" : "s"}` : ""}, that leaves ${monthWorkingDays.working} working days.`}
+                  {" "}Half days count as half, and paid leave marked on the muster counts as a full day.
+                </p>
               </div>
 
               {payrollRun && (
@@ -1582,6 +1672,12 @@ export default function HRPayrollPage() {
                           </button>
                         )}
                         <span className={statusBadge("finalized")}>{formatLabel(payrollRun.status)}</span>
+                        <button
+                          onClick={handleUndoPayroll}
+                          className="text-[10px] px-3 py-1.5 rounded-lg bg-elevated text-danger border border-border-custom font-bold hover:bg-danger/10 transition-all"
+                        >
+                          Undo run
+                        </button>
                       </div>
                     </div>
                     <table className="w-full text-xs">
@@ -1626,7 +1722,7 @@ export default function HRPayrollPage() {
               {!payrollRun && (
                 <EmptyState
                   title="No payroll run yet"
-                  description="Select a payroll month and click 'Compute Payroll' to calculate employee wages, deductions, and net disbursements."
+                  description="Pick the month, check the working days, then click Run Payroll. Pay is worked out from the attendance marked for that month."
                 />
               )}
             </div>
@@ -1810,15 +1906,15 @@ export default function HRPayrollPage() {
       {selectedPayslip && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={() => setSelectedPayslip(null)}>
-          <div className="bg-card border border-border-custom rounded-lg w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+          <div className="payslip-print bg-card border border-border-custom rounded-lg w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
               <div>
                 <h2 className="text-base font-bold text-foreground">Payslip: {selectedPayslip.employeeName}</h2>
-                <p className="text-xs text-muted">{selectedPayslip.designation} · {payrollMonth}</p>
+                <p className="text-xs text-muted">{selectedPayslip.designation} · {payrollRun?.month ?? payrollMonth}</p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 print:hidden">
                 <button onClick={() => window.print()} className="inline-flex items-center gap-1 px-3 py-1 bg-primary/20 hover:bg-primary/35 text-primary border border-border-custom rounded text-[10px] font-bold transition-all">
-                  <Icon name="printer" className="w-3.5 h-3.5" /> Download PDF
+                  <Icon name="printer" className="w-3.5 h-3.5" /> Print or save PDF
                 </button>
                 <button onClick={() => setSelectedPayslip(null)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>
               </div>
@@ -1848,9 +1944,7 @@ export default function HRPayrollPage() {
               <p className="text-[10px] text-muted font-bold uppercase tracking-wider mb-2">Deductions</p>
               {[
                 ["PF (Employee 12%)", selectedPayslip.pfEmployee],
-                ["PF (Employer 12%)", selectedPayslip.pfEmployer],
                 ["ESI (Employee 0.75%)", selectedPayslip.esiEmployee],
-                ["ESI (Employer 3.25%)", selectedPayslip.esiEmployer],
                 ["TDS", selectedPayslip.tds],
               ].map(([label, val]) => (
                 <div key={label as string} className="flex justify-between text-xs">
@@ -1864,6 +1958,20 @@ export default function HRPayrollPage() {
                 <span className="text-muted font-bold">Total Deductions</span>
                 <span className="text-danger font-bold">{fmt(selectedPayslip.totalDeductions)}</span>
               </div>
+            </div>
+
+            {/* Employer share: paid by the company on top, never cut from the salary */}
+            <div className="space-y-1 mb-4">
+              <p className="text-[10px] text-muted font-bold uppercase tracking-wider mb-2">Paid by the company on top</p>
+              {[
+                ["PF (Employer 12%)", selectedPayslip.pfEmployer],
+                ["ESI (Employer 3.25%)", selectedPayslip.esiEmployer],
+              ].map(([label, val]) => (
+                <div key={label as string} className="flex justify-between text-xs">
+                  <span className="text-muted">{label}</span>
+                  <span className="text-foreground">{(val as number) > 0 ? fmt(val as number) : "N/A"}</span>
+                </div>
+              ))}
             </div>
 
             {/* Net */}

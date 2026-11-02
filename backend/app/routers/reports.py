@@ -531,14 +531,15 @@ def _rep_attendance_salary(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]
     rows = []
     for emp in q.all():
         proj = db.query(Project).filter(Project.id == emp.project_id).first() if emp.project_id else None
-        # R2-325: count both punch-in statuses exactly as payroll pays for
-        # them (hr.py run_payroll filters status.in_(["Present", "Present
-        # (Off-Site)"])); counting only "Present" here reported off-site days
-        # as absences next to a payslip that paid for them.
-        present = db.query(AttendanceLog).filter(
+        # R2-325: count days present the way payroll pays for them: both
+        # punch-in statuses as a full day and a muster half day as half.
+        # Counting only "Present" reported off-site days and half days as
+        # absences next to a payslip that paid for them.
+        statuses = db.query(AttendanceLog.status).filter(
             AttendanceLog.employee_id == emp.id,
-            AttendanceLog.status.in_(["Present", "Present (Off-Site)"])
-        ).count()
+            AttendanceLog.status.in_(["Present", "Present (Off-Site)", "Half Day"])
+        ).all()
+        present = sum(0.5 if st == "Half Day" else 1 for (st,) in statuses)
         net = ""
         pl = db.query(PayrollLineItem).join(PayrollRun, PayrollLineItem.payroll_run_id == PayrollRun.id).filter(
             PayrollLineItem.employee_id == emp.id
