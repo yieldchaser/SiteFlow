@@ -441,8 +441,27 @@ def schedule_maintenance(
         db_data["completed_date"] = now
         done_key = (data["service_type"].strip().lower(), _as_aware(data["scheduled_date"]).date())
 
-    sched = MaintenanceSchedule(**db_data)
-    db.add(sched)
+    # Recording a planned service as done closes that booking rather than
+    # adding a second row beside it, so the overdue flag and row clear.
+    sched = None
+    if done_key is not None:
+        sched = next((
+            s for s in db.query(MaintenanceSchedule).filter(
+                MaintenanceSchedule.equipment_id == equipment_id,
+                MaintenanceSchedule.status != "completed",
+            ).all()
+            if (s.service_type.strip().lower(), _as_aware(s.scheduled_date).date()) == done_key
+        ), None)
+    if sched is not None:
+        sched.status = "completed"
+        sched.completed_date = now
+        if data["cost"]:
+            sched.cost = db_data["cost"]
+        if data["remarks"]:
+            sched.remarks = data["remarks"]
+    else:
+        sched = MaintenanceSchedule(**db_data)
+        db.add(sched)
     db.flush()
 
     # R2-531: derive Equipment.status from the open schedules' dates and today,

@@ -971,9 +971,12 @@ def _compute_payslip(emp: StaffEmployee, days_present: float, days_in_month: int
     pf_emp = round(_pf_wages_capped * float(emp.pf_employee_pct) / 100, 2)
     pf_er  = round(_pf_wages_capped * float(emp.pf_employer_pct) / 100, 2)
 
-    if emp.is_esi_applicable and (full_gross + ot_amount) <= ESI_GROSS_WAGE_CEILING:
-        esi_emp = round(gross * float(emp.esi_employee_pct) / 100, 2)
-        esi_er  = round(gross * float(emp.esi_employer_pct) / 100, 2)
+    # ESI coverage is decided on regular monthly wages; overtime is charged
+    # ESI but never takes a worker out of coverage. ESIC rounds both shares
+    # up to the next whole rupee.
+    if emp.is_esi_applicable and full_gross <= ESI_GROSS_WAGE_CEILING:
+        esi_emp = float(math.ceil(round(gross * float(emp.esi_employee_pct) / 100, 2)))
+        esi_er  = float(math.ceil(round(gross * float(emp.esi_employer_pct) / 100, 2)))
     else:
         esi_emp = esi_er = 0.0
 

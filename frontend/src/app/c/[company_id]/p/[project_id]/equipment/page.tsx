@@ -285,6 +285,32 @@ export default function EquipmentTrackingPage() {
   };
 
   // Fuel logging
+  // Maintenance: plan a service or record one already done.
+  const [isMaintOpen, setIsMaintOpen] = useState(false);
+  const [maintForm, setMaintForm] = useState({ equipmentId: "", serviceType: "", date: "", cost: "", status: "scheduled", remarks: "" });
+  const handleAddMaintenance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!maintForm.equipmentId || !maintForm.serviceType.trim() || !maintForm.date) return;
+    const res = await fetch(`${getApiHost()}/apis/v3/equipment/${maintForm.equipmentId}/maintenance`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
+      body: JSON.stringify({
+        service_type: maintForm.serviceType.trim(),
+        scheduled_date: new Date(`${maintForm.date}T09:00:00`).toISOString(),
+        cost: maintForm.cost ? parseFloat(maintForm.cost) : 0,
+        status: maintForm.status,
+        remarks: maintForm.remarks.trim() || null,
+      }),
+    });
+    if (res.ok) {
+      setIsMaintOpen(false);
+      setMaintForm({ equipmentId: "", serviceType: "", date: "", cost: "", status: "scheduled", remarks: "" });
+      loadData();
+    } else {
+      setError((await readErrorDetail(res)) || "Could not save the service entry");
+    }
+  };
+
   const handleLogFuel = async () => {
     if (!activeFuelingEq || !fuelLiters || !fuelRate) return;
     try {
@@ -659,7 +685,16 @@ export default function EquipmentTrackingPage() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h3 className="text-xs font-bold text-muted uppercase tracking-wider">Maintenance Schedule & Service Logs</h3>
-                    <span className="text-[10px] text-muted">{maintenanceLogs.length} schedule entries</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[10px] text-muted">{maintenanceLogs.length} schedule entries</span>
+                      <button
+                        onClick={() => { setMaintForm((f) => ({ ...f, equipmentId: f.equipmentId || projectFleet[0]?.id || "" })); setIsMaintOpen(true); }}
+                        disabled={projectFleet.length === 0}
+                        className="text-[10px] bg-primary text-white px-3 py-1.5 rounded-md font-bold disabled:opacity-50"
+                      >
+                        + Add Service
+                      </button>
+                    </div>
                   </div>
 
                   <div className="bg-background border border-border-custom rounded-lg overflow-hidden">
@@ -712,6 +747,20 @@ export default function EquipmentTrackingPage() {
                                 }`}>
                                   {log.completed_date ? "Completed" : isOverdue ? "Overdue" : formatLabel(log.status)}
                                 </span>
+                                {!log.completed_date && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const d = new Date(log.scheduled_date);
+                                      const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+                                      setMaintForm({ equipmentId: log.equipment_id, serviceType: log.service_type, date: day, cost: String(log.cost ?? ""), status: "completed", remarks: log.remarks ?? "" });
+                                      setIsMaintOpen(true);
+                                    }}
+                                    className="block mx-auto mt-1 text-[10px] text-primary hover:underline cursor-pointer"
+                                  >
+                                    Mark done
+                                  </button>
+                                )}
                               </td>
                               <td className="px-5 py-3 text-muted italic max-w-xs truncate" title={log.remarks || ""}>
                                 {log.remarks || "—"}
@@ -918,6 +967,54 @@ export default function EquipmentTrackingPage() {
               <button onClick={() => handleStopMachinery(true)} className="px-4 py-2.5 bg-secondary text-foreground font-bold rounded-md text-xs">Save & Add Fuel</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Maintenance Modal */}
+      {isMaintOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <form onSubmit={handleAddMaintenance} className="bg-background border border-border-custom rounded-lg w-full max-w-md shadow-2xl p-6 space-y-4 text-xs">
+            <div className="flex justify-between items-center border-b border-border-custom pb-2">
+              <h3 className="text-xs font-extrabold text-foreground">Add Service Entry</h3>
+              <button type="button" onClick={() => setIsMaintOpen(false)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>
+            </div>
+            <div className="space-y-1">
+              <label className="text-muted">Machine</label>
+              <select required value={maintForm.equipmentId} onChange={(e) => setMaintForm({ ...maintForm, equipmentId: e.target.value })} className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground">
+                {projectFleet.map((eq) => <option key={eq.id} value={eq.id}>{eq.name} ({eq.code})</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-muted">Service</label>
+              <input required value={maintForm.serviceType} onChange={(e) => setMaintForm({ ...maintForm, serviceType: e.target.value })} placeholder="e.g. 500-hour service, Hydraulic oil change" className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-muted">Date</label>
+                <input required type="date" value={maintForm.date} onChange={(e) => setMaintForm({ ...maintForm, date: e.target.value })} className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-muted">Cost (₹)</label>
+                <input type="number" min="0" value={maintForm.cost} onChange={(e) => setMaintForm({ ...maintForm, cost: e.target.value })} placeholder="e.g. 18000" className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-muted">Status</label>
+              <select value={maintForm.status} onChange={(e) => setMaintForm({ ...maintForm, status: e.target.value })} className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground">
+                <option value="scheduled">Planned</option>
+                <option value="completed">Done</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-muted">Remarks</label>
+              <input value={maintForm.remarks} onChange={(e) => setMaintForm({ ...maintForm, remarks: e.target.value })} placeholder="Workshop, mechanic, parts" className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground" />
+            </div>
+            <p className="text-[10px] text-muted">A planned service past its date marks the machine as due for servicing. Click Mark done on the row once the work is finished to clear it. Bill the workshop through Transaction, Equipment Expense, so the cost reaches the project accounts.</p>
+            <div className="flex gap-2 justify-end border-t border-border-custom pt-4">
+              <button type="button" onClick={() => setIsMaintOpen(false)} className="px-4 py-2 bg-elevated text-muted hover:text-foreground rounded-md">Cancel</button>
+              <button type="submit" className="px-5 py-2.5 bg-primary text-white font-bold rounded-md">Save</button>
+            </div>
+          </form>
         </div>
       )}
 

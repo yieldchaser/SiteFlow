@@ -31,11 +31,12 @@ def test_payslip_basic_math():
     assert c["other_allowances"] == 1000.0
     assert c["pf_employee"] == 1200.0
     assert c["pf_employer"] == 1200.0
-    assert c["esi_employee"] == 97.5
-    assert c["esi_employer"] == 422.5
+    # ESIC rounds both shares up to the next rupee.
+    assert c["esi_employee"] == 98.0
+    assert c["esi_employer"] == 423.0
     assert c["tds"] == 500.0
-    assert c["total_deductions"] == 1797.5
-    assert c["net_payable"] == 11202.5
+    assert c["total_deductions"] == 1798.0
+    assert c["net_payable"] == 11202.0
 
 
 def test_payslip_esi_threshold_zero_above_21000():
@@ -96,3 +97,17 @@ def test_deduction_order_pretax_tds_first():
     # Retention on what the deposit leaves: 5% of 106200.
     assert amts["Retention"] == 5310.0
     assert total == 28910.0
+
+
+def test_overtime_never_takes_a_worker_out_of_esi():
+    """Regular wages 20,000 are inside the 21,000 ESI ceiling; overtime that
+    lifts the month above it is charged ESI, not used to drop coverage."""
+    e = _emp(
+        basic_salary=20000, hra=0, other_allowances=0,
+        pf_employee_pct=0, pf_employer_pct=0, esi_employee_pct=0.75,
+        esi_employer_pct=3.25, tds_monthly=0, is_esi_applicable=True,
+    )
+    c = _compute_payslip(e, days_present=25, days_in_month=25, overtime_hours=20, overtime_rate=100)
+    assert c["gross_salary"] == 22000.0
+    assert c["esi_employee"] == 165.0
+    assert c["esi_employer"] == 715.0
