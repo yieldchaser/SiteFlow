@@ -1406,7 +1406,7 @@ export default function HRPayrollPage() {
                     {timesheets.map(ts => (
                       <tr key={ts.id} className="hover:bg-elevated transition-colors">
                         <td className="px-4 py-3 font-semibold text-foreground">{ts.employeeName}</td>
-                        <td className="px-4 py-3 text-muted">{ts.weekStart} → {ts.weekEnd}</td>
+                        <td className="px-4 py-3 text-muted">{formatDate(ts.weekStart?.slice(0, 10))} to {formatDate(ts.weekEnd?.slice(0, 10))}</td>
                         <td className="px-4 py-3 font-bold text-info">{ts.totalHours}h</td>
                         <td className="px-4 py-3"><span className={statusBadge(ts.status)}>{formatLabel(ts.status)}</span></td>
                         <td className="px-4 py-3">
