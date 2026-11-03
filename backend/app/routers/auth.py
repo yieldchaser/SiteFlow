@@ -1104,6 +1104,9 @@ def invite_member(
                 auth_providers="",
             )
             db.add(invitee)
+            # No ORM relationship ties CompanyTeam to User, so without this
+            # flush Postgres can get the membership row first and refuse it.
+            db.flush()
 
     membership = models.CompanyTeam(
         id=uuid.uuid4(),
