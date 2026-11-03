@@ -68,6 +68,37 @@ interface EquipmentExpenseBill {
   terms?: string | null;
 }
 
+// Plant and machinery a piling, marine and roads contractor runs.
+const EQUIPMENT_CATEGORIES = [
+  "Excavator",
+  "Backhoe Loader (JCB)",
+  "Hydraulic Piling Rig",
+  "Tripod / Winch Piling Rig",
+  "Vibro Hammer",
+  "Crawler Crane",
+  "Mobile Crane",
+  "Tower Crane",
+  "Barge / Pontoon",
+  "Tug / Work Boat",
+  "Concrete Mixer",
+  "Transit Mixer",
+  "Batching Plant",
+  "Concrete Pump",
+  "Wheel Loader",
+  "Bulldozer",
+  "Motor Grader",
+  "Road Roller",
+  "Paver",
+  "Hot Mix Plant",
+  "Dumper / Tipper",
+  "Trailer",
+  "Air Compressor",
+  "Generator",
+  "Welding Machine",
+  "Survey Instrument",
+  "Other",
+];
+
 export default function EquipmentTrackingPage() {
   const params = useParams();
   const companyId = params?.company_id as string;
@@ -1013,10 +1044,7 @@ export default function EquipmentTrackingPage() {
                 <div className="space-y-1">
                   <label className="text-muted">Category</label>
                   <select value={eqCategory} onChange={(e) => setEqCategory(e.target.value)} className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground">
-                    <option value="Excavator">Excavator</option>
-                    <option value="Concrete Mixer">Concrete Mixer</option>
-                    <option value="Tower Crane">Tower Crane</option>
-                    <option value="Generator">Generator</option>
+                    {EQUIPMENT_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1">
