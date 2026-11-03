@@ -150,12 +150,12 @@ export default function RolePermissionsModal({ role, onClose, onSaved }: Props) 
         <div className="flex items-center justify-between border-b border-border-custom px-6 py-4">
           <div>
             <h2 className="text-sm font-bold uppercase tracking-wider text-foreground">
-              Permissions — {role.role_name}
+              Permissions: {role.role_name}
             </h2>
             <p className="mt-0.5 text-[11px] text-muted">
               {locked
                 ? "This role has full access and is locked. It cannot be restricted."
-                : "Toggle module actions and global capabilities for this role."}
+                : "Tick what people with this role can see, change and approve."}
             </p>
           </div>
           <button
@@ -170,9 +170,8 @@ export default function RolePermissionsModal({ role, onClose, onSaved }: Props) 
         <div className="space-y-6 px-6 py-5">
           {locked ? (
             <div className="rounded-md border border-success/30 bg-success/10 p-4 text-xs text-success">
-              <span className="font-bold">{role.role_name}</span> is a superuser role
-              with <code className="text-success font-semibold">{"{ all: true }"}</code> — full
-              access to every module and capability. No per-key editing is available.
+              <span className="font-bold">{role.role_name}</span> can see and change everything
+              in the company. To give someone less, pick a different role for them in the Team tab.
             </div>
           ) : (
             <>

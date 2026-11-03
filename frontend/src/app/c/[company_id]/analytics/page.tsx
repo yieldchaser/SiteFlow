@@ -5,7 +5,6 @@ import { authHeaders, fmtINR } from "@/lib/siteflow";
 
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import PwaControls from "@/components/pwa/PwaControls";
 import PageShell from "@/components/layout/PageShell";
 import PageHeader from "@/components/PageHeader";
 
@@ -314,11 +313,7 @@ export default function CompanyAnalyticsPage() {
       <PageHeader
         title="Advanced Analytics Dashboard"
         subtitle="Cross-project KPI view for burn rate, progress cadence, labour productivity, and procurement leakage"
-      >
-        <div className="w-full max-w-xs">
-          <PwaControls />
-        </div>
-      </PageHeader>
+      />
       <main className="flex-1 overflow-y-auto">
         <PageShell width="wide">
 

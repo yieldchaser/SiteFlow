@@ -1309,9 +1309,7 @@ export default function CompanySettingsPage() {
           <PageHeader
             title={SECTIONS.find((s) => s.id === activeSection)?.label || "Settings"}
             subtitle="Configure company-wide settings for this organization."
-          >
-            <PwaControls />
-          </PageHeader>
+          />
 
           {error && (
             <div className="mt-6 p-4 bg-danger/10 border border-danger/20 text-danger text-xs rounded-lg">{error}</div>
@@ -1325,6 +1323,11 @@ export default function CompanySettingsPage() {
 
           <div className="mt-8">
             {/* ════════════════════════════ USER PROFILE ════════════════════════════ */}
+            {activeSection === "profile" && (
+              <div className="mb-6 max-w-2xl">
+                <PwaControls />
+              </div>
+            )}
             {activeSection === "profile" && (
               <div className="bg-card border border-border-custom rounded-lg p-6 space-y-6 max-w-2xl">
                 <div>
