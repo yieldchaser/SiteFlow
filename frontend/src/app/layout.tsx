@@ -1,24 +1,28 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Noto_Serif, Public_Sans } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import PwaBootstrap from "@/components/pwa/PwaBootstrap";
 
-const inter = Inter({
-  subsets: ["latin"],
+// Font files live in the repo (Google Fonts, latin subset, variable weight).
+// next/font/google fetches them at build time, and that fetch broke Vercel
+// builds on 2026-11-03 with nothing changed on our side.
+const inter = localFont({
+  src: "./fonts/inter-latin.woff2",
+  weight: "100 900",
   variable: "--font-sans",
   display: "swap",
 });
 
-const notoSerif = Noto_Serif({
-  subsets: ["latin"],
-  weight: ["400", "700", "800"],
+const notoSerif = localFont({
+  src: "./fonts/noto-serif-latin.woff2",
+  weight: "100 900",
   variable: "--font-serif",
   display: "swap",
 });
 
-const publicSans = Public_Sans({
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
+const publicSans = localFont({
+  src: "./fonts/public-sans-latin.woff2",
+  weight: "100 900",
   variable: "--font-label",
   display: "swap",
 });
