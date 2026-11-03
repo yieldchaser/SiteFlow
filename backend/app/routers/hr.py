@@ -18,6 +18,7 @@ import csv
 import io
 import logging
 import math
+import re
 import uuid
 from datetime import datetime, date, timedelta, timezone
 from decimal import Decimal
@@ -121,7 +122,34 @@ def _parse_site_coords(location_str: Optional[str]):
 
 # ─── Schemas ─────────────────────────────────────────────────────────────────
 
-class EmployeeCreate(BaseModel):
+class _SalaryPaymentFields(BaseModel):
+    """How the salary is paid. Cash-paid staff carry no bank details."""
+    salary_paid_by: Optional[Literal["bank", "cash"]] = None
+    bank_account: Optional[str] = None
+    bank_ifsc: Optional[str] = None
+
+    @field_validator("bank_account", mode="before")
+    @classmethod
+    def _bank_account_digits(cls, v):
+        v = str(v or "").replace(" ", "").strip()
+        if not v:
+            return None
+        if not v.isdigit() or not 6 <= len(v) <= 18:
+            raise ValueError("Bank account number should be 6 to 18 digits")
+        return v
+
+    @field_validator("bank_ifsc", mode="before")
+    @classmethod
+    def _ifsc_shape(cls, v):
+        v = str(v or "").replace(" ", "").strip().upper()
+        if not v:
+            return None
+        if not re.fullmatch(r"[A-Z]{4}0[A-Z0-9]{6}", v):
+            raise ValueError("IFSC should look like SBIN0001234 (11 characters)")
+        return v
+
+
+class EmployeeCreate(_SalaryPaymentFields):
     company_id: uuid.UUID
     project_id: Optional[uuid.UUID] = None
     # An employee saved with an empty name renders as a blank row that nobody can
@@ -193,6 +221,9 @@ class EmployeeResponse(BaseModel):
     esi_employer_pct: Optional[float]
     tds_monthly: Optional[float]
     is_esi_applicable: Optional[bool]
+    salary_paid_by: Optional[str] = None
+    bank_account: Optional[str] = None
+    bank_ifsc: Optional[str] = None
     status: str
     date_of_joining: Optional[datetime]
     created_at: datetime
@@ -204,6 +235,7 @@ class EmployeeResponse(BaseModel):
 _PAY_FIELDS = (
     "uan", "basic_salary", "hra", "other_allowances", "pf_employee_pct", "pf_employer_pct",
     "esi_employee_pct", "esi_employer_pct", "tds_monthly", "is_esi_applicable",
+    "salary_paid_by", "bank_account", "bank_ifsc",
 )
 
 
@@ -431,11 +463,23 @@ class PayrollRunResponse(BaseModel):
 
 # ─── Employees ───────────────────────────────────────────────────────────────
 
+def _check_employee_site(db: Session, company_id, project_id) -> None:
+    """An employee's site must be a project of the same company."""
+    if project_id is None:
+        return
+    if not db.query(Project).filter(Project.id == project_id, Project.company_id == company_id).first():
+        raise HTTPException(status_code=400, detail="That site is not one of this company's projects.")
+
+
 @router.post("/employees", response_model=EmployeeResponse, status_code=status.HTTP_201_CREATED)
 def create_employee(payload: EmployeeCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     get_company_membership(db, current_user, payload.company_id)
     require_permission(db, current_user, payload.company_id, "payroll:edit")
     data = payload.model_dump()
+    _check_employee_site(db, payload.company_id, data.get("project_id"))
+    data["salary_paid_by"] = data.get("salary_paid_by") or "bank"
+    if data["salary_paid_by"] == "cash":
+        data["bank_account"] = data["bank_ifsc"] = None
     # ESI eligibility is derived from gross wages server-side; the caller's
     # value is never trusted.
     data["is_esi_applicable"] = _esi_applicable(data["basic_salary"], data["hra"], data["other_allowances"])
@@ -1707,7 +1751,10 @@ def upload_payroll(
 
 # ─── Company-scoped HR (Payroll tab) ────────────────────────────────────────
 
-class EmployeeUpdate(BaseModel):
+class EmployeeUpdate(_SalaryPaymentFields):
+    project_id: Optional[uuid.UUID] = None
+    pf_employee_pct: Optional[float] = Field(None, ge=0, le=100)
+    pf_employer_pct: Optional[float] = Field(None, ge=0, le=100)
     uan: Optional[str] = None
     designation: Optional[str] = None
     department: Optional[str] = None
@@ -1751,8 +1798,16 @@ def update_employee(employee_id: uuid.UUID, payload: EmployeeUpdate, db: Session
     get_company_membership(db, current_user, emp.company_id)
     require_permission(db, current_user, emp.company_id, "payroll:edit")
     updates = payload.model_dump(exclude_unset=True)
+    if "project_id" in updates:
+        if updates["project_id"] is None:
+            raise HTTPException(status_code=400, detail="Pick the site this person works at.")
+        _check_employee_site(db, emp.company_id, updates["project_id"])
+    if updates.get("salary_paid_by") is None:
+        updates.pop("salary_paid_by", None)
     for k, v in updates.items():
         setattr(emp, k, v)
+    if emp.salary_paid_by == "cash":
+        emp.bank_account = emp.bank_ifsc = None
     if {"basic_salary", "hra", "other_allowances"} & updates.keys():
         # Pay changed: re-derive ESI eligibility from the new gross wages
         # instead of freezing the verdict captured at creation.

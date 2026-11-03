@@ -11,7 +11,7 @@ type BeforeInstallPromptEvent = Event & {
 export default function PwaControls() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isOnline, setIsOnline] = useState(true);
-  const [status, setStatus] = useState("Check-ins made without internet are saved and sent once you are back online.");
+  const [status, setStatus] = useState("Opens from an icon, like an app. Nothing to download from the Play Store or App Store. Check-ins made without internet are saved and sent later.");
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -48,13 +48,13 @@ export default function PwaControls() {
 
   const handleInstall = async () => {
     if (!deferredPrompt) {
-      setStatus("Open your browser menu and pick Install app or Add to Home screen.");
+      setStatus("Open your browser menu and pick Add to Home screen.");
       return;
     }
 
     await deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
-    setStatus(outcome === "accepted" ? "SiteFlow is installed on this device" : "Install cancelled");
+    setStatus(outcome === "accepted" ? "SiteFlow is on your home screen" : "Cancelled");
     setDeferredPrompt(null);
   };
 
@@ -76,8 +76,8 @@ export default function PwaControls() {
     <div className="rounded-lg border border-border-custom bg-elevated p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.2em] text-muted">Phone app</div>
-          <div className="mt-1 text-sm font-semibold text-foreground">Install SiteFlow on your phone or computer</div>
+          <div className="text-[10px] uppercase tracking-[0.2em] text-muted">Home screen shortcut</div>
+          <div className="mt-1 text-sm font-semibold text-foreground">Add SiteFlow to your home screen</div>
           <div className="mt-1 text-[11px] text-muted">{status}</div>
         </div>
         <Badge tone={isOnline ? "success" : "warning"}>
@@ -90,7 +90,7 @@ export default function PwaControls() {
           onClick={handleInstall}
           className="rounded-lg bg-primary px-3 py-2 text-[11px] font-bold text-white transition-opacity hover:opacity-90"
         >
-          Install App
+          Add to home screen
         </button>
         <button
           onClick={handleEnableNotifications}

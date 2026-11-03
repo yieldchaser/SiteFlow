@@ -797,6 +797,10 @@ class StaffEmployee(Base):
     esi_employer_pct = Column(Numeric(5, 2), default=3.25, nullable=False)
     tds_monthly = Column(Numeric(14, 2), default=0.0, nullable=False)
     is_esi_applicable = Column(Boolean, default=True, nullable=False)
+    # "bank" or "cash". Bank details are kept only for bank-paid staff.
+    salary_paid_by = Column(String(20), default="bank", server_default="bank", nullable=False)
+    bank_account = Column(String(30), nullable=True)
+    bank_ifsc = Column(String(11), nullable=True)
     status = Column(String(50), default="active", nullable=False)
     date_of_joining = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=func.now(), nullable=False)

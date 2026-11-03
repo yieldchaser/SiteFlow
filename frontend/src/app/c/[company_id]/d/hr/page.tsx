@@ -34,6 +34,75 @@ interface Employee {
   uan: string;
   status: "active" | "inactive";
   joined: string;
+  projectId: string;
+  paidBy: "bank" | "cash";
+  bankAccount: string;
+  ifsc: string;
+}
+
+// Where someone works and how they are paid: shared by the add and edit forms.
+type SitePay = { site: string; pfOn: boolean; paidBy: "bank" | "cash"; bankAccount: string; ifsc: string };
+
+function sitePayBody(v: SitePay) {
+  return {
+    project_id: v.site || null,
+    pf_employee_pct: v.pfOn ? 12.0 : 0,
+    pf_employer_pct: v.pfOn ? 12.0 : 0,
+    salary_paid_by: v.paidBy,
+    bank_account: v.paidBy === "bank" ? v.bankAccount.trim() || null : null,
+    bank_ifsc: v.paidBy === "bank" ? v.ifsc.trim() || null : null,
+  };
+}
+
+function SitePayFields({ value, onChange, projects }: {
+  value: SitePay;
+  onChange: (v: SitePay) => void;
+  projects: { id?: string; name?: string; project_name?: string }[];
+}) {
+  const box = "w-full bg-background border border-border-custom rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-primary text-xs";
+  const lab = "text-[10px] text-muted uppercase font-bold block mb-1";
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+      <div className="md:col-span-2">
+        <label className={lab}>Works at (site)</label>
+        <select value={value.site} onChange={(e) => onChange({ ...value, site: e.target.value })} className={box}>
+          <option value="">Pick a site</option>
+          {projects.filter((p) => p.id).map((p) => (
+            <option key={p.id} value={p.id}>{p.name || p.project_name || "Untitled project"}</option>
+          ))}
+        </select>
+        <p className="text-muted mt-1">Office staff: make a project called Head Office and pick it here.</p>
+      </div>
+      <div>
+        <label className={lab}>PF</label>
+        <select value={value.pfOn ? "yes" : "no"} onChange={(e) => onChange({ ...value, pfOn: e.target.value === "yes" })} className={box}>
+          <option value="yes">Yes, deduct PF (12%)</option>
+          <option value="no">No PF for this person</option>
+        </select>
+      </div>
+      <div>
+        <label className={lab}>Salary paid by</label>
+        <select value={value.paidBy} onChange={(e) => onChange({ ...value, paidBy: e.target.value as "bank" | "cash" })} className={box}>
+          <option value="bank">Bank transfer</option>
+          <option value="cash">Cash</option>
+        </select>
+      </div>
+      {value.paidBy === "bank" && (
+        <>
+          <div>
+            <label className={lab}>Bank account number</label>
+            <input type="text" inputMode="numeric" value={value.bankAccount} placeholder="Optional"
+              onChange={(e) => onChange({ ...value, bankAccount: e.target.value })} className={box} />
+          </div>
+          <div>
+            <label className={lab}>IFSC</label>
+            <input type="text" value={value.ifsc} placeholder="SBIN0001234" maxLength={11}
+              onChange={(e) => onChange({ ...value, ifsc: e.target.value.toUpperCase() })} className={box} />
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 interface AttendanceRecord {
@@ -112,7 +181,7 @@ const fmt = (n: number) => "₹" + n.toLocaleString("en-IN", { minimumFractionDi
 export default function HRPayrollPage() {
   const params = useParams();
   const companyId = params?.company_id as string;
-  const { activeProjectId } = useProject();
+  const { activeProjectId, projects } = useProject();
   const projectId = activeProjectId;
   // Staff Directory: the whole company by default, or only the pinned site.
   const [allSites, setAllSites] = useState(true);
@@ -136,6 +205,7 @@ export default function HRPayrollPage() {
   // here was silently not paid.
   const emptyDetails = { basic: "", hra: "", allowances: "", tds: "", designation: "", department: "", mobile: "", uan: "", joined: "", otRate: "" };
   const [detailsForm, setDetailsForm] = useState(emptyDetails);
+  const [detailsPay, setDetailsPay] = useState<SitePay>({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "" });
 
   const openDetailsDrawer = (emp: Employee) => {
     setSelectedEmpDetail(emp);
@@ -150,6 +220,13 @@ export default function HRPayrollPage() {
       uan: emp.uan || "",
       joined: emp.joined || "",
       otRate: "",
+    });
+    setDetailsPay({
+      site: emp.projectId,
+      pfOn: Number(emp.pfPct) > 0,
+      paidBy: emp.paidBy,
+      bankAccount: emp.bankAccount,
+      ifsc: emp.ifsc,
     });
     setShowDetailsDrawer(true);
     fetch(`${getApiHost()}/apis/v3/hr/payroll-profiles/${emp.id}`, { headers: authHeaders() })
@@ -326,6 +403,7 @@ export default function HRPayrollPage() {
     uan: "",
     joined: todayLocalISO()
   });
+  const [newPay, setNewPay] = useState<SitePay>({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "" });
 
   const fetchEmployees = async () => {
     if (!companyId) return;
@@ -354,6 +432,10 @@ export default function HRPayrollPage() {
           uan: emp.uan || "",
           status: emp.status === "active" ? "active" : "inactive",
           joined: emp.date_of_joining ? emp.date_of_joining.split("T")[0] : "",
+          projectId: emp.project_id || "",
+          paidBy: emp.salary_paid_by === "cash" ? "cash" : "bank",
+          bankAccount: emp.bank_account || "",
+          ifsc: emp.bank_ifsc || "",
         }));
         setEmployees(mapped);
       }
@@ -550,6 +632,10 @@ export default function HRPayrollPage() {
       alert("Enter the basic salary. Payroll pays nothing without it.");
       return;
     }
+    if (!(newPay.site || projectId)) {
+      alert("Pick the site this person works at.");
+      return;
+    }
     if (empForm.uan.trim() && !/^\d{12}$/.test(empForm.uan.trim())) {
       alert("UAN must be exactly 12 digits, or left blank.");
       return;
@@ -565,7 +651,6 @@ export default function HRPayrollPage() {
         headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
         body: JSON.stringify({
           company_id: companyId,
-          project_id: projectId || null,
           name: empForm.name,
           employee_code: empForm.code,
           designation: empForm.designation,
@@ -574,8 +659,7 @@ export default function HRPayrollPage() {
           basic_salary: parseFloat(empForm.basic) || 0,
           hra: parseFloat(empForm.hra) || 0,
           other_allowances: parseFloat(empForm.allowances) || 0,
-          pf_employee_pct: 12.0,
-          pf_employer_pct: 12.0,
+          ...sitePayBody({ ...newPay, site: newPay.site || projectId || "" }),
           esi_employee_pct: 0.75,
           esi_employer_pct: 3.25,
           tds_monthly: parseFloat(empForm.tds) || 0,
@@ -602,6 +686,7 @@ export default function HRPayrollPage() {
           uan: "",
           joined: todayLocalISO()
         });
+        setNewPay({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "" });
       } else {
         const err = await readErrorDetail(res);
         alert(err || 'Action failed');
@@ -673,6 +758,10 @@ export default function HRPayrollPage() {
         return;
       }
       const num = (v: string) => Math.max(0, parseFloat(v) || 0);
+      if (!detailsPay.site) {
+        alert("Pick the site this person works at.");
+        return;
+      }
       const empRes = await fetch(`${getApiHost()}/apis/v3/hr/employees/${selectedEmpDetail.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
@@ -686,6 +775,7 @@ export default function HRPayrollPage() {
           mobile: detailsForm.mobile.trim() || null,
           uan: uan || null,
           date_of_joining: detailsForm.joined ? new Date(detailsForm.joined).toISOString() : null,
+          ...sitePayBody(detailsPay),
         }),
       });
       const profRes = empRes.ok
@@ -2063,6 +2153,9 @@ export default function HRPayrollPage() {
                 </div>
               ))}
             </div>
+            <div className="mt-3">
+              <SitePayFields value={{ ...newPay, site: newPay.site || projectId || "" }} onChange={setNewPay} projects={projects} />
+            </div>
             <div className="flex gap-3 mt-5">
               <button
                 onClick={handleSaveEmployee}
@@ -2499,6 +2592,7 @@ export default function HRPayrollPage() {
                   </div>
                 </div>
                 <p className="text-muted">Leave blank overtime to pay 1.5 times the hourly basic. The UAN is needed before the PF return can be made.</p>
+                <SitePayFields value={detailsPay} onChange={setDetailsPay} projects={projects} />
               </div>
             </div>
 
