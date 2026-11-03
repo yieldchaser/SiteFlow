@@ -194,7 +194,7 @@ export default function MaterialTab() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setModalType("used")}
-            className="px-3.5 py-1.5 bg-danger/90 text-foreground text-xs font-bold rounded-lg hover:opacity-90 transition-all cursor-pointer"
+            className="px-3.5 py-1.5 bg-danger/90 text-white text-xs font-bold rounded-lg hover:opacity-90 transition-all cursor-pointer"
           >
             − Issue
           </button>
