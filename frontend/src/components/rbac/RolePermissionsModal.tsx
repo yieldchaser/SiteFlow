@@ -128,7 +128,7 @@ export default function RolePermissionsModal({ role, onClose, onSaved }: Props) 
     disabled?: boolean;
   }) => (
     <label
-      className={`flex items-center gap-1.5 text-xs select-none ${
+      className={`${label ? "flex" : "inline-flex justify-center align-middle"} items-center gap-1.5 text-xs select-none ${
         disabled ? "opacity-60" : "cursor-pointer hover:text-foreground"
       } ${checked ? "text-primary font-semibold" : "text-muted"}`}
     >

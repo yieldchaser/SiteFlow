@@ -190,9 +190,9 @@ const SECTIONS: { id: SectionId; label: string }[] = [
 ];
 
 const COUNTRIES = ["India", "United Arab Emirates", "United States", "United Kingdom", "Singapore", "Australia", "Canada", "Germany", "Other"];
-const BUSINESS_SEGMENTS = ["1cr-10cr", "10cr-20cr", "20cr-50cr", "50cr-100cr"];
-const COMPANY_SIZES = ["1-20", "20-50", "50-100", "100-200"];
-const CONSTRUCTION_TYPES = ["Developer", "Residential Real Estate", "Commercial Real Estate", "Infrastructure", "Industrial", "Renovation / Retrofit"];
+const BUSINESS_SEGMENTS = ["Under 1cr", "1cr-10cr", "10cr-20cr", "20cr-50cr", "50cr-100cr", "100cr-250cr", "250cr-500cr", "Above 500cr"];
+const COMPANY_SIZES = ["1-20", "20-50", "50-100", "100-200", "200-500", "500-1000", "1000-5000", "Above 5000"];
+const CONSTRUCTION_TYPES = ["Developer", "Residential Real Estate", "Commercial Real Estate", "Infrastructure", "Industrial", "Renovation / Retrofit", "Piling & Foundations", "Jetty & Marine Works", "Roads & Bridges", "Ports & Harbours", "Metro & Railways", "Water & Irrigation"];
 
 const ASSET_LABELS: { type: "logo" | "signature" | "stamp" | "watermark"; label: string }[] = [
   { type: "logo", label: "Logo" },
