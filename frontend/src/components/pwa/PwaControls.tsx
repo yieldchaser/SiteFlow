@@ -11,7 +11,7 @@ type BeforeInstallPromptEvent = Event & {
 export default function PwaControls() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isOnline, setIsOnline] = useState(true);
-  const [status, setStatus] = useState("Ready for offline punch capture");
+  const [status, setStatus] = useState("Check-ins made without internet are saved and sent once you are back online.");
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -25,12 +25,12 @@ export default function PwaControls() {
 
     const handleOnline = () => {
       setIsOnline(true);
-      setStatus("Online - cloud sync operational");
+      setStatus("Connected. Everything is saving normally.");
     };
 
     const handleOffline = () => {
       setIsOnline(false);
-      setStatus("Offline - queued locally for background sync");
+      setStatus("No internet. Check-ins are saved on this device and sent when you are back online.");
     };
 
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
@@ -48,13 +48,13 @@ export default function PwaControls() {
 
   const handleInstall = async () => {
     if (!deferredPrompt) {
-      setStatus("Use browser menu to install SiteFlow on this device");
+      setStatus("Open your browser menu and pick Install app or Add to Home screen.");
       return;
     }
 
     await deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
-    setStatus(outcome === "accepted" ? "App installed successfully" : "Install dismissed");
+    setStatus(outcome === "accepted" ? "SiteFlow is installed on this device" : "Install cancelled");
     setDeferredPrompt(null);
   };
 
@@ -76,8 +76,8 @@ export default function PwaControls() {
     <div className="rounded-lg border border-border-custom bg-elevated p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.2em] text-muted">Mobile PWA</div>
-          <div className="mt-1 text-sm font-semibold text-foreground">Installable shell and offline punch capture</div>
+          <div className="text-[10px] uppercase tracking-[0.2em] text-muted">Phone app</div>
+          <div className="mt-1 text-sm font-semibold text-foreground">Install SiteFlow on your phone or computer</div>
           <div className="mt-1 text-[11px] text-muted">{status}</div>
         </div>
         <Badge tone={isOnline ? "success" : "warning"}>
