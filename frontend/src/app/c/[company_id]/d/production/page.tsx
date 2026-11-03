@@ -1,5 +1,6 @@
 "use client";
 import { getApiHost, readErrorDetail, detailToMessage} from "@/lib/api";
+import UnitInput from "@/components/UnitInput";
 import { authHeaders, formatLabel } from "@/lib/siteflow";
 import Icon from "@/components/marketing/Icon";
 import SegmentedTabs from "@/components/ui/Tabs";
@@ -694,7 +695,7 @@ export default function ProductionPage() {
                 </div>
                 <div>
                   <label className="text-[10px] uppercase tracking-[0.2em] text-muted block mb-1">Unit</label>
-                  <input type="text" list="sf-units" autoComplete="off" value={recipeUnit} onChange={(e) => setRecipeUnit(e.target.value)} required className="w-full bg-elevated border border-border-custom rounded px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary" />
+                  <UnitInput type="text" autoComplete="off" value={recipeUnit} onChange={(e) => setRecipeUnit(e.target.value)} required className="w-full bg-elevated border border-border-custom rounded px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary" />
                 </div>
                 <div>
                   <label className="text-[10px] uppercase tracking-[0.2em] text-muted block mb-1">Wastage %</label>
@@ -716,7 +717,7 @@ export default function ProductionPage() {
                         newMats[idx].planned_qty = e.target.value;
                         setRecipeMaterials(newMats);
                       }} placeholder="Qty" required className="w-20 bg-elevated border border-border-custom rounded px-2.5 py-1.5 text-xs text-foreground" />
-                      <input type="text" list="sf-units" autoComplete="off" value={mat.unit} onChange={(e) => {
+                      <UnitInput type="text" autoComplete="off" value={mat.unit} onChange={(e) => {
                         const newMats = [...recipeMaterials];
                         newMats[idx].unit = e.target.value;
                         setRecipeMaterials(newMats);

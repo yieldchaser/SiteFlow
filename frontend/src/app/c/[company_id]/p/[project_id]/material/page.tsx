@@ -1,5 +1,6 @@
 "use client";
 import Badge, { type BadgeTone } from "@/components/ui/Badge";
+import UnitInput from "@/components/UnitInput";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
@@ -356,11 +357,10 @@ export default function MaterialTab() {
                 </div>
                 <div>
                   <label className="text-xs font-medium text-muted">Unit</label>
-                  <input
+                  <UnitInput
                     value={unit}
                     onChange={(e) => setUnit(e.target.value)}
                     placeholder="e.g. Bag, kg, Liter"
-                    list="sf-units"
                     autoComplete="off"
                     className="mt-1 w-full bg-input border border-border-custom rounded-lg px-3 py-2 text-sm text-foreground placeholder-muted"
                   />
@@ -392,7 +392,7 @@ export default function MaterialTab() {
                 <button
                   type="submit"
                   disabled={saving}
-                  className={`px-4 py-2 text-foreground text-sm font-bold rounded-lg disabled:opacity-40 ${
+                  className={`px-4 py-2 text-white text-sm font-bold rounded-lg disabled:opacity-40 ${
                     modalType === "received" ? "bg-primary" : "bg-danger"
                   }`}
                 >

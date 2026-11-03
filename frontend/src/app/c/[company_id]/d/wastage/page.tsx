@@ -1,5 +1,6 @@
 "use client";
 import Badge, { type BadgeTone } from "@/components/ui/Badge";
+import UnitInput from "@/components/UnitInput";
 import {  getApiHost , readErrorDetail, detailToMessage} from "@/lib/api";
 import { authHeaders, formatLabel } from "@/lib/siteflow";
 import React, { useState, useEffect } from "react";
@@ -265,7 +266,7 @@ export default function WastagePage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-medium text-muted mb-1">Unit</label>
-                    <input type="text" required className="w-full bg-input border border-border-custom rounded-md px-4 py-2 text-foreground" list="sf-units" autoComplete="off" value={form.unit} onChange={(e) => setForm({...form, unit: e.target.value})} />
+                    <UnitInput type="text" required className="w-full bg-input border border-border-custom rounded-md px-4 py-2 text-foreground" autoComplete="off" value={form.unit} onChange={(e) => setForm({...form, unit: e.target.value})} />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-muted mb-1">Est. Value (₹)</label>

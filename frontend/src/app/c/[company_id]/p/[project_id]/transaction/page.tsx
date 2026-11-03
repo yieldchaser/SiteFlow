@@ -1,5 +1,6 @@
 "use client";
 import Badge, { type BadgeTone } from "@/components/ui/Badge";
+import UnitInput from "@/components/UnitInput";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
@@ -998,7 +999,7 @@ function NewTransactionModal({
                   <option value="">Cost Code</option>
                   {costCodes.map((c) => <option key={c.id} value={c.id}>{c.code} · {c.name}</option>)}
                 </select>
-                <input list="sf-units" autoComplete="off" placeholder="Unit" value={it.unit} onChange={(e) => setItems((s) => s.map((x, j) => j === i ? { ...x, unit: e.target.value } : x))} className="col-span-2 rounded-md border border-border-custom bg-background px-2 py-1.5 text-sm text-foreground" />
+                <UnitInput autoComplete="off" placeholder="Unit" value={it.unit} onChange={(e) => setItems((s) => s.map((x, j) => j === i ? { ...x, unit: e.target.value } : x))} className="col-span-2 rounded-md border border-border-custom bg-background px-2 py-1.5 text-sm text-foreground" />
                 <input type="number" placeholder="Qty" value={it.qty} onChange={(e) => setItems((s) => s.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} className="col-span-2 rounded-md border border-border-custom bg-background px-2 py-1.5 text-sm text-foreground" />
                 <input type="number" placeholder="Rate" value={it.rate} onChange={(e) => setItems((s) => s.map((x, j) => j === i ? { ...x, rate: e.target.value } : x))} className="col-span-2 rounded-md border border-border-custom bg-background px-2 py-1.5 text-sm text-foreground" />
                 <div className="col-span-1 flex items-center justify-end text-sm text-muted">

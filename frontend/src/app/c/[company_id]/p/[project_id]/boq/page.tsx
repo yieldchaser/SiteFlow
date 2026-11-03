@@ -1,5 +1,6 @@
 "use client";
 import { readErrorDetail, detailToMessage} from "@/lib/api";
+import UnitInput from "@/components/UnitInput";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
@@ -577,7 +578,7 @@ export default function BoqTab() {
                                 <input value={inlineDraft.section_name} onChange={(e) => setInlineDraft({ ...inlineDraft, section_name: e.target.value })} placeholder="Section" className="bg-input border border-border-custom rounded-lg px-2 py-1.5 text-xs text-foreground placeholder-muted" />
                                 <input value={inlineDraft.item_name} onChange={(e) => setInlineDraft({ ...inlineDraft, item_name: e.target.value })} placeholder="Item name *" className="bg-input border border-border-custom rounded-lg px-2 py-1.5 text-xs text-foreground placeholder-muted" />
                                 <input value={inlineDraft.cost_code} onChange={(e) => setInlineDraft({ ...inlineDraft, cost_code: e.target.value })} placeholder="Cost code" className="bg-input border border-border-custom rounded-lg px-2 py-1.5 text-xs text-foreground placeholder-muted" />
-                                <input list="sf-units" autoComplete="off" value={inlineDraft.unit} onChange={(e) => setInlineDraft({ ...inlineDraft, unit: e.target.value })} placeholder="Unit (Nos)" className="bg-input border border-border-custom rounded-lg px-2 py-1.5 text-xs text-foreground placeholder-muted" />
+                                <UnitInput autoComplete="off" value={inlineDraft.unit} onChange={(e) => setInlineDraft({ ...inlineDraft, unit: e.target.value })} placeholder="Unit (Nos)" className="bg-input border border-border-custom rounded-lg px-2 py-1.5 text-xs text-foreground placeholder-muted" />
                                 <input type="number" min="0" step="any" value={inlineDraft.quantity} onChange={(e) => setInlineDraft({ ...inlineDraft, quantity: e.target.value })} placeholder="Qty *" className="bg-input border border-border-custom rounded-lg px-2 py-1.5 text-xs text-foreground placeholder-muted" />
                                 <input type="number" min="0" step="any" value={inlineDraft.rate} onChange={(e) => setInlineDraft({ ...inlineDraft, rate: e.target.value })} placeholder="Rate" className="bg-input border border-border-custom rounded-lg px-2 py-1.5 text-xs text-foreground placeholder-muted" />
                                 <input type="number" min="0" step="any" value={inlineDraft.supply_rate} onChange={(e) => setInlineDraft({ ...inlineDraft, supply_rate: e.target.value })} placeholder="Supply rate" className="bg-input border border-border-custom rounded-lg px-2 py-1.5 text-xs text-foreground placeholder-muted" />

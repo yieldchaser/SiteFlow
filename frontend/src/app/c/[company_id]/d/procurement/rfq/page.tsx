@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import UnitInput from "@/components/UnitInput";
 import { useParams } from "next/navigation";
 import { useProject } from "@/context/ProjectContext";
 import { getApiHost, readErrorDetail } from "@/lib/api";
@@ -765,8 +766,7 @@ export default function RFQPage() {
 
                       <div>
                         <label className="text-[9px] text-muted font-bold block mb-1">Unit *</label>
-                        <input
-                          list="sf-units"
+                        <UnitInput
                           autoComplete="off"
                           value={item.unit}
                           onChange={(e) => {

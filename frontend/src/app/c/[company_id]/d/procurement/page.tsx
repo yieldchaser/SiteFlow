@@ -1,5 +1,6 @@
 "use client";
 import Badge, { type BadgeTone } from "@/components/ui/Badge";
+import UnitInput from "@/components/UnitInput";
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
@@ -1501,7 +1502,7 @@ export default function ProcurementPage() {
                 </div>
                 <div className="space-y-1">
                   <label className="text-muted">Unit</label>
-                  <input type="text" list="sf-units" autoComplete="off" value={newIndentUnit} onChange={(e) => setNewIndentUnit(e.target.value)} className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground" />
+                  <UnitInput type="text" autoComplete="off" value={newIndentUnit} onChange={(e) => setNewIndentUnit(e.target.value)} className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground" />
                 </div>
               </div>
 

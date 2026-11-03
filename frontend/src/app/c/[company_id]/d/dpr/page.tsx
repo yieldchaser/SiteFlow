@@ -1,5 +1,6 @@
 "use client";
 import { getApiHost, readErrorDetail } from "@/lib/api";
+import UnitInput from "@/components/UnitInput";
 import { authHeaders, formatDate, formatLabel } from "@/lib/siteflow";
 
 import React, { useState, useEffect } from "react";
@@ -567,10 +568,9 @@ export default function DPRPage() {
 
                             <div className="sm:col-span-3">
                               <label className="text-[9px] text-muted block mb-0.5">Unit</label>
-                              <input
+                              <UnitInput
                                 type="text"
                                 placeholder="e.g. bags"
-                                list="sf-units"
                                 autoComplete="off"
                                 value={matRow.unit}
                                 onChange={(e) => {

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import UnitInput from "@/components/UnitInput";
 import { useParams, useSearchParams } from "next/navigation";
 import { useProject } from "@/context/ProjectContext";
 import { getApiHost, readErrorDetail } from "@/lib/api";
@@ -1789,9 +1790,8 @@ export default function LibraryHubPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-muted uppercase tracking-wider block mb-1.5">Unit (UOM)</label>
-                  <input
+                  <UnitInput
                     required
-                    list="sf-units"
                     autoComplete="off"
                     placeholder="Pick or type a unit"
                     value={matUnit}
@@ -1804,8 +1804,7 @@ export default function LibraryHubPage() {
                       table has an Alternate UOM column, but there was no input
                       anywhere so the column could only ever read "-". */}
                   <label className="text-xs font-medium text-muted uppercase tracking-wider block mb-1.5">Alternate UOM</label>
-                  <input
-                    list="sf-units"
+                  <UnitInput
                     autoComplete="off"
                     placeholder="Pick or type a unit"
                     value={matAltUnit}
@@ -1938,9 +1937,8 @@ export default function LibraryHubPage() {
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-muted uppercase tracking-wider block mb-1.5">Unit (UOM)</label>
-                  <input
+                  <UnitInput
                     required
-                    list="sf-units"
                     autoComplete="off"
                     placeholder="Pick or type a unit"
                     value={rateUnit}
