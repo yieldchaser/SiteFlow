@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
 import ThemeToggle from "./ThemeToggle";
@@ -16,6 +16,9 @@ interface PageHeaderProps {
   action?: React.ReactNode;
 }
 
+// The stored name changes only on login, which reloads the page.
+const noSubscribe = () => () => {};
+
 export default function PageHeader({ title, subtitle, breadcrumbs, children, action }: PageHeaderProps) {
   const router = useRouter();
   const params = useParams();
@@ -29,6 +32,12 @@ export default function PageHeader({ title, subtitle, breadcrumbs, children, act
   }, [companyId, router]);
 
   const [userOpen, setUserOpen] = useState(false);
+  // The server render has no localStorage, so it shows "User" until hydration.
+  const userName = useSyncExternalStore(
+    noSubscribe,
+    () => localStorage.getItem("user_name") || "User",
+    () => "User",
+  );
 
   const userRef = useRef<HTMLDivElement>(null);
 
@@ -117,15 +126,16 @@ export default function PageHeader({ title, subtitle, breadcrumbs, children, act
                 setUserOpen((o) => !o);
               }}
               className="h-7 w-7 rounded-full bg-primary flex items-center justify-center text-white text-xs font-semibold uppercase hover:bg-primary/90 transition-all cursor-pointer"
+              title={userName}
             >
-              U
+              {userName.trim().charAt(0) || "U"}
             </button>
 
             {userOpen && (
               <div className="absolute right-0 mt-2 w-48 bg-card border border-border-custom rounded-lg shadow-xl z-50">
                 <div className="px-4 py-3 border-b border-border-custom">
                   <div className="text-xs font-semibold text-foreground truncate">
-                    {typeof window !== "undefined" ? localStorage.getItem("user_name") || "User" : "User"}
+                    {userName}
                   </div>
                 </div>
                 <div className="py-1">
