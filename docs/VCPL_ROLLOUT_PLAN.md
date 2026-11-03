@@ -39,3 +39,21 @@ Access is tightened once implementation is done.
 
 - The backend runs on Render's free plan, which sleeps when idle (first load about 50 seconds). Upgrade it before daily use.
 - The Cloudflare move for the frontend can be done any time mid-rollout. Data is not touched. Avoid payroll week.
+
+## Day 1 status (3 November 2026)
+
+Debuted: sites and employees with daily attendance, and the equipment register.
+
+- Sites: Projects > + Create Project (name and state required; steps 2 and 3 optional). Office staff go under a project named Head Office.
+- Off days: Settings > Holiday & Weekoff (weekly off days, then named holidays). Company-wide for now.
+- Employees: HR & Staff > + Add Staff. Pick the site, PF yes or no, cash or bank (account and IFSC). Entered by hand from an Excel the sites send.
+- Attendance: HR & Staff > Attendance (register), or Attendance on the phone (check-in with location).
+- Machines: Equipment (add, send to site with start meter, return with end meter, fuel, service).
+
+To build before November payroll:
+- Professional tax.
+- Weekly off per employee and holidays per site.
+- An office type of project, so Head Office does not show as a site; map picker for site location.
+- Full view-permission enforcement before anyone gets a restricted role.
+
+Not yet tried with real data: biometric machines, report screens, linking branches to projects.
