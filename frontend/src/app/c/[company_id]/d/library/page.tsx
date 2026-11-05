@@ -47,6 +47,22 @@ const TAB_TITLES: Record<LibraryType, string> = {
   todo: "To Do",
 };
 
+// One plain line per tab: what the list is for, in site language.
+const TAB_HELP: Record<LibraryType, string> = {
+  party: "Everyone you buy from, pay or bill. Enter once, pick at every site.",
+  "party-balances": "What you owe each party, and what each party owes you, across all sites.",
+  "asset-type": "Kinds of machines and assets, used when adding equipment.",
+  "cost-code": "Heads you book costs under, so every site's spend adds up the same way.",
+  deduction: "Standard deductions taken from bills, like TDS or security deposit.",
+  progress: "Standard work stages used in daily progress reports.",
+  workforce: "Trades and labour types, like mason or helper, with their usual rates.",
+  material: "Every material you buy, with its unit and GST. Enter once, pick at every site.",
+  rate: "Your standard rates for work items, reused in BOQs and bills.",
+  retention: "Retention terms held back from bills until the work is accepted.",
+  "material-category": "Groups for materials, like cement or steel, used to sort stock.",
+  todo: "Ready-made task lists you can drop into any site.",
+};
+
 /** One vocabulary for both the filter and the create form. They used to
  *  disagree, so four filter values could never match anything. */
 const PARTY_TYPES = [
@@ -739,7 +755,7 @@ export default function LibraryHubPage() {
     <div className="flex-1 flex flex-col overflow-hidden">
       <PageHeader
         title={`${TAB_TITLES[activeTab] || activeTab} Library`}
-        subtitle="Manage global templates and codes shared across all project locations."
+        subtitle={TAB_HELP[activeTab]}
       >
         <button
           onClick={() => openNewItemDrawer()}
