@@ -471,12 +471,40 @@ def _check_employee_site(db: Session, company_id, project_id) -> None:
         raise HTTPException(status_code=400, detail="That site is not one of this company's projects.")
 
 
+def _check_employee_duplicate(db: Session, company_id, data: dict, exclude_id=None) -> None:
+    """One person, one record: refuse a second active employee in the company
+    with the same mobile, UAN or employee code. Names alone can repeat."""
+    def mob(v):
+        d = re.sub(r"\D", "", v or "")
+        return d[-10:] if len(d) >= 10 else None
+    want = {
+        "mobile": mob(data.get("mobile")),
+        "uan": (data.get("uan") or "").strip() or None,
+        "employee_code": (data.get("employee_code") or "").strip().upper() or None,
+    }
+    if not any(want.values()):
+        return
+    q = db.query(StaffEmployee).filter(StaffEmployee.company_id == company_id, StaffEmployee.status == "active")
+    if exclude_id is not None:
+        q = q.filter(StaffEmployee.id != exclude_id)
+    for other in q.all():
+        have = {
+            "mobile": mob(other.mobile),
+            "uan": (other.uan or "").strip() or None,
+            "employee_code": (other.employee_code or "").strip().upper() or None,
+        }
+        for field, label in (("mobile", "mobile number"), ("uan", "UAN"), ("employee_code", "employee code")):
+            if want[field] and want[field] == have[field]:
+                raise HTTPException(status_code=409, detail=f"{other.name} already has this {label}. Check if this person is already added.")
+
+
 @router.post("/employees", response_model=EmployeeResponse, status_code=status.HTTP_201_CREATED)
 def create_employee(payload: EmployeeCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     get_company_membership(db, current_user, payload.company_id)
     require_permission(db, current_user, payload.company_id, "payroll:edit")
     data = payload.model_dump()
     _check_employee_site(db, payload.company_id, data.get("project_id"))
+    _check_employee_duplicate(db, payload.company_id, data)
     data["salary_paid_by"] = data.get("salary_paid_by") or "bank"
     if data["salary_paid_by"] == "cash":
         data["bank_account"] = data["bank_ifsc"] = None
@@ -1804,6 +1832,10 @@ def update_employee(employee_id: uuid.UUID, payload: EmployeeUpdate, db: Session
         _check_employee_site(db, emp.company_id, updates["project_id"])
     if updates.get("salary_paid_by") is None:
         updates.pop("salary_paid_by", None)
+    if {"mobile", "uan", "employee_code"} & updates.keys():
+        _check_employee_duplicate(db, emp.company_id, {
+            f: updates.get(f, getattr(emp, f)) for f in ("mobile", "uan", "employee_code")
+        }, exclude_id=emp.id)
     for k, v in updates.items():
         setattr(emp, k, v)
     if emp.salary_paid_by == "cash":
