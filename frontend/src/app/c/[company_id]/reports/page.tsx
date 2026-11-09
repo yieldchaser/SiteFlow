@@ -92,7 +92,6 @@ const IMPLEMENTED_REPORT_SLUGS = new Set([
   "staff-punch-report",
   "staff-salary",
   "subcon-deduction-retention",
-  "subcon-material-issue",
   "subcon-measurement-book",
   "subcon-workorder-summary",
   "task-attendance",
@@ -300,8 +299,7 @@ export default function ReportsDashboard() {
       reports: [
         { name: "Subcon Workorder Summary Report", hasView: true, hasDownload: false, viewSlug: "subcon-workorder-summary" },
         { name: "Subcon Measurement Book", hasView: true, hasDownload: false, viewSlug: "subcon-measurement-book" },
-        { name: "Subcon Deduction / Retention Report", hasView: true, hasDownload: false, viewSlug: "subcon-deduction-retention" },
-        { name: "Subcon Material Issue Summary", hasView: true, hasDownload: false, viewSlug: "subcon-material-issue" }
+        { name: "Subcon Deduction / Retention Report", hasView: true, hasDownload: false, viewSlug: "subcon-deduction-retention" }
       ]
     },
     {

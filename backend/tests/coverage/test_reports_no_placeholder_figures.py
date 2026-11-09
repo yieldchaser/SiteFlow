@@ -282,3 +282,33 @@ def test_equipment_still_on_site_counts_fuel_to_date(db, make_tenant):
     db.commit()
     row = _REPORT_HANDLERS["daily-based-equipment-used"](db, comp.id, p.id)[0]
     assert float(row["Fuel Added (Litres)"]) == 60.0
+
+
+def test_staff_salary_uses_payroll_rule(db, make_tenant):
+    comp, _p = _setup(db, make_tenant)
+    row = _REPORT_HANDLERS["staff-salary"](db, comp.id, None)[0]
+    assert float(row["Gross Salary"]) == 30000.0
+    assert float(row["PF"]) == 1800.0
+    assert float(row["Net Payable (INR)"]) == 28200.0        # not 30,000 less TDS only
+    assert "Late Fine Deduction" not in row and "OT Hrs" not in row
+
+
+def test_rate_card_and_quotation_tax(db, make_tenant):
+    comp, _p = _setup(db, make_tenant)
+    db.add(models.LibraryRate(id=uuid.uuid4(), company_id=comp.id, name="Plaster 12mm", unit="sqm",
+                              unit_cost=200, markup_type="percent", markup_value=25, unit_sale_price=250))
+    lead = models.CRMLead(id=uuid.uuid4(), company_id=comp.id, contact_name="Mehta", lead_type="Residential", phone_no="9800000000")
+    db.add(lead)
+    db.flush()
+    qt = models.CRMQuotation(id=uuid.uuid4(), lead_id=lead.id, subject="Villa")
+    db.add(qt)
+    db.flush()
+    db.add(models.CRMQuotationItem(id=uuid.uuid4(), quotation_id=qt.id, item_name="Exempt item", unit="nos",
+                                   qty=10, selling_price=100, supply_tax_pct=0))
+    db.commit()
+    rc = _REPORT_HANDLERS["rate-card-library"](db, comp.id, None)[0]
+    assert float(rc["Markup Amount"]) == 50.0                 # not 25
+    assert float(rc["Markup %"]) == 25.0
+    qi = _REPORT_HANDLERS["quotation-item"](db, comp.id, None)[0]
+    assert float(qi["Tax %"]) == 0.0                          # 0% item was shown at 18%
+    assert float(qi["Total with Tax"]) == 1000.0

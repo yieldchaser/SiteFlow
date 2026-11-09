@@ -292,7 +292,7 @@ const REPORT_METADATA: Record<string, ReportMeta> = {
     title: "Staff Salary Report",
     hasDownload: false,
     filters: [{ label: "Date", type: "date"  }, { label: "Party Name", type: "select", options: ["All"] }, { label: "Project Name", type: "select", options: ["All"] }, { label: "Designation", type: "select", options: ["All"] }, { label: "Payroll Type", type: "select", options: ["All"] }],
-    columns: ['Party Name', 'Designation', 'Phone No.', 'Bank Name', 'IFSC Code', 'Account No.', 'Shift', 'OT Hrs', 'Basic/Payable', 'Allowance Amount', 'Late Fine Deduction', 'Net Payable (INR)']
+    columns: ['Name', 'Designation', 'Phone No.', 'Bank Name', 'IFSC Code', 'Account No.', 'Basic', 'Allowances', 'Gross Salary', 'PF', 'ESI', 'Professional Tax', 'TDS', 'Total Deductions', 'Net Payable (INR)']
   },
   "equipment-usage-detail": {
     title: "Equipment Usage Detail Report",
@@ -366,12 +366,6 @@ const REPORT_METADATA: Record<string, ReportMeta> = {
     filters: [{ label: "Entry Creation Date", type: "date"  }, { label: "Party Name", type: "select", options: ["All"] }, { label: "Project Name", type: "select", options: ["All"] }, { label: "Type", type: "select", options: ["All"] }],
     columns: ['Item Name', 'Amount', 'Project Name', 'Party Name', 'Invoice Number', 'Creator Name', 'Type', 'Entry Creation Date', 'Due Date']
   },
-  "subcon-material-issue": {
-    title: "Subcon Material Issue Summary",
-    hasDownload: false,
-    filters: [{ label: "Project Name", type: "select", options: ["All"] }, { label: "Subcon Name", type: "select", options: ["All"] }, { label: "Material Name", type: "select", options: ["All"] }, { label: "Transaction Date", type: "date" }],
-    columns: ['Project Name', 'Subcon Name', 'Material Name', 'Avg Unit Price (INR)', 'Total Quantity Issued', 'Total Cost (INR)']
-  },
   "project-financial-summary": {
     title: "Project Financial Summary",
     hasDownload: true,
@@ -430,7 +424,7 @@ const REPORT_METADATA: Record<string, ReportMeta> = {
     title: "Rate Card Library",
     hasDownload: false,
     filters: [{ label: "(columns appear immediately, no distinct filter row identified)", type: "select", options: ["All"] }],
-    columns: ['Description', 'Item Code', 'Cost Code', 'Unit', 'Components', 'Unit Cost Price', 'Markup Amount', 'Markup %', 'Selling Price', 'Created Date', 'Component Count', 'HSN/SAC']
+    columns: ['Description', 'Item Code', 'Cost Code', 'Unit', 'Notes', 'Unit Cost Price', 'Markup Amount', 'Markup %', 'Selling Price', 'GST %', 'HSN/SAC', 'Created Date']
   },
   "payroll-library": {
     title: "Payroll Library",
@@ -466,7 +460,7 @@ const REPORT_METADATA: Record<string, ReportMeta> = {
     title: "Quotation Item Report",
     hasDownload: false,
     filters: [{ label: "Client Name", type: "select", options: ["All"] }, { label: "Quotation Name", type: "select", options: ["All"] }, { label: "Quotation Created", type: "select", options: ["All"] }],
-    columns: ['Client Name', 'Quotation Name', 'Quotation Status', 'Quotation Date', 'Group', 'Section', 'Item Name', 'Unit', 'Estimated Qty', 'Unit Cost Price', 'Markup', 'Sales Unit Price', 'Total Sales Amount', 'Tax %', 'Total with Tax']
+    columns: ['Client Name', 'Quotation Name', 'Quotation Status', 'Quotation Date', 'Section', 'Item Name', 'Unit', 'Estimated Qty', 'Unit Cost Price', 'Markup', 'Sales Unit Price', 'Total Sales Amount', 'Tax %', 'Tax Amount', 'Total with Tax']
   },
   "boq-measurement-book": {
     title: "BOQ Measurement Book",

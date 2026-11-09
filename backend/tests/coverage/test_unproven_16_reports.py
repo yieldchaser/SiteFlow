@@ -29,9 +29,8 @@ EXPECTED_COLUMNS = {
     "material-request-item": ['Request Date', 'Request No.', 'Project Name', 'Material Name', 'Specifications', 'Unit', 'Request Quantity', 'Ordered Quantity', 'Pending Quantity', 'PO No.', 'Requested by', 'Status', 'Approved/Rejected By', 'Request Notes'],
     "payment-request": ['Payment Request ID', 'Payment Request No.', 'Project Name', 'Party Name', 'Amount', 'Payment Date', 'Due Date', 'Creator Name', 'Request Type', 'Approval Status', 'Payment Status', 'Remark'],
     "quotation": ['Quotation Name', 'Quotation Number', 'Client Name', 'Quotation Date', 'Item Count', 'Item Sub Total', 'Discount', 'Additional Charges', 'Tax', 'Total Amount', 'Quotation Status', 'Created Date'],
-    "quotation-item": ['Client Name', 'Quotation Name', 'Quotation Status', 'Quotation Date', 'Group', 'Section', 'Item Name', 'Unit', 'Estimated Qty', 'Unit Cost Price', 'Markup', 'Sales Unit Price', 'Total Sales Amount', 'Tax %', 'Total with Tax'],
-    "rate-card-library": ['Description', 'Item Code', 'Cost Code', 'Unit', 'Components', 'Unit Cost Price', 'Markup Amount', 'Markup %', 'Selling Price', 'Created Date', 'Component Count', 'HSN/SAC'],
-    "subcon-material-issue": ['Project Name', 'Subcon Name', 'Material Name', 'Avg Unit Price (INR)', 'Total Quantity Issued', 'Total Cost (INR)'],
+    "quotation-item": ['Client Name', 'Quotation Name', 'Quotation Status', 'Quotation Date', 'Section', 'Item Name', 'Unit', 'Estimated Qty', 'Unit Cost Price', 'Markup', 'Sales Unit Price', 'Total Sales Amount', 'Tax %', 'Tax Amount', 'Total with Tax'],
+    "rate-card-library": ['Description', 'Item Code', 'Cost Code', 'Unit', 'Notes', 'Unit Cost Price', 'Markup Amount', 'Markup %', 'Selling Price', 'GST %', 'HSN/SAC', 'Created Date'],
     "todo-report": ['Activity Name', 'Project Name', 'Status', 'Creation Date', 'Due Date', 'Last Updated Date', 'Assigned To', 'Type', 'Related Task', 'Creator Name', 'Closed Date'],
 }
 

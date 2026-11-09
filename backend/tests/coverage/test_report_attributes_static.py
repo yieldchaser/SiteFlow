@@ -27,7 +27,7 @@ def test_all_82_report_handlers_attribute_integrity():
             func_defs[node.name] = node
 
     report_handlers = reports._REPORT_HANDLERS
-    assert len(report_handlers) == 79, f"Expected 79 handlers (three invented reports removed), found {len(report_handlers)}"
+    assert len(report_handlers) == 78, f"Expected 78 handlers (four reports with no source removed), found {len(report_handlers)}"
 
     issues = []
 

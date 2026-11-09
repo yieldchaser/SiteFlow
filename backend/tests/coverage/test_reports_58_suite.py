@@ -44,7 +44,7 @@ def metadata_columns():
 
 
 def test_all_82_handlers_registered():
-    assert len(_REPORT_HANDLERS) == 79, f"Expected 79 handlers (three invented reports removed), found {len(_REPORT_HANDLERS)}"
+    assert len(_REPORT_HANDLERS) == 78, f"Expected 78 handlers (four reports with no source removed), found {len(_REPORT_HANDLERS)}"
 
 
 def test_all_82_handlers_return_empty_list_for_empty_company(db):

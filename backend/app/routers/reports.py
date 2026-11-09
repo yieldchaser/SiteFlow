@@ -1745,14 +1745,16 @@ def _rep_rate_card_library(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]
                 "Item Code": r.item_code or "",
                 "Cost Code": r.cost_code or "",
                 "Unit": r.unit,
-                "Components": r.note or "",
+                "Notes": r.note or "",
                 "Unit Cost Price": _clean(r.unit_cost),
-                "Markup Amount": _clean(r.markup_value),
-                "Markup %": _clean(r.markup_value if r.markup_type == "percent" else 0),
+                # Markup value is a percent or an amount depending on its type;
+                # both columns now come from cost and selling price.
+                "Markup Amount": _clean(round(float(r.unit_sale_price or 0) - float(r.unit_cost or 0), 2)),
+                "Markup %": _clean(round((float(r.unit_sale_price or 0) - float(r.unit_cost or 0)) / float(r.unit_cost) * 100, 2)) if float(r.unit_cost or 0) else 0,
                 "Selling Price": _clean(r.unit_sale_price),
-                "Created Date": _clean(r.created_at),
-                "Component Count": 1,
+                "GST %": _clean(r.gst_rate) if r.gst_rate is not None else "",
                 "HSN/SAC": r.hsn_sac or "",
+                "Created Date": _clean(r.created_at),
             })
         return rows
     except Exception:
@@ -1958,14 +1960,21 @@ def _rep_quotation_item(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
             qty = float(it.qty or 0)
             selling_price = float(it.selling_price or 0)
             sales_amt = qty * selling_price
-            tax_pct = float(it.supply_tax_pct or 18)
-            total_with_tax = sales_amt * (1.0 + tax_pct / 100.0)
+            sup_pct = float(it.supply_tax_pct) if it.supply_tax_pct is not None else 0.0
+            inst_pct = float(it.installation_tax_pct) if it.installation_tax_pct is not None else sup_pct
+            sup_rate = float(it.supply_rate or 0)
+            inst_rate = float(it.installation_rate or 0)
+            if sup_rate or inst_rate:
+                tax_amt = qty * (sup_rate * sup_pct + inst_rate * inst_pct) / 100.0
+            else:
+                tax_amt = sales_amt * sup_pct / 100.0
+            tax_pct = round(tax_amt / sales_amt * 100, 2) if sales_amt else sup_pct
+            total_with_tax = sales_amt + tax_amt
             rows.append({
                 "Client Name": lead.contact_name if lead else "",
                 "Quotation Name": qt.subject if qt else "",
                 "Quotation Status": qt.status if qt else "",
                 "Quotation Date": _clean(qt.created_at) if qt else "",
-                "Group": "",
                 "Section": it.section_name or "",
                 "Item Name": it.item_name,
                 "Unit": it.unit,
@@ -1975,7 +1984,8 @@ def _rep_quotation_item(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
                 "Sales Unit Price": _clean(selling_price),
                 "Total Sales Amount": _clean(sales_amt),
                 "Tax %": _clean(tax_pct),
-                "Total with Tax": _clean(total_with_tax),
+                "Tax Amount": _clean(round(tax_amt, 2)),
+                "Total with Tax": _clean(round(total_with_tax, 2)),
             })
         return rows
     except Exception:
@@ -3115,32 +3125,6 @@ def _rep_warehouse_transaction(db: Session, cid: uuid.UUID, pid: Optional[uuid.U
         return _REPORT_FAILED
 
 
-def _rep_subcon_material_issue(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
-    try:
-        proj_ids = _project_ids_for_company(db, cid)
-        if not proj_ids:
-            return []
-        q = db.query(MaterialTransaction).filter(MaterialTransaction.project_id.in_(proj_ids), MaterialTransaction.type == "issue")
-        if pid:
-            q = q.filter(MaterialTransaction.project_id == pid)
-        rows = []
-        for mt in q.all():
-            proj = _get(db, Project, mt.project_id)
-            qty = float(mt.qty or 0)
-            rows.append({
-                "Project Name": proj.name if proj else "",
-                "Subcon Name": "Subcontractor",
-                "Material Name": mt.material_name,
-                "Avg Unit Price (INR)": 0.0,
-                "Total Quantity Issued": _clean(qty),
-                "Total Cost (INR)": 0.0,
-            })
-        return rows
-    except Exception:
-        logger.exception("Report 'subcon-material-issue' failed; returning fallback")
-        return _REPORT_FAILED
-
-
 def _rep_task_material(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
     # Material used per task from the daily progress entries, valued at the
     # project's average order rate for that material. Every material used to
@@ -3426,30 +3410,40 @@ def _rep_ot_shift(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
 
 
 def _rep_staff_salary(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
+    # Monthly salary per person on the payroll rule (hr._compute_payslip).
+    # TDS used to print as "Late Fine Deduction", net left out PF, ESI and
+    # PT, bank details were blank and OT hours read 0.
     try:
+        from app.routers.hr import _compute_payslip
+        company = _get(db, Company, cid)
+        ceiling = getattr(company, "pf_wage_ceiling", None) if company else None
+        ceiling = float(ceiling) if ceiling is not None else 15000.0
         q = db.query(StaffEmployee).filter(StaffEmployee.company_id == cid)
         if pid:
             q = q.filter(StaffEmployee.project_id == pid)
         rows = []
         for emp in q.order_by(StaffEmployee.name.asc()).all():
-            basic = float(emp.basic_salary or 0)
-            hra = float(emp.hra or 0)
-            allowances = hra + float(emp.other_allowances or 0)
-            tds = float(emp.tds_monthly or 0)
-            net = max(0.0, basic + allowances - tds)
+            if (emp.status or "active").lower() not in ("active",):
+                continue
+            calc = _compute_payslip(emp, 30, 30, pf_wage_ceiling=ceiling,
+                                    pt_state=getattr(company, "pt_state", None) if company else None)
+            acct = (emp.bank_account or "").strip()
             rows.append({
-                "Party Name": emp.name,
+                "Name": emp.name,
                 "Designation": emp.designation or "",
                 "Phone No.": emp.mobile or "",
-                "Bank Name": "",
-                "IFSC Code": "",
-                "Account No.": "",
-                "Shift": "General",
-                "OT Hrs": 0,
-                "Basic/Payable": _clean(basic),
-                "Allowance Amount": _clean(allowances),
-                "Late Fine Deduction": _clean(tds),
-                "Net Payable (INR)": _clean(net),
+                "Bank Name": emp.bank_name or "",
+                "IFSC Code": emp.bank_ifsc or "",
+                "Account No.": ("XXXX" + acct[-4:]) if len(acct) > 4 else acct,
+                "Basic": _clean(round(float(calc["basic"]), 2)),
+                "Allowances": _clean(round(float(calc["hra"]) + float(calc["other_allowances"]), 2)),
+                "Gross Salary": _clean(round(float(calc["gross_salary"]), 2)),
+                "PF": _clean(round(float(calc["pf_employee"]), 2)),
+                "ESI": _clean(round(float(calc["esi_employee"]), 2)),
+                "Professional Tax": _clean(round(float(calc["professional_tax"]), 2)),
+                "TDS": _clean(round(float(calc["tds"]), 2)),
+                "Total Deductions": _clean(round(float(calc["total_deductions"]), 2)),
+                "Net Payable (INR)": _clean(round(float(calc["net_payable"]), 2)),
             })
         return rows
     except Exception:
@@ -3786,7 +3780,6 @@ _REPORT_HANDLERS = {
     "staff-punch-report": _rep_staff_punch_report,
     "staff-salary": _rep_staff_salary,
     "subcon-deduction-retention": _rep_subcon_deduction_retention,
-    "subcon-material-issue": _rep_subcon_material_issue,
     "subcon-measurement-book": _rep_subcon_measurement_book,
     "subcon-workorder-summary": _rep_boq_workorder_summary,  # same figures
     "task-attendance": _rep_task_attendance,
