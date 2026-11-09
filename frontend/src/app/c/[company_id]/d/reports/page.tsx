@@ -32,6 +32,35 @@ export default function ClientReportsPage() {
 
   const [reports, setReports] = useState<ClientReport[]>([]);
   const [selectedReport, setSelectedReport] = useState<ClientReport | null>(null);
+  // The report endpoint needs the login token, which an iframe src cannot
+  // send. Fetch it once per selection and show it from a local blob URL.
+  // Keyed by report id, so a stale preview never shows under another report.
+  const [preview, setPreview] = useState<{ id: string; url: string | null; failed: boolean } | null>(null);
+  const selectedId = selectedReport?.id;
+  useEffect(() => {
+    if (!selectedId) return;
+    let cancelled = false;
+    let url: string | null = null;
+    fetch(`${getApiHost()}/apis/v3/reports/${selectedId}/download`, { headers: authHeaders() })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.blob();
+      })
+      .then((blob) => {
+        if (cancelled) return;
+        url = URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
+        setPreview({ id: selectedId, url, failed: false });
+      })
+      .catch(() => {
+        if (!cancelled) setPreview({ id: selectedId, url: null, failed: true });
+      });
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [selectedId]);
+  const previewUrl = preview && preview.id === selectedId ? preview.url : null;
+  const previewFailed = !!preview && preview.id === selectedId && preview.failed;
   const [loading, setLoading] = useState(true);
   const [isOffline, setIsOffline] = useState(false);
   
@@ -256,11 +285,19 @@ export default function ClientReportsPage() {
 
                 {/* Embedded PDF Viewer */}
                 <div className="flex-1 bg-card border border-border-custom rounded-lg overflow-hidden bg-background flex flex-col min-h-[400px]">
-                  <iframe
-                    src={`${getApiHost()}/apis/v3/reports/${selectedReport.id}/download#toolbar=0`}
-                    className="w-full h-full border-0"
-                    title={selectedReport.report_name}
-                  />
+                  {previewUrl ? (
+                    <iframe
+                      src={`${previewUrl}#toolbar=0`}
+                      className="w-full h-full border-0 flex-1"
+                      title={selectedReport.report_name}
+                    />
+                  ) : (
+                    <p className="m-auto text-xs text-muted">
+                      {previewFailed
+                        ? "Could not load the report preview. Use Download PDF instead."
+                        : "Loading the report..."}
+                    </p>
+                  )}
                 </div>
               </>
             ) : (
