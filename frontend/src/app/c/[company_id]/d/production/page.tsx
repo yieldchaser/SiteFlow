@@ -1,7 +1,7 @@
 "use client";
 import { getApiHost, readErrorDetail, detailToMessage} from "@/lib/api";
 import UnitInput from "@/components/UnitInput";
-import { authHeaders, formatLabel } from "@/lib/siteflow";
+import { authHeaders, formatLabel, formatDate } from "@/lib/siteflow";
 import Icon from "@/components/marketing/Icon";
 import SegmentedTabs from "@/components/ui/Tabs";
 import { Badge } from "@/components/ui/Badge";
@@ -316,24 +316,64 @@ export default function ProductionPage() {
   };
   const batchPct = (batch: Batch) => pctOf(batch.materials || []);
 
+  // Stock of the materials production actually draws: anything on a recipe
+  // or a logged batch. The project's whole store (steel, ready-mix, wire)
+  // is the Materials module's job, not this tab's. For each, how much
+  // output the stock still supports (stock / recipe need per unit, with
+  // wastage), and whether it covers one more batch of the usual size.
+  // There is no reorder level on stock, so "below one batch" is the
+  // real-world trigger a site mixes by.
+  const productionStock = useMemo(() => {
+    const need = new Map<string, { perUnit: number; outUnit: string }>();
+    for (const r of data?.recipes || []) {
+      const target = Number(r.target_output_qty) || 1;
+      const factor = 1 + (Number(r.wastage_pct) || 0) / 100;
+      for (const m of r.materials) {
+        const key = m.material_name.toLowerCase();
+        const perUnit = (Number(m.planned_qty) / target) * factor;
+        if (perUnit > 0 && perUnit > (need.get(key)?.perUnit ?? 0)) need.set(key, { perUnit, outUnit: r.unit });
+      }
+    }
+    const used = new Set((data?.batches || []).flatMap((b) => (b.materials || []).map((m) => m.material_name.toLowerCase())));
+    const batches = data?.batches || [];
+    const nextBatch = batches.length
+      ? batches.reduce((s, b) => s + Number(b.planned_output_qty || 0), 0) / batches.length
+      : Number(data?.recipes?.[0]?.target_output_qty || 0);
+    return (data?.inventory_alerts || [])
+      .filter((ia) => need.has(ia.material_name.toLowerCase()) || used.has(ia.material_name.toLowerCase()))
+      .map((ia) => {
+        const n = need.get(ia.material_name.toLowerCase());
+        const covers = n ? Math.max(ia.available_qty, 0) / n.perUnit : null;
+        const short = ia.needs_reorder || (covers !== null && nextBatch > 0 && covers < nextBatch);
+        return { ...ia, covers, outUnit: n?.outUnit || "", short, nextBatch };
+      });
+  }, [data]);
+
+  const stockLine = (item: { covers: number | null; outUnit: string; nextBatch: number }) => {
+    if (item.covers === null) return "Not on any recipe now";
+    const batches = item.nextBatch > 0 ? Math.floor(item.covers / item.nextBatch) : null;
+    return `Enough for ${formatQty(item.covers)} ${item.outUnit}`.trim() +
+      (batches !== null ? ` · ${batches} ${batches === 1 ? "batch" : "batches"} of ${formatQty(item.nextBatch)}` : "");
+  };
+
   const totals = useMemo(() => {
     const allLines = (data?.batches || []).flatMap((b) => b.materials || []);
     return {
       outputProgress: data && data.planned_output_qty > 0 ? ((data.actual_output_qty / data.planned_output_qty) * 100) : 0,
       materialVariancePct: pctOf(allLines) ?? 0,
-      lowStockCount: data?.inventory_alerts.filter((item) => item.needs_reorder).length ?? 0,
+      lowStockCount: productionStock.filter((item) => item.short).length,
     };
-  }, [data]);
+  }, [data, productionStock]);
 
   const getLowStockMaterialsForBatch = (batch: Batch) => {
-    if (!data?.inventory_alerts) return [];
-    const recipe = data.recipes.find(r => r.recipe_code === batch.recipe_code);
+    if (!productionStock.length) return [];
+    const recipe = (data?.recipes || []).find(r => r.recipe_code === batch.recipe_code);
     const materialNames = new Set([
       ...batch.materials.map(m => m.material_name.toLowerCase()),
       ...(recipe?.materials.map(m => m.material_name.toLowerCase()) || [])
     ]);
-    return data.inventory_alerts
-      .filter(ia => ia.needs_reorder && materialNames.has(ia.material_name.toLowerCase()))
+    return productionStock
+      .filter(ia => ia.short && materialNames.has(ia.material_name.toLowerCase()))
       .map(ia => ia.material_name);
   };
 
@@ -392,7 +432,7 @@ export default function ProductionPage() {
               label="Low Stock Alerts"
               value={loading ? "…" : String(totals.lowStockCount)}
               accent="text-danger"
-              note="Inventory rows that need reorder attention"
+              note="Recipe materials too low for one more batch"
             />
           </div>
 
@@ -501,18 +541,19 @@ export default function ProductionPage() {
                 </div>
 
                 <div className="rounded-md border border-border-custom bg-elevated p-5">
-                  <div className="text-[10px] uppercase tracking-[0.24em] text-muted">Inventory Pull-Through</div>
-                  <div className="mt-2 text-lg font-bold text-foreground">{data?.inventory_alerts.length ?? 0} tracked rows</div>
+                  <div className="text-[10px] uppercase tracking-[0.24em] text-muted">Stock for Production</div>
+                  <div className="mt-2 text-lg font-bold text-foreground">{productionStock.length} recipe {productionStock.length === 1 ? "material" : "materials"}</div>
                   <div className="mt-4 space-y-2">
-                    {(data?.inventory_alerts ?? []).slice(0, 4).map((item) => (
-                      <div key={item.id} className="flex items-center justify-between rounded-lg border border-border-custom bg-card px-4 py-3">
+                    {productionStock.length === 0 && (
+                      <div className="text-xs text-muted">No stock recorded yet for the materials your recipes use.</div>
+                    )}
+                    {[...productionStock].sort((a, b) => (a.covers ?? Infinity) - (b.covers ?? Infinity)).slice(0, 4).map((item) => (
+                      <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border border-border-custom bg-card px-4 py-3">
                         <div>
                           <div className="text-sm font-semibold text-foreground">{item.material_name}</div>
-                          <div className="text-xs text-muted">
-                            {formatQty(item.available_qty)} available · {formatQty(item.reserved_qty)} reserved
-                          </div>
+                          <div className="text-xs text-muted">{stockLine(item)}</div>
                         </div>
-                        <Badge tone={item.needs_reorder ? "danger" : "success"} className="uppercase tracking-[0.18em] font-semibold">{item.needs_reorder ? "Reorder" : "Healthy"}</Badge>
+                        <Badge tone={item.short ? "danger" : "success"} className="whitespace-nowrap uppercase tracking-[0.18em] font-semibold">{item.short ? "Short" : "Enough"}</Badge>
                       </div>
                     ))}
                   </div>
@@ -555,7 +596,7 @@ export default function ProductionPage() {
                               </Badge>
                             )}
                           </div>
-                          <div className="mt-1 text-[10px] text-muted">{batch.started_at ? new Date(batch.started_at).toLocaleString("en-IN") : "No start time"}</div>
+                          <div className="mt-1 text-[10px] text-muted">{batch.started_at ? `${formatDate(batch.started_at)}, ${new Date(batch.started_at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}` : "No start time"}</div>
                         </td>
                         <td className="px-4 py-3 text-muted">
                           <div className="font-semibold text-foreground">{batch.product_name}</div>
@@ -639,33 +680,30 @@ export default function ProductionPage() {
               <div className="flex items-end justify-between gap-4">
                 <div>
                   <div className="text-[10px] uppercase tracking-[0.24em] text-muted">Inventory Watch</div>
-                  <h2 className="mt-1 text-lg font-bold text-foreground">Materials pulled by production batches</h2>
+                  <h2 className="mt-1 text-lg font-bold text-foreground">Stock of the materials your recipes use</h2>
                 </div>
-                <div className="text-xs text-muted">{data?.inventory_alerts.length ?? 0} tracked items</div>
+                <div className="text-xs text-muted">{productionStock.length} {productionStock.length === 1 ? "material" : "materials"}</div>
               </div>
+              {productionStock.length === 0 && (
+                <p className="mt-5 text-sm text-muted">No stock recorded yet for the materials your recipes use. Receive them through a GRN or add them in Materials.</p>
+              )}
 
               <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {(data?.inventory_alerts ?? []).map((item) => (
+                {productionStock.map((item) => (
                   <div key={item.id} className="rounded-lg border border-border-custom bg-card p-4">
                     <div className="flex items-start justify-between gap-4">
                       <div>
                         <div className="text-sm font-semibold text-foreground">{item.material_name}</div>
                         <div className="mt-1 text-xs text-muted">
-                          {formatQty(item.on_hand_qty)} on hand · {formatQty(item.reserved_qty)} reserved
+                          {formatQty(item.available_qty)} {item.unit} available{item.reserved_qty > 0 ? ` · ${formatQty(item.reserved_qty)} reserved` : ""}
                         </div>
                       </div>
-                      <Badge tone={item.needs_reorder ? "danger" : "success"}>
-                        {item.needs_reorder ? "Reorder" : "Healthy"}
+                      <Badge tone={item.short ? "danger" : "success"} className="whitespace-nowrap">
+                        {item.short ? "Short" : "Enough"}
                       </Badge>
                     </div>
-                    <div className="mt-3 h-2 rounded-full bg-elevated">
-                      <div
-                        className={`h-2 rounded-full ${item.needs_reorder ? "bg-danger" : "bg-success"}`}
-                        style={{ width: `${Math.max(Math.min((item.available_qty / Math.max(item.on_hand_qty + item.reserved_qty, 1)) * 100, 100), 4)}%` }}
-                      />
-                    </div>
-                    <div className="mt-2 text-[10px] uppercase tracking-[0.18em] text-muted">
-                      Available {formatQty(item.available_qty)} {item.unit}
+                    <div className={`mt-3 text-xs font-semibold ${item.short ? "text-danger" : "text-foreground"}`}>
+                      {stockLine(item)}
                     </div>
                   </div>
                 ))}
