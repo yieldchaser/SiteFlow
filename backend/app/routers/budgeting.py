@@ -11,7 +11,7 @@ from openpyxl.utils.exceptions import InvalidFileException
 from app.database import get_db
 from app.auth import get_current_user, verify_project_access, get_company_membership, require_permission, require_module_view
 from app.constants import REVENUE_INVOICE_TYPES
-from app.models import BOQItem, BOQDocument, ProjectBudget, Project, Bill, LibraryParty, Task, User, BOQRevision, LibraryCostCode, WorkOrderItem
+from app.models import BOQItem, BOQDocument, ProjectBudget, Project, Bill, LibraryParty, Task, User, BOQRevision, LibraryCostCode, WorkOrderItem, WorkOrder
 from app.workflow_controls import get_default_terms
 from app.utils.pdf_generator import generate_document_pdf
 from app.utils.document_pdf import resolve_pdf_branding, resolve_supplier_tax_details
@@ -67,6 +67,59 @@ class BudgetResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class BOQItemProgress(BaseModel):
+    boq_item_id: UUID
+    done_pct: float
+    work_done_value: float
+    ordered_qty: float
+    ordered_value: float
+    task_count: int
+
+
+@router.get("/boq-progress", response_model=List[BOQItemProgress])
+def get_boq_progress(project_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user), _: None = Depends(verify_project_access)):
+    """Per BOQ line, what the site has actually done and ordered.
+
+    Done is the average physical progress of the tasks linked to the line;
+    work done is the line's value times that. Ordered is the work order
+    lines placed against it (cancelled work orders left out). The page used
+    to spread total client billing across lines by value, so every line
+    showed the same made-up percentage.
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    require_module_view(db, current_user, project.company_id, "budgeting")
+
+    items = db.query(BOQItem).filter(BOQItem.project_id == project_id).all()
+    progress: dict = {}
+    for t in db.query(Task).filter(Task.project_id == project_id, Task.boq_item_id.isnot(None)).all():
+        progress.setdefault(t.boq_item_id, []).append(float(t.progress or 0))
+    ordered: dict = {}
+    rows = (
+        db.query(WorkOrderItem)
+        .join(WorkOrder, WorkOrder.id == WorkOrderItem.wo_id)
+        .filter(WorkOrder.project_id == project_id, WorkOrder.status != "cancelled", WorkOrderItem.boq_item_id.isnot(None))
+        .all()
+    )
+    for wi in rows:
+        q, v = ordered.get(wi.boq_item_id, (0.0, 0.0))
+        value = float(wi.amount) if wi.amount is not None else float(wi.quantity) * float(wi.rate)
+        ordered[wi.boq_item_id] = (q + float(wi.quantity), v + value)
+
+    out = []
+    for item in items:
+        pcts = progress.get(item.id, [])
+        done = min(max(sum(pcts) / len(pcts), 0.0), 100.0) if pcts else 0.0
+        value = float(item.amount) if item.amount is not None else float(item.quantity) * _effective_unit_rate(item.rate, item.supply_rate, item.installation_rate)
+        oq, ov = ordered.get(item.id, (0.0, 0.0))
+        out.append(BOQItemProgress(
+            boq_item_id=item.id, done_pct=round(done, 2), work_done_value=round(value * done / 100.0, 2),
+            ordered_qty=oq, ordered_value=round(ov, 2), task_count=len(pcts),
+        ))
+    return out
+
 
 @router.get("/boq", response_model=List[BOQItemResponse])
 def get_boq_items(project_id: UUID, boq_document_id: Optional[UUID] = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user), _: None = Depends(verify_project_access)):

@@ -24,7 +24,13 @@ interface BOQItem {
   quantity: number;
   rate: number;
   amount: number;
-  actual_spent: number;
+  // From /budgeting/boq-progress: real progress of linked tasks and work
+  // orders placed against the line.
+  done_pct: number;
+  work_done: number;
+  ordered_value: number;
+  ordered_qty: number;
+  task_count: number;
   revised_qty?: number;
   revised_rate?: number;
 }
@@ -59,25 +65,18 @@ const SECTION_COLORS: Record<string, string> = {
   "6 — Provisional / Contingency": "bg-chart-6/10 text-chart-6 border-chart-6/20",
 };
 
-function fmt(n: number) { return "₹" + n.toLocaleString("en-IN"); }
+function fmt(n: number) { return (n < 0 ? "-₹" : "₹") + Math.round(Math.abs(n)).toLocaleString("en-IN"); }
 function fmtN(n: number) { return n.toLocaleString("en-IN", { maximumFractionDigits: 2 }); }
 
-function varPct(budget: number, actual: number) {
-  if (budget === 0) return 0;
-  return ((actual - budget) / budget) * 100;
-}
 
-function varColor(pct: number) {
-  if (pct > 10) return "text-danger";
-  if (pct > 0) return "text-warning";
-  return "text-success";
-}
-
-function statusBadge(pct: number) {
-  if (pct > 10) return { label: "OVERSPENT", cls: "bg-danger/10 border-danger/20 text-danger" };
-  if (pct > 0) return { label: "AT RISK", cls: "bg-warning/10 border-warning/20 text-warning" };
-  if (pct > -5) return { label: "ON TRACK", cls: "bg-success/10 border-success/20 text-success" };
-  return { label: "UNDER BUDGET", cls: "bg-info/10 border-info/20 text-info" };
+// Where a BOQ line stands: ordered above its own value is the one thing
+// that needs attention; otherwise how far the work has got.
+function lineStatus(i: { amount: number; ordered_value: number; done_pct: number; task_count: number }) {
+  if (i.amount > 0 && i.ordered_value > i.amount) return { label: "ORDERED ABOVE BOQ", cls: "bg-danger/10 border-danger/20 text-danger" };
+  if (i.done_pct >= 100) return { label: "COMPLETE", cls: "bg-success/10 border-success/20 text-success" };
+  if (i.done_pct > 0) return { label: "IN PROGRESS", cls: "bg-info/10 border-info/20 text-info" };
+  if (i.task_count === 0) return { label: "NO TASK LINKED", cls: "bg-elevated border-border-custom text-muted" };
+  return { label: "NOT STARTED", cls: "bg-elevated border-border-custom text-muted" };
 }
 
 export default function BOQPage() {
@@ -116,9 +115,15 @@ export default function BOQPage() {
     if (selectedDoc?.revised_amount != null) return Number(selectedDoc.revised_amount);
     return boqItems.reduce((s, i) => s + i.amount, 0);
   }, [boqItems, selectedDoc]);
-  const totalActual = useMemo(() => boqItems.reduce((s, i) => s + i.actual_spent, 0), [boqItems]);
-  const totalVariance = totalActual - totalBudget;
-  const overallPct = varPct(totalBudget, totalActual);
+  const totalWorkDone = useMemo(() => boqItems.reduce((s, i) => s + i.work_done, 0), [boqItems]);
+  const totalOrdered = useMemo(() => boqItems.reduce((s, i) => s + i.ordered_value, 0), [boqItems]);
+  const lineValue = useMemo(() => boqItems.reduce((s, i) => s + i.amount, 0), [boqItems]);
+  const donePct = lineValue > 0 ? (totalWorkDone / lineValue) * 100 : 0;
+  // Margin on what is subcontracted: BOQ value of the ordered lines less
+  // what the work orders cost.
+  const orderedLines = boqItems.filter((i) => i.ordered_value > 0);
+  const orderedLinesValue = orderedLines.reduce((s, i) => s + i.amount, 0);
+  const subconMargin = orderedLinesValue - totalOrdered;
 
   const sections = useMemo(() => [...new Set(boqItems.map(i => i.section))], [boqItems]);
 
@@ -207,18 +212,14 @@ export default function BOQPage() {
       const ires = await fetch(`${getApiHost()}/apis/v3/budgeting/boq?project_id=${projectId}`, { headers: authHeaders() });
       if (ires.ok) {
         const items: any[] = await ires.json();
-        // "Actual spent" is the project's real billed value (client billing),
-        // allocated across BOQ items by their budget-weight. The schema tracks
-        // no per-item actual cost, so this is the honest real signal available.
-        let totalBilled = 0;
+        let progress: Record<string, { done_pct: number; work_done_value: number; ordered_value: number; ordered_qty: number; task_count: number }> = {};
         try {
-          const bdres = await fetch(`${getApiHost()}/apis/v3/budgeting/boq-documents?project_id=${projectId}`, { headers: authHeaders() });
-          if (bdres.ok) {
-            const docs = await bdres.json();
-            totalBilled = (Array.isArray(docs) ? docs : []).reduce((s: number, d: any) => s + (Number(d.billed_value) || 0), 0);
+          const pres = await fetch(`${getApiHost()}/apis/v3/budgeting/boq-progress?project_id=${projectId}`, { headers: authHeaders() });
+          if (pres.ok) {
+            const rows = await pres.json();
+            progress = Object.fromEntries((Array.isArray(rows) ? rows : []).map((r: any) => [String(r.boq_item_id), r]));
           }
         } catch { /* ignore */ }
-        const totalBudget = items.reduce((s: number, i: any) => s + (Number(i.amount) || 0), 0);
         setBoqItems(items.map((i: any) => ({
           id: i.id,
           section: i.section_name || "Uncategorized",
@@ -228,7 +229,11 @@ export default function BOQPage() {
           quantity: Number(i.quantity) || 0,
           rate: Number(i.rate) || 0,
           amount: Number(i.amount) || 0,
-          actual_spent: totalBudget > 0 ? (totalBilled * (Number(i.amount) || 0)) / totalBudget : 0,
+          done_pct: Number(progress[String(i.id)]?.done_pct) || 0,
+          work_done: Number(progress[String(i.id)]?.work_done_value) || 0,
+          ordered_value: Number(progress[String(i.id)]?.ordered_value) || 0,
+          ordered_qty: Number(progress[String(i.id)]?.ordered_qty) || 0,
+          task_count: Number(progress[String(i.id)]?.task_count) || 0,
         })));
       }
     } catch { /* ignore */ }
@@ -328,18 +333,18 @@ export default function BOQPage() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <PageHeader
-        title={tab === "boq" ? "Bill of Quantities (BOQ)" : tab === "variance" ? "Budget vs Actual Variance" : "Budget Revisions"}
-        subtitle={!projectId || boqItems.length === 0 ? "Track itemized quantities, unit rates, and budget variances." : `Total Budget: ${fmt(totalBudget)} · Spent: ${fmt(totalActual)}`}
+        title={tab === "boq" ? "Bill of Quantities (BOQ)" : tab === "variance" ? "Progress & Margin" : "Budget Revisions"}
+        subtitle={!projectId || boqItems.length === 0 ? "Quantities, rates and how far each line has got." : `BOQ value ${fmt(totalBudget)} · Work done ${fmt(totalWorkDone)}`}
       >
         <div className="flex items-center gap-3">
           {/* KPI pill */}
           {projectId && boqItems.length > 0 && (
-            <Badge tone={overallPct > 10 ? "danger" : overallPct > 0 ? "warning" : "success"} className="font-bold">{overallPct > 0 ? "+" : ""}{overallPct.toFixed(1)}% overall variance</Badge>
+            <Badge tone="info" className="font-bold">{donePct.toFixed(1)}% work done</Badge>
           )}
           {/* Import trigger */}
           <label className="px-3.5 py-1.5 bg-primary text-white text-xs font-bold rounded-lg hover:opacity-90 cursor-pointer transition-all inline-flex items-center gap-1.5">
             <Icon name="arrow_up" className="w-3.5 h-3.5" /> Import Excel
-            <input type="file" accept=".xlsx,.xlsm" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) { handleImport(null, f); e.target.value = ""; } }} />
+            <input id="boq-upload" type="file" accept=".xlsx,.xlsm" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) { handleImport(null, f); e.target.value = ""; } }} />
           </label>
         </div>
       </PageHeader>
@@ -348,7 +353,7 @@ export default function BOQPage() {
         <SegmentedTabs
           tabs={[
             { id: "boq", label: "BOQ Line Items" },
-            { id: "variance", label: "Budget vs Actual" },
+            { id: "variance", label: "Progress & Margin" },
             { id: "revisions", label: "Budget Revisions" },
           ]}
           activeTab={tab}
@@ -367,19 +372,6 @@ export default function BOQPage() {
                 <EmptyState
                   title="No project selected"
                   description="Select a project from the top dropdown to view and manage its Bill of Quantities."
-                />
-              )}
-              {projectId && boqItems.length === 0 && (
-                <EmptyState
-                  title="No BOQ items found"
-                  description="Import a Bill of Quantities Excel (.xlsx) spreadsheet with item names, units, quantities, rates, and cost codes."
-                  action={{
-                    label: "Import Excel",
-                    onClick: () => {
-                      const el = document.getElementById("boq-upload");
-                      if (el) (el as HTMLInputElement).click();
-                    },
-                  }}
                 />
               )}
               {/* Filters */}
@@ -402,7 +394,11 @@ export default function BOQPage() {
                     {showInlineD ? "Cancel" : "+ Add Item"}
                   </button>
                   {!selectedDocId && documents.length > 0 && <span className="text-[10px] text-warning">Select a BOQ document to add items</span>}
-                  {documents.length === 0 && <span className="text-[10px] text-muted">Create a BOQ document first, then add items</span>}
+                  {documents.length === 0 && projectId && (
+                    <span className="text-[10px] text-muted">
+                      Items go into a BOQ document. <Link href={`/c/${companyId}/p/${projectId}/boq`} className="text-primary font-semibold hover:underline">Create one in the project BOQ</Link> or import an Excel file.
+                    </span>
+                  )}
                   {inlineDError && <span className="text-[10px] text-danger">{inlineDError}</span>}
                   {inlineDMsg && <span className="text-[10px] text-success">{inlineDMsg}</span>}
                 </div>
@@ -447,16 +443,17 @@ export default function BOQPage() {
                       <th className="py-3 px-3 text-center">Unit</th>
                       <th className="py-3 px-3 text-right">Qty</th>
                       <th className="py-3 px-3 text-right">Rate (₹)</th>
-                      <th className="py-3 px-3 text-right">Budget Amt</th>
-                      <th className="py-3 px-3 text-right">Actual Spent</th>
-                      <th className="py-3 px-3 text-right">Variance</th>
+                      <th className="py-3 px-3 text-right">BOQ Value</th>
+                      <th className="py-3 px-3 text-right">Done</th>
+                      <th className="py-3 px-3 text-right">Work Done</th>
+                      <th className="py-3 px-3 text-right">Subcon Ordered</th>
                       <th className="py-3 pr-5 text-center">Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {Object.keys(groupedFiltered).length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="p-8">
+                        <td colSpan={10} className="p-8">
                           <EmptyState
                             title={!projectId ? "No active project selected" : "No BOQ items uploaded"}
                             description={!projectId ? "Select or create a project to manage its bill of quantities." : "Upload your BOQ spreadsheet (.xlsx or .csv) or add line items manually."}
@@ -464,6 +461,10 @@ export default function BOQPage() {
                               label: "View Projects",
                               href: `/c/${companyId}/projects`,
                               icon: "building",
+                            } : documents.length === 0 ? {
+                              label: "Import Excel",
+                              onClick: () => document.getElementById("boq-upload")?.click(),
+                              icon: "add",
                             } : {
                               label: "Add Item",
                               onClick: () => setShowInlineD(true),
@@ -475,24 +476,22 @@ export default function BOQPage() {
                     ) : (
                       Object.entries(groupedFiltered).map(([section, items]) => {
                         const secBudget = items.reduce((s, i) => s + i.amount, 0);
-                        const secActual = items.reduce((s, i) => s + i.actual_spent, 0);
+                        const secDone = items.reduce((s, i) => s + i.work_done, 0);
                         const sColor = SECTION_COLORS[section] ?? "bg-elevated text-muted border-border-custom";
                         return (
                           <React.Fragment key={section}>
                             {/* Section header */}
                             <tr className="border-b border-border-custom">
-                              <td colSpan={9} className="py-2 pl-5 bg-elevated">
+                              <td colSpan={10} className="py-2 pl-5 bg-elevated">
                                 <div className="flex items-center gap-3">
                                   <span className={`text-[9px] font-bold px-2 py-0.5 rounded border ${sColor}`}>{section}</span>
-                                  <span className="text-[10px] text-muted">Budget: {fmt(secBudget)} · Actual: {fmt(secActual)}</span>
+                                  <span className="text-[10px] text-muted">BOQ value {fmt(secBudget)} · Work done {fmt(secDone)}</span>
                                 </div>
                               </td>
                             </tr>
                             {/* Items */}
                             {items.map(item => {
-                              const vPct = varPct(item.amount, item.actual_spent);
-                              const vAmt = item.actual_spent - item.amount;
-                              const sb = statusBadge(vPct);
+                              const sb = lineStatus(item);
                               return (
                                 <tr key={item.id} className="border-b border-border-custom hover:bg-elevated transition-colors">
                                   <td className="py-3 pl-5 pr-3 font-sans text-muted">{item.costCode}</td>
@@ -501,11 +500,9 @@ export default function BOQPage() {
                                   <td className="py-3 px-3 text-right font-sans text-muted">{fmtN(item.quantity)}</td>
                                   <td className="py-3 px-3 text-right font-sans text-muted">{fmtN(item.rate)}</td>
                                   <td className="py-3 px-3 text-right font-sans font-semibold text-foreground">{fmt(item.amount)}</td>
-                                  <td className="py-3 px-3 text-right font-sans font-semibold text-foreground">{fmt(item.actual_spent)}</td>
-                                  <td className={`py-3 px-3 text-right font-sans font-bold ${varColor(vPct)}`}>
-                                    {vAmt >= 0 ? "+" : ""}{fmt(vAmt)}
-                                    <span className="text-[9px] ml-1 opacity-70">({vPct > 0 ? "+" : ""}{vPct.toFixed(1)}%)</span>
-                                  </td>
+                                  <td className="py-3 px-3 text-right font-sans text-muted">{item.task_count ? `${fmtN(item.done_pct)}%` : "—"}</td>
+                                  <td className="py-3 px-3 text-right font-sans font-semibold text-foreground">{fmt(item.work_done)}</td>
+                                  <td className={`py-3 px-3 text-right font-sans ${item.ordered_value > item.amount && item.amount > 0 ? "text-danger font-bold" : "text-muted"}`}>{item.ordered_value ? fmt(item.ordered_value) : "—"}</td>
                                   <td className="py-3 pr-5 text-center">
                                     <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border ${sb.cls}`}>{sb.label}</span>
                                   </td>
@@ -522,14 +519,10 @@ export default function BOQPage() {
                       <tr className="bg-input">
                         <td colSpan={5} className="py-3 pl-5 font-bold text-foreground text-xs">PROJECT TOTAL</td>
                         <td className="py-3 px-3 text-right font-bold text-foreground font-sans">{fmt(totalBudget)}</td>
-                        <td className="py-3 px-3 text-right font-bold text-foreground font-sans">{fmt(totalActual)}</td>
-                        <td className={`py-3 px-3 text-right font-bold font-sans ${varColor(overallPct)}`}>
-                          {totalVariance >= 0 ? "+" : ""}{fmt(totalVariance)}
-                          <span className="text-[9px] ml-1 opacity-70">({overallPct > 0 ? "+" : ""}{overallPct.toFixed(1)}%)</span>
-                        </td>
-                        <td className="py-3 pr-5 text-center">
-                          <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border ${statusBadge(overallPct).cls}`}>{statusBadge(overallPct).label}</span>
-                        </td>
+                        <td className="py-3 px-3 text-right font-bold text-foreground font-sans">{donePct.toFixed(1)}%</td>
+                        <td className="py-3 px-3 text-right font-bold text-foreground font-sans">{fmt(totalWorkDone)}</td>
+                        <td className="py-3 px-3 text-right font-bold text-foreground font-sans">{fmt(totalOrdered)}</td>
+                        <td className="py-3 pr-5" />
                       </tr>
                     </tfoot>
                   )}
@@ -559,94 +552,87 @@ export default function BOQPage() {
                 <>
                   {/* KPI strip */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {[
-                  { label: "Total Budget", value: fmt(totalBudget), sub: selectedDoc?.revised_amount != null ? "Latest applied revision" : "Original contract value", color: "text-info" },
-                  { label: "Total Actual Spent", value: fmt(totalActual), sub: "As of today", color: "text-foreground" },
-                  { label: "Variance (₹)", value: (totalVariance >= 0 ? "+" : "") + fmt(totalVariance), sub: totalVariance > 0 ? "Over budget" : "Under budget", color: varColor(overallPct) },
-                  { label: "Variance (%)", value: (overallPct > 0 ? "+" : "") + overallPct.toFixed(1) + "%", sub: statusBadge(overallPct).label, color: varColor(overallPct) },
-                ].map(k => (
-                  <div key={k.label} className="bg-input border border-border-custom rounded-md p-4">
-                    <div className="text-[9px] uppercase tracking-widest text-muted">{k.label}</div>
-                    <div className={`text-xl font-black mt-1 ${k.color}`}>{k.value}</div>
-                    <div className="text-[10px] text-muted mt-0.5">{k.sub}</div>
+                    {[
+                      { label: "BOQ Value", value: fmt(totalBudget), sub: selectedDoc?.revised_amount != null ? "Latest applied revision" : "Sum of the BOQ lines", color: "text-info" },
+                      { label: "Work Done", value: fmt(totalWorkDone), sub: `${donePct.toFixed(1)}% of the BOQ, from task progress`, color: "text-foreground" },
+                      { label: "Subcon Ordered", value: fmt(totalOrdered), sub: `${orderedLines.length} of ${boqItems.length} lines given out`, color: "text-foreground" },
+                      { label: "Margin on Subcon Work", value: orderedLines.length ? fmt(subconMargin) : "—", sub: orderedLines.length ? `${orderedLinesValue > 0 ? ((subconMargin / orderedLinesValue) * 100).toFixed(1) : "0.0"}% of those lines' BOQ value` : "No work orders against BOQ lines yet", color: subconMargin < 0 ? "text-danger" : "text-success" },
+                    ].map(k => (
+                      <div key={k.label} className="bg-input border border-border-custom rounded-md p-4">
+                        <div className="text-[9px] uppercase tracking-widest text-muted">{k.label}</div>
+                        <div className={`text-xl font-black mt-1 ${k.color}`}>{k.value}</div>
+                        <div className="text-[10px] text-muted mt-0.5">{k.sub}</div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
 
-              {/* Section summary bars */}
-              <div className="bg-input border border-border-custom rounded-md p-5 space-y-4">
-                <h3 className="text-xs font-bold text-muted uppercase tracking-wider">Section-wise Budget vs Actual</h3>
-                {sections.map(section => {
-                  const secItems = boqItems.filter(i => i.section === section);
-                  const sBudget = secItems.reduce((s, i) => s + i.amount, 0);
-                  const sActual = secItems.reduce((s, i) => s + i.actual_spent, 0);
-                  const pct = (sActual / sBudget) * 100;
-                  const vp = varPct(sBudget, sActual);
-                  const sColor = SECTION_COLORS[section] ?? "bg-elevated text-muted border-border-custom";
-                  return (
-                    <div key={section} className="space-y-1.5">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded border ${sColor}`}>{section}</span>
-                        <div className="text-right">
-                          <span className="text-muted font-sans">{fmt(sActual)}</span>
-                          <span className="text-muted mx-1">/</span>
-                          <span className="text-muted font-sans">{fmt(sBudget)}</span>
-                          <span className={`ml-2 text-[10px] font-bold ${varColor(vp)}`}>({vp > 0 ? "+" : ""}{vp.toFixed(1)}%)</span>
-                        </div>
-                      </div>
-                      <div className="h-2 bg-elevated rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full transition-all ${pct > 110 ? "bg-danger" : pct > 100 ? "bg-warning" : "bg-success"}`}
-                          style={{ width: `${Math.min(pct, 100)}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Variance table by cost code */}
-              <div className="bg-input border border-border-custom rounded-md overflow-hidden">
-                <div className="px-5 py-3 border-b border-border-custom text-xs font-bold text-muted">Cost Code Variance Detail</div>
-                <table className="w-full text-xs text-left">
-                  <thead>
-                    <tr className="border-b border-border-custom text-muted text-[9px] uppercase tracking-wider">
-                      <th className="py-2.5 pl-5 pr-3">Code</th>
-                      <th className="py-2.5 pr-4">Description</th>
-                      <th className="py-2.5 px-3 text-right">Budget</th>
-                      <th className="py-2.5 px-3 text-right">Actual</th>
-                      <th className="py-2.5 px-3 text-right">Variance</th>
-                      <th className="py-2.5 pr-5 text-right">EAC*</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border-custom">
-                    {boqItems.map(item => {
-                      const vPct = varPct(item.amount, item.actual_spent);
-                      const vAmt = item.actual_spent - item.amount;
-                      // EAC using 60% assumed completion (replace with real % from Gantt)
-                      const pctComplete = item.actual_spent > 0 ? Math.min((item.actual_spent / item.amount) * 0.6, 0.95) : 0;
-                      const eac = pctComplete > 0 ? item.actual_spent / pctComplete : item.amount;
+                  {/* Section progress bars */}
+                  <div className="bg-input border border-border-custom rounded-md p-5 space-y-4">
+                    <h3 className="text-xs font-bold text-muted uppercase tracking-wider">Work Done by Section</h3>
+                    {sections.map(section => {
+                      const secItems = boqItems.filter(i => i.section === section);
+                      const sValue = secItems.reduce((s, i) => s + i.amount, 0);
+                      const sDone = secItems.reduce((s, i) => s + i.work_done, 0);
+                      const pct = sValue > 0 ? (sDone / sValue) * 100 : 0;
+                      const sColor = SECTION_COLORS[section] ?? "bg-elevated text-muted border-border-custom";
                       return (
-                        <tr key={item.id} className="hover:bg-elevated">
-                          <td className="py-2.5 pl-5 pr-3 font-sans text-muted">{item.costCode}</td>
-                          <td className="py-2.5 pr-4 text-muted line-clamp-1">{item.item_name}</td>
-                          <td className="py-2.5 px-3 text-right font-sans text-muted">{fmt(item.amount)}</td>
-                          <td className="py-2.5 px-3 text-right font-sans text-muted">{fmt(item.actual_spent)}</td>
-                          <td className={`py-2.5 px-3 text-right font-sans font-bold ${varColor(vPct)}`}>
-                            {vAmt >= 0 ? "+" : ""}{fmt(vAmt)}
-                          </td>
-                          <td className={`py-2.5 pr-5 text-right font-sans text-[10px] ${eac > item.amount ? "text-danger" : "text-muted"}`}>
-                            {fmt(Math.round(eac))}
-                          </td>
-                        </tr>
+                        <div key={section} className="space-y-1.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded border ${sColor}`}>{section}</span>
+                            <div className="text-right">
+                              <span className="text-muted font-sans">{fmt(sDone)}</span>
+                              <span className="text-muted mx-1">of</span>
+                              <span className="text-muted font-sans">{fmt(sValue)}</span>
+                              <span className="ml-2 text-[10px] font-bold text-foreground">{pct.toFixed(1)}%</span>
+                            </div>
+                          </div>
+                          <div className="h-2 bg-elevated rounded-full overflow-hidden">
+                            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.min(pct, 100)}%` }} />
+                          </div>
+                        </div>
                       );
                     })}
-                  </tbody>
-                </table>
-                <div className="px-5 py-2 border-t border-border-custom text-[9px] text-muted">* EAC = Estimate at Completion (extrapolated from actual spend). Assumes proportional burn rate.</div>
-              </div>
-            </>
+                  </div>
+
+                  {/* Margin per line that has work orders */}
+                  <div className="bg-input border border-border-custom rounded-md overflow-hidden">
+                    <div className="px-5 py-3 border-b border-border-custom text-xs font-bold text-muted">Margin on Lines Given to Subcontractors</div>
+                    {orderedLines.length === 0 ? (
+                      <div className="px-5 py-6 text-xs text-muted">No work order is linked to a BOQ line yet. Link work order lines to BOQ items to see the margin on each.</div>
+                    ) : (
+                      <table className="w-full text-xs text-left">
+                        <thead>
+                          <tr className="border-b border-border-custom text-muted text-[9px] uppercase tracking-wider">
+                            <th className="py-2.5 pl-5 pr-3">Code</th>
+                            <th className="py-2.5 pr-4">Description</th>
+                            <th className="py-2.5 px-3 text-right">BOQ Value</th>
+                            <th className="py-2.5 px-3 text-right">Subcon Ordered</th>
+                            <th className="py-2.5 pr-5 text-right">Margin</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border-custom">
+                          {orderedLines.map(item => {
+                            const m = item.amount - item.ordered_value;
+                            return (
+                              <tr key={item.id} className="hover:bg-elevated">
+                                <td className="py-2.5 pl-5 pr-3 font-sans text-muted">{item.costCode}</td>
+                                <td className="py-2.5 pr-4 text-muted line-clamp-1">{item.item_name}</td>
+                                <td className="py-2.5 px-3 text-right font-sans text-muted">{fmt(item.amount)}</td>
+                                <td className="py-2.5 px-3 text-right font-sans text-muted">{fmt(item.ordered_value)}</td>
+                                <td className={`py-2.5 pr-5 text-right font-sans font-bold ${m < 0 ? "text-danger" : "text-success"}`}>
+                                  {fmt(m)} <span className="text-[9px] opacity-70">({item.amount > 0 ? ((m / item.amount) * 100).toFixed(1) : "0.0"}%)</span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           )}
-        </div>
-      )}
 
           {/* ── REVISIONS TAB ── */}
           {tab === "revisions" && (
