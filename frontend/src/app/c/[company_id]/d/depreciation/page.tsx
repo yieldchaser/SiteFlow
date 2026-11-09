@@ -24,6 +24,7 @@ interface Schedule {
 
 interface Entry {
   id: string;
+  schedule_id: string;
   asset_id: string;
   entry_date: string;
   depreciation_amount: number;
@@ -66,11 +67,13 @@ export default function DepreciationPage() {
     asset_id: "",
     project_id: projectId || "",
     entry_date: "",
-    depreciation_amount: 0,
-    accumulated_depreciation: 0,
-    book_value: 0,
     notes: "",
   });
+  // First entry for an asset needs its purchase cost; later entries carry on
+  // from the last one. The amount is suggested from the schedule and may be
+  // changed; running total and book value always follow from it.
+  const [entryCost, setEntryCost] = useState("");
+  const [entryAmount, setEntryAmount] = useState<string | null>(null);
 
   // Which lists have answered at least once; until then they say Loading.
   const [schedulesLoaded, setSchedulesLoaded] = useState(false);
@@ -151,14 +154,58 @@ export default function DepreciationPage() {
     }
   };
 
+  const openEntryModal = () => {
+    setEntryForm({ schedule_id: "", asset_id: "", project_id: projectId || "", entry_date: "", notes: "" });
+    setEntryCost("");
+    setEntryAmount(null);
+    setShowEntryModal(true);
+    fetchEntries();
+  };
+
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const entrySchedule = schedules.find((x) => x.id === entryForm.schedule_id);
+  const priorEntry = entries
+    .filter((x) => x.schedule_id === entryForm.schedule_id)
+    .sort((a, b) => b.entry_date.localeCompare(a.entry_date))[0];
+  const calc = (() => {
+    if (!entrySchedule || !entryForm.entry_date) return null;
+    const cost = priorEntry
+      ? Number(priorEntry.book_value) + Number(priorEntry.accumulated_depreciation)
+      : parseFloat(entryCost);
+    if (!cost || cost <= 0) return null;
+    const opening = priorEntry ? Number(priorEntry.book_value) : cost;
+    const from = new Date(priorEntry ? priorEntry.entry_date : entrySchedule.start_date);
+    const to = new Date(entryForm.entry_date + "T23:59:59+05:30");
+    const days = Math.max(0, Math.min(365, Math.round((to.getTime() - from.getTime()) / 86400000)));
+    const salvage = Number(entrySchedule.salvage_value) || 0;
+    const yearly = entrySchedule.method === "wdv"
+      ? opening * Number(entrySchedule.depreciation_pct) / 100
+      : (cost - salvage) / Math.max(1, Number(entrySchedule.useful_life_years));
+    const suggested = round2(Math.max(0, Math.min(yearly * days / 365, opening - salvage)));
+    const amount = entryAmount === null ? suggested : (parseFloat(entryAmount) || 0);
+    const before = priorEntry ? Number(priorEntry.accumulated_depreciation) : 0;
+    return { opening, days, suggested, amount, accumulated: round2(before + amount), bookValue: round2(opening - amount) };
+  })();
+  const inr = (n: number) => "₹" + n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+
   const handleCreateEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage("");
+    if (!calc) {
+      setMessage(priorEntry ? "Pick the date for this entry." : "Enter the asset's purchase cost and the date for this entry.");
+      return;
+    }
     try {
       const res = await fetch(`${getApiHost()}/apis/v3/assets/entries`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
-        body: JSON.stringify({ ...entryForm, company_id: companyId }),
+        body: JSON.stringify({
+          ...entryForm,
+          company_id: companyId,
+          depreciation_amount: calc.amount,
+          accumulated_depreciation: calc.accumulated,
+          book_value: calc.bookValue,
+        }),
       });
       if (res.ok) {
         setMessage("Entry recorded successfully");
@@ -188,7 +235,7 @@ export default function DepreciationPage() {
             + New Schedule
           </button>
           <button
-            onClick={() => { setShowEntryModal(true); setMessage(""); }}
+            onClick={() => { openEntryModal(); setMessage(""); }}
             className="px-3.5 py-1.5 bg-elevated hover:bg-elevated text-foreground rounded-md text-xs font-semibold transition-all cursor-pointer border border-border-custom"
           >
             Record Entry
@@ -292,7 +339,7 @@ export default function DepreciationPage() {
                         description="Log depreciation journal entries to calculate monthly asset write-offs."
                         action={{
                           label: "New Entry",
-                          onClick: () => setShowEntryModal(true),
+                          onClick: () => openEntryModal(),
                           icon: "add",
                         }}
                       />
@@ -384,6 +431,7 @@ export default function DepreciationPage() {
                   onChange={(e) => {
                     const s = schedules.find((x) => x.id === e.target.value);
                     setEntryForm({ ...entryForm, schedule_id: e.target.value, asset_id: s?.asset_id || "" });
+                    setEntryAmount(null);
                   }}
                 >
                   <option value="">Select a schedule</option>
@@ -397,24 +445,38 @@ export default function DepreciationPage() {
                   <p className="text-xs text-muted mt-1">Create a depreciation schedule for the asset first.</p>
                 )}
               </div>
+              {entrySchedule && !priorEntry && (
+                <div>
+                  <label className="block text-xs font-medium text-muted mb-1">Purchase Cost (₹)</label>
+                  <input type="number" min="0" step="0.01" required className="w-full bg-elevated border border-border-custom rounded-md px-4 py-2 text-foreground" value={entryCost} onChange={(e) => { setEntryCost(e.target.value); setEntryAmount(null); }} />
+                  <p className="text-xs text-muted mt-1">First entry for this asset. Later entries carry on from this one.</p>
+                </div>
+              )}
               <div>
-                <label className="block text-xs font-medium text-muted mb-1">Entry Date</label>
-                <input type="date" required className="w-full bg-elevated border border-border-custom rounded-md px-4 py-2 text-foreground" value={entryForm.entry_date} onChange={(e) => setEntryForm({...entryForm, entry_date: e.target.value})} />
+                <label className="block text-xs font-medium text-muted mb-1">Up To Date</label>
+                <input type="date" required className="w-full bg-elevated border border-border-custom rounded-md px-4 py-2 text-foreground" value={entryForm.entry_date} onChange={(e) => { setEntryForm({...entryForm, entry_date: e.target.value}); setEntryAmount(null); }} />
+                {entrySchedule && (
+                  <p className="text-xs text-muted mt-1">
+                    {priorEntry ? "Counted from the last entry on " + formatDate(priorEntry.entry_date) + "." : "Counted from the schedule start on " + formatDate(entrySchedule.start_date) + "."}
+                  </p>
+                )}
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-muted mb-1">Depreciation (₹)</label>
-                  <input type="number" required className="w-full bg-elevated border border-border-custom rounded-md px-4 py-2 text-foreground" value={entryForm.depreciation_amount} onChange={(e) => setEntryForm({...entryForm, depreciation_amount: parseFloat(e.target.value)})} />
+              {calc && entrySchedule && (
+                <div className="space-y-3 rounded-md border border-border-custom p-3">
+                  <div>
+                    <label className="block text-xs font-medium text-muted mb-1">Depreciation for this period (₹)</label>
+                    <input type="number" min="0" step="0.01" required className="w-full bg-elevated border border-border-custom rounded-md px-4 py-2 text-foreground" value={entryAmount === null ? calc.suggested : entryAmount} onChange={(e) => setEntryAmount(e.target.value)} />
+                    <p className="text-xs text-muted mt-1">
+                      Worked out as {calc.days} days of the yearly amount by {methodLabel(entrySchedule.method)}. You can change it.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 text-xs">
+                    <div><div className="text-muted">Value before</div><div className="font-semibold text-foreground">{inr(calc.opening)}</div></div>
+                    <div><div className="text-muted">Total depreciated</div><div className="font-semibold text-foreground">{inr(calc.accumulated)}</div></div>
+                    <div><div className="text-muted">Value after</div><div className="font-semibold text-foreground">{inr(calc.bookValue)}</div></div>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-muted mb-1">Accumulated (₹)</label>
-                  <input type="number" required className="w-full bg-elevated border border-border-custom rounded-md px-4 py-2 text-foreground" value={entryForm.accumulated_depreciation} onChange={(e) => setEntryForm({...entryForm, accumulated_depreciation: parseFloat(e.target.value)})} />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-muted mb-1">Book Value (₹)</label>
-                  <input type="number" required className="w-full bg-elevated border border-border-custom rounded-md px-4 py-2 text-foreground" value={entryForm.book_value} onChange={(e) => setEntryForm({...entryForm, book_value: parseFloat(e.target.value)})} />
-                </div>
-              </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-muted mb-1">Notes</label>
                 <textarea className="w-full bg-elevated border border-border-custom rounded-md px-4 py-2 text-foreground" value={entryForm.notes} onChange={(e) => setEntryForm({...entryForm, notes: e.target.value})} />
