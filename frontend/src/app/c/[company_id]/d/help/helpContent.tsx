@@ -385,13 +385,13 @@ export function getHelpCategories(companyId: string): HelpCategory[] {
                 <Link className="help-link" href={c(companyId, "/d/planning")}>
                   "Planning"
                 </Link>
-                . Choose the "WBS Tasks" tab.
+                . Choose the "Tasks" tab.
               </p>
               <p className="mt-2">
-                Enter the task name, start date, and duration in days, with optional parent tasks for hierarchy, priority, assigned teammate, and linked BOQ items.
+                Enter the task name, start date, and duration in days, and optionally the task it sits under, priority, assigned teammate, and linked BOQ items.
               </p>
               <p className="mt-2">
-                Clicking "Save WBS Task" adds the task to your schedule and displays its interactive bar on the Gantt timeline.
+                Press "Save Task" and it joins the plan, with its bar on the timeline.
               </p>
               <p className="mt-2">
                 Link dependencies between tasks to automatically calculate your critical path and schedule float.
@@ -417,7 +417,7 @@ export function getHelpCategories(companyId: string): HelpCategory[] {
                 <Link className="help-link" href={c(companyId, "/d/planning")}>
                   "Planning"
                 </Link>
-                , and choose the "Milestones", "Baseline", or "14-Day Lookahead" tab.
+                , and choose the "Milestones", "Original Plan" or "Next 14 Days" tab.
               </p>
               <p className="mt-2">
                 Enter the milestone name, target date, and type (such as start, inspection, critical, payment, or handover).

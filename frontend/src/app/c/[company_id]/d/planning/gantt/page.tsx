@@ -1,6 +1,6 @@
 "use client";
 import {  getApiHost , readErrorDetail } from "@/lib/api";
-import { authHeaders, formatLabel, toLocalISODate } from "@/lib/siteflow";
+import { authHeaders, formatLabel, toLocalISODate, todayLocalISO } from "@/lib/siteflow";
 
 import React, { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
@@ -175,7 +175,7 @@ export default function GanttSchedulerPage() {
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
         const count = typeof data.tasks_updated === "number" ? data.tasks_updated : null;
-        setSuccess(count !== null ? `Froze baseline for ${count} task${count === 1 ? "" : "s"}.` : "Baseline saved successfully");
+        setSuccess(count !== null ? `Saved the original plan for ${count} task${count === 1 ? "" : "s"}.` : "Original plan saved");
         fetchTasks();
         fetchHierarchy();
       } else {
@@ -196,12 +196,12 @@ export default function GanttSchedulerPage() {
         headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
       });
       if (res.ok) {
-        setSuccess("Task baseline frozen successfully!");
+        setSuccess("Original plan saved for this task");
         fetchTasks();
         fetchHierarchy();
       } else {
         const err = await readErrorDetail(res);
-        setError(err || "Failed to freeze task baseline.");
+        setError(err || "Could not save the original plan for this task.");
       }
     } catch {
       setError("Connection error.");
@@ -492,7 +492,7 @@ export default function GanttSchedulerPage() {
       } else {
         const err = await res.json().catch(() => ({}));
         const detail = typeof err.detail === "string" ? err.detail : `HTTP ${res.status}`;
-        setError(detail.toLowerCase().includes("circular") ? "Link loop detected. Predecessor rejected." : `Failed to add task link: ${detail}`);
+        setError(detail.toLowerCase().includes("circular") ? "These tasks would wait on each other in a circle, so the link was not saved." : `Failed to add task link: ${detail}`);
       }
     } catch (e) {
       setError("Connection error.");
@@ -645,8 +645,8 @@ export default function GanttSchedulerPage() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <PageHeader
-        title="Project Scheduler & WBS"
-        subtitle="Work breakdown structure, milestone baselines and 14-day lookahead"
+        title="Project Plan"
+        subtitle="Tasks, milestones, the original plan and the next 14 days"
         action={
           mainTab === "milestones" ? (
             <button
@@ -668,7 +668,7 @@ export default function GanttSchedulerPage() {
               className="flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary/95 text-white rounded-md text-xs font-semibold transition-all cursor-pointer"
             >
               <Icon name="clipboard" className="w-3.5 h-3.5" />
-              Create WBS Task
+              Add Task
             </button>
           ) : null
         }
@@ -678,10 +678,10 @@ export default function GanttSchedulerPage() {
       <div className="px-6 py-2 border-b border-border-custom bg-card shrink-0 overflow-x-auto">
         <SegmentedTabs
           tabs={[
-            { id: "wbs", label: "WBS Tasks", icon: <Icon name="clipboard" className="w-3.5 h-3.5" /> },
+            { id: "wbs", label: "Tasks", icon: <Icon name="clipboard" className="w-3.5 h-3.5" /> },
             { id: "milestones", label: "Milestones", icon: <Icon name="flag_checkered" className="w-3.5 h-3.5" /> },
-            { id: "baseline", label: "Baseline", icon: <Icon name="bar_chart" className="w-3.5 h-3.5" /> },
-            { id: "lookahead", label: "14-Day Lookahead", icon: <Icon name="calendar" className="w-3.5 h-3.5" /> },
+            { id: "baseline", label: "Original Plan", icon: <Icon name="bar_chart" className="w-3.5 h-3.5" /> },
+            { id: "lookahead", label: "Next 14 Days", icon: <Icon name="calendar" className="w-3.5 h-3.5" /> },
           ]}
           activeTab={mainTab}
           onChange={(t) => setMainTab(t as any)}
@@ -911,7 +911,7 @@ export default function GanttSchedulerPage() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-xs font-bold text-foreground">Active Schedule vs. Approved Baseline</h3>
+                  <h3 className="text-xs font-bold text-foreground">Current Dates vs Original Plan</h3>
                   <p className="text-[10px] text-muted mt-0.5">How far each task is ahead of or behind its planned dates</p>
                 </div>
                 <button
@@ -920,7 +920,7 @@ export default function GanttSchedulerPage() {
                   className="flex items-center gap-1.5 px-3.5 py-1.5 bg-primary/10 hover:bg-primary/20 border border-primary/20 text-primary rounded-lg text-xs font-bold transition-all disabled:opacity-50"
                 >
                   <Icon name="camera" className="w-3.5 h-3.5" />
-                  {baselineSaving ? "Freezing..." : "Freeze New Baseline"}
+                  {baselineSaving ? "Saving..." : "Save Current Dates as Plan"}
                 </button>
               </div>
 
@@ -953,16 +953,16 @@ export default function GanttSchedulerPage() {
                             <span className="text-[10px] text-info font-bold font-sans">{diffDays}d AHEAD</span>
                           )
                         ) : (
-                          <span className="text-[9px] text-muted italic">No baseline set</span>
+                          <span className="text-[9px] text-muted italic">No original plan saved</span>
                         )}
                       </div>
                       <button
                         type="button"
                         onClick={() => handleSetTaskBaseline(t.id)}
                         className="px-2.5 py-1 bg-elevated hover:bg-card border border-border-custom text-foreground rounded text-[10px] font-semibold cursor-pointer whitespace-nowrap"
-                        title="Snapshot baseline for this task"
+                        title="Save these dates as the original plan for this task"
                       >
-                        Set Baseline
+                        Save as Plan
                       </button>
                     </div>
                   </div>
@@ -970,10 +970,10 @@ export default function GanttSchedulerPage() {
               })}
               {tasks.length === 0 && (
                 <EmptyState
-                  title="No WBS tasks yet"
-                  description="Create tasks in the WBS tab to see planned vs actual and freeze schedule baselines."
+                  title="No tasks yet"
+                  description="Add tasks in the Tasks tab, then save their dates as the original plan to compare later."
                   action={{
-                    label: "Go to WBS Tasks",
+                    label: "Go to Tasks",
                     onClick: () => setMainTab("wbs"),
                   }}
                 />
@@ -986,7 +986,7 @@ export default function GanttSchedulerPage() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-xs font-bold text-foreground">14-Day Lookahead Schedule</h3>
+                  <h3 className="text-xs font-bold text-foreground">Work in the Next 14 Days</h3>
                   <p className="text-[10px] text-muted mt-0.5">Rolling 2-week plan derived from real scheduled tasks</p>
                 </div>
                 <div className="text-[10px] text-muted">Next 14 days</div>
@@ -1025,7 +1025,7 @@ export default function GanttSchedulerPage() {
             {/* Create Task Form */}
             <div id="task-form" className="bg-card border border-border-custom rounded-lg p-6 rounded-lg border border-border-custom bg-input space-y-4">
               <h2 className="text-xs font-bold text-foreground uppercase tracking-wider">
-                Create WBS Task
+                Add Task
               </h2>
               <form onSubmit={handleCreateTask} className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                 <div className="col-span-2 space-y-1">
@@ -1073,7 +1073,7 @@ export default function GanttSchedulerPage() {
                   type="submit"
                   className="col-span-2 mt-2 bg-primary rounded-md py-2.5 font-bold text-white hover:opacity-90 transition-all text-xs"
                 >
-                  Save WBS Task
+                  Save Task
                 </button>
               </form>
             </div>
@@ -1081,11 +1081,11 @@ export default function GanttSchedulerPage() {
             {/* Predecessors / Linker Form */}
             <div className="bg-card border border-border-custom rounded-lg p-6 rounded-lg border border-border-custom bg-input space-y-4">
               <h2 className="text-xs font-bold text-foreground uppercase tracking-wider">
-                Link CPM Predecessors
+                Link Tasks
               </h2>
               <form onSubmit={handleAddPredecessor} className="space-y-3 text-xs">
                 <div className="space-y-1">
-                  <label className="text-muted font-semibold">Target WBS Task</label>
+                  <label className="text-muted font-semibold">Task</label>
                   <select
                     value={selectedTaskForLink}
                     onChange={(e) => setSelectedTaskForLink(e.target.value)}
@@ -1101,13 +1101,13 @@ export default function GanttSchedulerPage() {
                   )}
                 </div>
                 <div className="space-y-1">
-                  <label className="text-muted font-semibold">Requires Completion of Predecessor</label>
+                  <label className="text-muted font-semibold">Can start only after this task finishes</label>
                   <select
                     value={selectedPredecessor}
                     onChange={(e) => setSelectedPredecessor(e.target.value)}
                     className="w-full bg-elevated border border-border-custom rounded-lg p-2 text-foreground"
                   >
-                    <option value="">Choose Predecessor</option>
+                    <option value="">Choose the task that must finish first</option>
                     {tasks
                       .filter(t => t.id !== selectedTaskForLink)
                       .map(t => (
@@ -1120,7 +1120,7 @@ export default function GanttSchedulerPage() {
                   type="submit"
                   className="w-full bg-elevated hover:bg-elevated border border-border-custom rounded-md py-2.5 font-bold text-foreground transition-all text-xs inline-flex items-center justify-center gap-1.5"
                 >
-                  <Icon name="link" className="w-3.5 h-3.5" /> Establish Link Dependency
+                  <Icon name="link" className="w-3.5 h-3.5" /> Save Link
                 </button>
               </form>
             </div>
@@ -1130,8 +1130,8 @@ export default function GanttSchedulerPage() {
           <div className="bg-card border border-border-custom rounded-lg p-6 space-y-4">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
-                <h2 className="text-xs font-bold text-foreground uppercase tracking-wider">WBS Execution Nodes</h2>
-                <p className="text-[10px] text-muted">Click a task card below to open its real-time collaboration feed, subtasks and progress takeoff book.</p>
+                <h2 className="text-xs font-bold text-foreground uppercase tracking-wider">All Tasks</h2>
+                <p className="text-[10px] text-muted">Click a task to see its comments, sub-tasks and progress.</p>
               </div>
               <div className="flex items-center gap-1.5 bg-input border border-border-custom rounded-lg p-1">
                 <button
@@ -1141,7 +1141,7 @@ export default function GanttSchedulerPage() {
                     taskViewMode === "flat" ? "bg-primary text-white" : "text-muted hover:text-foreground"
                   }`}
                 >
-                  Flat View
+                  List
                 </button>
                 <button
                   type="button"
@@ -1153,14 +1153,14 @@ export default function GanttSchedulerPage() {
                     taskViewMode === "tree" ? "bg-primary text-white" : "text-muted hover:text-foreground"
                   }`}
                 >
-                  Tree Hierarchy
+                  Grouped
                 </button>
               </div>
             </div>
 
             <div className="space-y-3">
               {loading ? (
-                <div className="text-center py-10 text-xs text-muted">Loading WBS Node levels...</div>
+                <div className="text-center py-10 text-xs text-muted">Loading tasks...</div>
               ) : taskViewMode === "tree" ? (
                 hierarchy.length === 0 ? (
                   <div className="text-center py-8 text-xs text-muted">No hierarchy data available.</div>
@@ -1169,7 +1169,7 @@ export default function GanttSchedulerPage() {
                     return nodes.map((node) => {
                       const pct = Math.min(100, Math.max(0, node.progress ?? 0));
                       const overdue =
-                        node.status !== "completed" && !!node.end_date && new Date(node.end_date) < new Date();
+                        node.status !== "completed" && !!node.end_date && toLocalISODate(node.end_date) < todayLocalISO();
                       return (
                         <div key={node.id} className="space-y-2">
                           <div
@@ -1222,9 +1222,9 @@ export default function GanttSchedulerPage() {
                                   handleSetTaskBaseline(node.id);
                                 }}
                                 className="px-2 py-1 bg-elevated hover:bg-card border border-border-custom text-foreground rounded text-[10px] font-semibold cursor-pointer whitespace-nowrap"
-                                title="Snapshot baseline for this task"
+                                title="Save these dates as the original plan for this task"
                               >
-                                Set Baseline
+                                Save as Plan
                               </button>
                               <Icon name="arrow_forward" className="w-3.5 h-3.5 text-muted group-hover:text-foreground transition-all" />
                             </div>
@@ -1239,7 +1239,7 @@ export default function GanttSchedulerPage() {
                 tasks.map((task) => {
                   const pct = Math.min(100, Math.max(0, task.progress ?? 0));
                   const overdue =
-                    task.status !== "completed" && !!task.end_date && new Date(task.end_date) < new Date();
+                    task.status !== "completed" && !!task.end_date && toLocalISODate(task.end_date) < todayLocalISO();
                   return (
                   <div
                     key={task.id}
@@ -1290,9 +1290,9 @@ export default function GanttSchedulerPage() {
                           handleSetTaskBaseline(task.id);
                         }}
                         className="px-2 py-1 bg-elevated hover:bg-card border border-border-custom text-foreground rounded text-[10px] font-semibold cursor-pointer whitespace-nowrap"
-                        title="Snapshot baseline for this task"
+                        title="Save these dates as the original plan for this task"
                       >
-                        Set Baseline
+                        Save as Plan
                       </button>
                       <button
                         type="button"
@@ -1326,7 +1326,7 @@ export default function GanttSchedulerPage() {
             {/* Header */}
             <div className="px-6 py-4 border-b border-border-custom flex items-center justify-between bg-background">
               <div>
-                <span className="text-[9px] uppercase tracking-wider font-extrabold text-primary">WBS Task details</span>
+                <span className="text-[9px] uppercase tracking-wider font-extrabold text-primary">Task details</span>
                 <h2 className="text-base font-extrabold text-foreground mt-1">{selectedTask.name}</h2>
               </div>
               <div className="flex items-center gap-2">

@@ -618,7 +618,7 @@ export default function ProjectsHomePage() {
                               });
                               if (res.ok) {
                                 setTodoCount((c) => c + 1);
-                                showToast("Task quick-added to WBS backlog!");
+                                showToast("Task added to the plan");
                               } else {
                                 const err = await res.json().catch(() => ({}));
                                 showToast(detailToMessage(err.detail, "Failed to add task"));

@@ -240,7 +240,8 @@ def get_tasks(project_id: UUID, db: Session = Depends(get_db), _: None = Depends
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    tasks = db.query(Task).filter(Task.project_id == project_id).all()
+    # In date order, so the plan reads top to bottom as the work happens.
+    tasks = db.query(Task).filter(Task.project_id == project_id).order_by(Task.start_date.asc(), Task.created_at.asc()).all()
     annotate_critical(tasks, db)
     return tasks
 
@@ -251,7 +252,8 @@ def get_task_hierarchy(project_id: UUID, db: Session = Depends(get_db), _: None 
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    tasks = db.query(Task).filter(Task.project_id == project_id).all()
+    # In date order, so the plan reads top to bottom as the work happens.
+    tasks = db.query(Task).filter(Task.project_id == project_id).order_by(Task.start_date.asc(), Task.created_at.asc()).all()
     annotate_critical(tasks, db)
 
     nodes = {

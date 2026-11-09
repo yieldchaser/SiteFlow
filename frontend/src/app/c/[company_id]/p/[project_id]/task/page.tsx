@@ -185,7 +185,7 @@ export default function TaskPage() {
             title="No tasks scheduled yet"
             description="Create project activities, assign responsible engineers, and set planned start and end dates."
             action={{
-              label: "Go to Gantt & WBS",
+              label: "Go to Project Plan",
               href: `/c/${companyId}/d/planning/gantt`,
             }}
           />

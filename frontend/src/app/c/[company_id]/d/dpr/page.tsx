@@ -475,7 +475,7 @@ export default function DPRPage() {
               )}
 
               <div className="space-y-1">
-                <label className="text-muted">Select WBS Task</label>
+                <label className="text-muted">Select Task</label>
                 <select
                   value={selectedTaskId}
                   onChange={(e) => setSelectedTaskId(e.target.value)}

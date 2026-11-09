@@ -304,14 +304,14 @@ export function startHereCategory(companyId: string): HelpCategory {
             </p>
             <Steps>
               <li>
-                In the WBS Tasks tab, use Create WBS Task: task name, duration in days, start date and priority.
+                In the Tasks tab, use Add Task: task name, duration in days, start date and priority.
               </li>
               <li>
-                Use Link CPM Predecessors to say which task must finish before another starts. Dates then move
+                Use Link Tasks to say which task must finish before another starts. Dates then move
                 together when one slips.
               </li>
-              <li>Add key dates in the Milestones tab, and freeze the plan in the Baseline tab once agreed.</li>
-              <li>The 14-Day Lookahead tab shows what must start in the next two weeks.</li>
+              <li>Add key dates in the Milestones tab, and save the agreed dates in the Original Plan tab.</li>
+              <li>The Next 14 Days tab shows what must start in the next two weeks.</li>
             </Steps>
           </>
         ),

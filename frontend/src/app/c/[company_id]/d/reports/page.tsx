@@ -172,7 +172,7 @@ export default function ClientReportsPage() {
       <div className="flex-1 flex flex-col overflow-hidden">
         <PageHeader
           title="Client Progress Reports"
-          subtitle="Compile WBS milestones, subcontractor billing audits, and quality control indicators."
+          subtitle="Reports on progress, money, materials, labour and quality, ready to view or download."
         >
           <button
             onClick={() => setIsOpen(true)}
@@ -203,7 +203,7 @@ export default function ClientReportsPage() {
             ) : reports.length === 0 ? (
               <EmptyState
                 title="No reports generated yet"
-                description="Compile WBS milestones, subcontractor billing audits, and quality control indicators."
+                description="Reports on progress, money, materials, labour and quality, ready to view or download."
               />
             ) : (
               reports.map((report) => (
