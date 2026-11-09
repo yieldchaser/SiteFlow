@@ -9,7 +9,7 @@ from app.database import get_db
 from app.auth import get_current_user, verify_project_in_company, verify_project_access, get_company_membership, require_permission
 from app.models import (
     WorkOrder, SubcontractorPerformance,
-    BOCWRecord, MusterRoll, Bill, User,
+    BOCWRecord, MusterRoll, Bill, User, Project,
     AttendanceLog, SubcontractorAttendance, PayrollRun, PayrollLineItem, StaffEmployee
 )
 from app.party_names import resolve_party_name
@@ -17,7 +17,7 @@ from app.routers.delete_logs import log_deletion
 from pydantic import BaseModel, Field
 import csv
 import io
-from app.csv_export import csv_safe_cell as _csv_safe_cell, CSV_FORMULA_PREFIXES as _CSV_FORMULA_PREFIXES
+from app.csv_export import csv_safe_cell as _csv_safe_cell, CSV_FORMULA_PREFIXES as _CSV_FORMULA_PREFIXES, csv_attachment, money, qty, file_slug
 
 router = APIRouter(
     prefix="/labour",
@@ -200,29 +200,24 @@ def export_bocw(project_id: UUID, month_year: Optional[str] = None, db: Session 
     if not records:
         raise HTTPException(status_code=404, detail="No BOCW records found")
 
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow([
-        "Contractor Name", "Month-Year", "Workers Count", "Wages Paid",
-        "Contribution Amount", "Acknowledgement Number", "Created At"
-    ])
-    for r in records:
-        writer.writerow([
-            _csv_safe_cell(r.contractor_name),
-            _csv_safe_cell(r.month_year),
+    project = db.query(Project).filter(Project.id == project_id).first()
+    columns = [
+        "Contractor Name", "Month", "Workers Count", "Wages Paid",
+        "Contribution Amount", "Acknowledgement Number", "Recorded On",
+    ]
+    rows = []
+    for r in sorted(records, key=lambda x: (x.month_year or "", x.contractor_name or "")):
+        rows.append([
+            r.contractor_name,
+            r.month_year,
             r.workers_count,
-            float(r.wages_paid),
-            float(r.contribution_amount),
-            _csv_safe_cell(r.acknowledgement_number or ""),
-            r.created_at.strftime("%Y-%m-%d %H:%M:%S") if r.created_at else "",
+            money(r.wages_paid),
+            money(r.contribution_amount),
+            r.acknowledgement_number or "",
+            r.created_at.strftime("%Y-%m-%d") if r.created_at else "",
         ])
-
-    output.seek(0)
-    return StreamingResponse(
-        io.BytesIO(output.getvalue().encode("utf-8")),
-        media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename=bocw_export_{project_id}.csv"}
-    )
+    scope = file_slug(getattr(project, "code", None) or getattr(project, "name", None) or "project", month_year or "")
+    return csv_attachment(columns, rows, f"bocw-{scope}.csv")
 
 
 @router.post("/bocw", response_model=BOCWResponse, status_code=201)

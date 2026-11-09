@@ -48,7 +48,7 @@ def test_r2_407_payslip_export_neutralizes_formula_cells(client, db, make_tenant
     assert r.status_code == 200, r.text
     assert "text/csv" in r.headers.get("content-type", ""), r.headers
 
-    rows = list(csv.reader(io.StringIO(r.text)))
+    rows = list(csv.reader(io.StringIO(r.content.decode("utf-8-sig"))))
     data = [row for row in rows[1:] if row]
     assert len(data) == 1, r.text
     row = data[0]
@@ -65,5 +65,5 @@ def test_r2_407_payslip_export_neutralizes_formula_cells(client, db, make_tenant
     assert float(row[14]) == 21240.0, row
 
     # No raw line in the file may start with a formula character.
-    body_lines = [ln for ln in r.text.splitlines()[1:] if ln]
+    body_lines = [ln for ln in r.content.decode("utf-8-sig").splitlines()[1:] if ln]
     assert all(not ln.startswith(("=", "+", "-", "@")) for ln in body_lines), body_lines[:3]

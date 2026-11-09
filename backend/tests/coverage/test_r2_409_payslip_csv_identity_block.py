@@ -69,7 +69,7 @@ def test_r2_409_payslip_csv_carries_pay_period_run_and_reconciliation_ids(client
     assert r.status_code == 200, r.text
     assert r.headers["content-type"].startswith("text/csv"), r.headers
 
-    rows = list(csv.DictReader(io.StringIO(r.text)))
+    rows = list(csv.DictReader(io.StringIO(r.content.decode("utf-8-sig"))))
     assert len(rows) == 2, r.text
 
     # The original money columns are untouched and the identity block exists.
@@ -78,7 +78,7 @@ def test_r2_409_payslip_csv_carries_pay_period_run_and_reconciliation_ids(client
         "Gross", "PF Employee", "PF Employer", "ESI Employee", "ESI Employer",
         "TDS", "Advance Recovery", "Other Deductions", "Total Deductions", "Net Pay",
     ]
-    assert list(rows[0].keys())[15:] == ["Pay Period", "Payroll Run ID", "Company", "Project"]
+    assert list(rows[0].keys())[15:] == ["Pay Period", "Payroll Run ID", "Company", "Project", "Professional Tax"]
 
     # Every row names its period, run, company and project.
     assert {row["Pay Period"] for row in rows} == {"2026-07"}, rows

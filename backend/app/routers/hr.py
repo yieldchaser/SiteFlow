@@ -32,7 +32,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.database import get_db
 from app.auth import get_current_user, verify_project_in_company, verify_company_access, verify_project_access, get_company_membership, require_permission, require_module_view, assert_cost_codes_known, scope_projects
 # R2-185/R2-407: the shared CSV formula guard (one helper, every export).
-from app.csv_export import csv_safe_cell as _csv_safe_cell, CSV_FORMULA_PREFIXES as _CSV_FORMULA_PREFIXES
+from app.csv_export import csv_safe_cell as _csv_safe_cell, csv_attachment, money, qty, file_slug, CSV_FORMULA_PREFIXES as _CSV_FORMULA_PREFIXES
 from app.professional_tax import professional_tax
 from app.models import (
     StaffEmployee, AttendanceLog, Timesheet,
@@ -1502,44 +1502,36 @@ def export_payslips_csv(run_id: uuid.UUID, db: Session = Depends(get_db), curren
         "Pay Period", "Payroll Run ID", "Company", "Project", "Professional Tax",
     ]
 
-    buf = io.StringIO()
-    writer = csv.writer(buf)
-    writer.writerow(columns)
-    for line in lines:
-        emp = db.query(StaffEmployee).filter(StaffEmployee.id == line.employee_id).first()
-        writer.writerow([
-            _csv_safe_cell(emp.employee_code if (emp and emp.employee_code) else (str(line.employee_id)[:8].upper() if emp else "Unknown")),
-            _csv_safe_cell(emp.name if emp else "Unknown"),
-            _csv_safe_cell(emp.designation if (emp and emp.designation) else ""),
-            float(line.days_present),
+    emp_ids = {line.employee_id for line in lines if line.employee_id}
+    emps = {e.id: e for e in db.query(StaffEmployee).filter(StaffEmployee.id.in_(emp_ids)).all()} if emp_ids else {}
+    rows = []
+    for line in sorted(lines, key=lambda ln: ((emps.get(ln.employee_id).employee_code or "") if emps.get(ln.employee_id) else "")):
+        emp = emps.get(line.employee_id)
+        rows.append([
+            (emp.employee_code if (emp and emp.employee_code) else (str(line.employee_id)[:8].upper() if emp else "Unknown")),
+            emp.name if emp else "Unknown",
+            emp.designation if (emp and emp.designation) else "",
+            qty(line.days_present, 1),
             line.days_in_month,
-            float(line.gross_salary),
-            float(line.pf_employee),
-            float(line.pf_employer),
-            float(line.esi_employee),
-            float(line.esi_employer),
-            float(line.tds),
-            float(line.advance_recovery),
-            float(line.other_deductions),
-            float(line.total_deductions),
-            float(line.net_payable),
+            money(line.gross_salary),
+            money(line.pf_employee),
+            money(line.pf_employer),
+            money(line.esi_employee),
+            money(line.esi_employer),
+            money(line.tds),
+            money(line.advance_recovery),
+            money(line.other_deductions),
+            money(line.total_deductions),
+            money(line.net_payable),
             # R2-409: pay period + reconciliation identifiers.
-            _csv_safe_cell(run.payroll_month),
+            run.payroll_month,
             str(run.id),
-            _csv_safe_cell(company.name if company else ""),
-            _csv_safe_cell(project.name if project else ""),
-            float(line.professional_tax or 0),
+            company.name if company else "",
+            project.name if project else "All sites",
+            money(line.professional_tax or 0),
         ])
-    csv_text = buf.getvalue()
-    filename = f"payslips-{run.payroll_month}-{datetime.utcnow().strftime('%Y%m%d')}.csv"
-    return Response(
-        content=csv_text,
-        media_type="text/csv",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "Cache-Control": "no-store",
-        },
-    )
+    filename = f"payslips-{file_slug(company.name if company else '', run.payroll_month)}.csv"
+    return csv_attachment(columns, rows, filename)
 
 
 @router.get("/payroll/latest/{company_id}")

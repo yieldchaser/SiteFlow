@@ -13,7 +13,7 @@ from app.workflow_controls import enforce_entry_creation_window, enforce_entry_e
 from app.inventory_reservation import release_reservation, rereserve_reservation
 from app.routers.delete_logs import log_deletion
 from pydantic import BaseModel, Field
-from app.csv_export import csv_safe_cell as _csv_safe_cell, CSV_FORMULA_PREFIXES as _CSV_FORMULA_PREFIXES
+from app.csv_export import csv_safe_cell as _csv_safe_cell, CSV_FORMULA_PREFIXES as _CSV_FORMULA_PREFIXES, csv_attachment, money, qty, file_slug
 
 router = APIRouter(
     prefix="/dpr",
@@ -428,45 +428,37 @@ def export_dpr_csv(
         "Labour Count", "Materials", "Remarks", "Status",
     ]
 
-    buf = io.StringIO()
-    writer = csv.writer(buf)
-    writer.writerow(columns)
-
     p_ids = list({d.project_id for d in reports if d.project_id})
     projs_by_id = {p.id: p for p in db.query(Project).filter(Project.id.in_(p_ids)).all()} if p_ids else {}
     author_map = resolve_dpr_authors(db, reports)
 
+    rows = []
     for d in reports:
         project = projs_by_id.get(d.project_id)
         mats = d.materials_consumed or []
         mat_str = "; ".join(
-            f"{m.get('material_name')} {m.get('quantity')} {m.get('unit') or ''}".strip()
+            f"{m.get('material_name')} {qty(m.get('quantity'))} {m.get('unit') or ''}".strip()
             for m in mats
         )
         author = author_map.get(d.reported_by, d.reported_by or "Unknown")
-
-        writer.writerow([
-            _csv_safe_cell(d.dpr_date.strftime("%Y-%m-%d") if d.dpr_date else ""),
-            _csv_safe_cell(project.name if project else ""),
-            _csv_safe_cell(author),
-            float(d.executed_qty or 0),
-            _csv_safe_cell(d.notes or ""),
+        rows.append([
+            d.dpr_date.strftime("%Y-%m-%d") if d.dpr_date else "",
+            project.name if project else "",
+            author,
+            qty(d.executed_qty),
+            d.notes or "",
             d.workers_deployed or 0,
-            _csv_safe_cell(mat_str),
-            _csv_safe_cell(d.issues or ""),
-            _csv_safe_cell(d.status or ""),
+            mat_str,
+            d.issues or "",
+            (d.status or "").replace("_", " ").title(),
         ])
-    csv_text = buf.getvalue()
-    scope = str(project_id) if project_id else f"company-{cid}"
-    filename = f"dpr-{scope}-{datetime.utcnow().strftime('%Y%m%d')}.csv"
-    return Response(
-        content=csv_text,
-        media_type="text/csv",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "Cache-Control": "no-store",
-        },
-    )
+    if project_id:
+        only = projs_by_id.get(project_id) or db.query(Project).filter(Project.id == project_id).first()
+        scope = file_slug(getattr(only, "code", None) or getattr(only, "name", None) or "project")
+    else:
+        scope = "all-projects"
+    filename = f"dpr-{scope}-{datetime.utcnow().strftime('%Y-%m-%d')}.csv"
+    return csv_attachment(columns, rows, filename)
 
 
 @router.delete("/{dpr_id}", status_code=status.HTTP_204_NO_CONTENT)
