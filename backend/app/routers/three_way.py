@@ -13,6 +13,12 @@ from app.routers.delete_logs import log_deletion
 
 router = APIRouter(prefix="/three-way", tags=["3-Way Matching"], dependencies=[Depends(get_current_user)])
 
+def bill_value(bill) -> float:
+    """A bill's value before deductions: work plus GST, rounded to paise."""
+    gross = float(bill.subtotal or 0) + float(bill.gst_amount or 0)
+    return round(gross if gross > 0 else float(bill.total_payable or 0), 2)
+
+
 MATCH_TOLERANCE_PCT = 0.01
 MATCH_TOLERANCE_MIN = 1.0
 
@@ -126,7 +132,10 @@ def create_match(payload: ThreeWayMatchCreate, db: Session = Depends(get_db), cu
         raise HTTPException(status_code=422, detail=f"Bill {bill.invoice_number} is cancelled")
     if po.vendor_id is not None and bill.party_company_user_id != po.vendor_id:
         raise HTTPException(status_code=422, detail=f"Bill {bill.invoice_number} is from a different supplier than {po.po_number}")
-    invoiced_amount = float(bill.total_payable)
+    # Compare the bill's own value (work + GST) with the goods. TDS and other
+    # deductions are held back from the supplier, not a price difference;
+    # using the payable after them showed every bill with TDS as under-billed.
+    invoiced_amount = bill_value(bill)
 
     # R2-594: a PO/GRN pair carries exactly one reconciliation record, so
     # contradictory verdicts cannot coexist for the same receipt.

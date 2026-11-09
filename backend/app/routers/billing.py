@@ -1236,6 +1236,11 @@ def get_bill_pdf(bill_id: UUID, db: Session = Depends(get_db), current_user=Depe
 
 
 # --- Theme B (soft flag) helpers: link a Bill to an approved ThreeWayMatch ---
+def _three_way_bill_value(bill) -> float:
+    from app.routers.three_way import bill_value
+    return bill_value(bill)
+
+
 def _resolve_bill_match_id(db: Session, invoice_type: str, match_id, company_id: UUID, project_id: UUID, total_payable=None):
     """Validate an optional ThreeWayMatch link for a bill.
 
@@ -1263,7 +1268,7 @@ def _resolve_bill_match_id(db: Session, invoice_type: str, match_id, company_id:
     if total_payable is not None and float(match.invoiced_amount) != round(float(total_payable), 2):
         raise HTTPException(
             status_code=400,
-            detail="Linked three-way match's invoiced amount does not agree with this bill's payable amount",
+            detail="This match was made for a different bill amount. Make the match again for this bill.",
         )
     return match.id
 
@@ -1681,7 +1686,7 @@ def link_bill_match(bill_id: UUID, req: BillMatchLinkRequest, db: Session = Depe
 
     if is_expense_invoice_type(bill.invoice_type):
         enforce_entry_editing_window(db, bill.company_id, bill.invoice_date)
-        match_id = _resolve_bill_match_id(db, bill.invoice_type, req.match_id, bill.company_id, bill.project_id, total_payable=bill.total_payable)
+        match_id = _resolve_bill_match_id(db, bill.invoice_type, req.match_id, bill.company_id, bill.project_id, total_payable=_three_way_bill_value(bill))
         bill.match_id = match_id
         if match_id is not None:
             linked_match = db.query(ThreeWayMatch).filter(ThreeWayMatch.id == match_id).first()

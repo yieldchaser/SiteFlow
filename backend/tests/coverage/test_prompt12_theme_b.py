@@ -167,12 +167,12 @@ def test_patch_bill_link_match(client, db, make_tenant, auth_headers):
     r = client.post("/apis/v3/billing/bills", json=_bill_payload(comp.id, proj.id, team.id), headers=hdr)
     assert r.status_code == 201, r.text
     bill_id = r.json()["id"]
-    total_payable = r.json()["total_payable"]
+    bill_value = round(float(r.json()["subtotal"]) + float(r.json()["gst_amount"]), 2)
     assert r.json()["match_status"] == "unmatched"
 
     # R2-594: the linked match's invoiced amount must agree with this bill's
-    # total_payable, so seed the stub match with the bill's actual payable.
-    match = _po_grn_match(db, comp, proj, "approved", invoiced_amount=total_payable)
+    # value before deductions (work + GST), which is what a match records.
+    match = _po_grn_match(db, comp, proj, "approved", invoiced_amount=bill_value)
     p = client.patch(f"/apis/v3/billing/bills/{bill_id}/match", json={"match_id": str(match.id)}, headers=hdr)
     assert p.status_code == 200, p.text
     assert str(p.json()["match_id"]) == str(match.id)
