@@ -1,6 +1,6 @@
 "use client";
 import {  getApiHost , readErrorDetail } from "@/lib/api";
-import { authHeaders, formatDate, downloadWithAuth } from "@/lib/siteflow";
+import { authHeaders, formatDate, formatDateTime, downloadWithAuth } from "@/lib/siteflow";
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
@@ -241,7 +241,7 @@ export default function ClientReportsPage() {
                   <div>
                     <h2 className="text-sm font-bold text-foreground">{selectedReport.report_name}</h2>
                     <p className="text-[10px] text-muted mt-0.5">
-                      Created: {new Date(selectedReport.report_date).toLocaleString("en-IN")}
+                      Created {formatDateTime(selectedReport.report_date)}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">

@@ -34,7 +34,9 @@ const contentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline'",
   `script-src 'self' 'unsafe-inline' ${RECAPTCHA_SCRIPT_HOSTS}`,
   `script-src-elem 'self' 'unsafe-inline' ${RECAPTCHA_SCRIPT_HOSTS}`,
-  `frame-src 'self' ${RECAPTCHA_FRAME_HOSTS}`,
+  // blob: lets a PDF fetched with the login token show inline (client
+  // report preview); the API host itself never needs to be framed.
+  `frame-src 'self' blob: ${RECAPTCHA_FRAME_HOSTS}`,
   `connect-src 'self' ${API_HOST} ${SUPABASE_HOSTS} ${FIREBASE_CONNECT_HOSTS}`,
   "worker-src 'self' blob:",
   "media-src 'self' blob:",
