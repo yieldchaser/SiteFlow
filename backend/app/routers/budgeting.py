@@ -11,7 +11,7 @@ from openpyxl.utils.exceptions import InvalidFileException
 from app.database import get_db
 from app.auth import get_current_user, verify_project_access, get_company_membership, require_permission, require_module_view
 from app.constants import REVENUE_INVOICE_TYPES
-from app.models import BOQItem, BOQDocument, ProjectBudget, Project, Bill, LibraryParty, Task, User, BOQRevision, LibraryCostCode
+from app.models import BOQItem, BOQDocument, ProjectBudget, Project, Bill, LibraryParty, Task, User, BOQRevision, LibraryCostCode, WorkOrderItem
 from app.workflow_controls import get_default_terms
 from app.utils.pdf_generator import generate_document_pdf
 from app.utils.document_pdf import resolve_pdf_branding, resolve_supplier_tax_details
@@ -635,6 +635,21 @@ def delete_boq_item(item_id: UUID, db: Session = Depends(get_db), current_user: 
         raise HTTPException(status_code=404, detail="Project not found")
     get_company_membership(db, current_user, project.company_id)
     require_permission(db, current_user, project.company_id, "budgeting:edit")
+    # Deleting a line that tasks or work orders measure against silently
+    # unlinked them (ON DELETE SET NULL), so progress and subcontractor
+    # billing lost their BOQ reference. Make the user unlink them first.
+    task_count = db.query(Task).filter(Task.boq_item_id == item.id).count()
+    wo_count = db.query(WorkOrderItem).filter(WorkOrderItem.boq_item_id == item.id).count()
+    if task_count or wo_count:
+        parts = []
+        if task_count:
+            parts.append(f"{task_count} task{'s' if task_count != 1 else ''}")
+        if wo_count:
+            parts.append(f"{wo_count} work order line{'s' if wo_count != 1 else ''}")
+        raise HTTPException(
+            status_code=409,
+            detail=f"This BOQ line is used by {' and '.join(parts)}. Link them to another line first, then delete it.",
+        )
     db.delete(item)
     db.commit()
 

@@ -11,6 +11,7 @@ import PageHeader from "@/components/PageHeader";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import Icon from "@/components/marketing/Icon";
+import { usePermissions } from "@/context/PermissionsContext";
 import FieldHint from "@/components/ui/FieldHint";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -168,6 +169,58 @@ export default function BoqTab() {
   };
 
   const amountOf = (i: BOQItemLine) => Number(i.quantity) * effectiveUnitRate(i);
+
+  // Edit or delete one line
+  const { can } = usePermissions();
+  const canEditBoq = can("budgeting:edit");
+  const [lineEditId, setLineEditId] = useState<string | null>(null);
+  const [lineDraft, setLineDraft] = useState({ item_name: "", unit: "", quantity: "", rate: "" });
+  const [lineBusy, setLineBusy] = useState(false);
+  const [lineError, setLineError] = useState<string | null>(null);
+
+  const startLineEdit = (i: BOQItemLine) => {
+    setLineEditId(i.id);
+    setLineError(null);
+    setLineDraft({ item_name: i.item_name, unit: i.unit, quantity: String(i.quantity), rate: String(i.rate) });
+  };
+
+  const saveLine = async (docId: string, itemId: string) => {
+    if (!lineDraft.item_name.trim()) { setLineError("Give the line a name."); return; }
+    const qty = Number(lineDraft.quantity);
+    const rate = Number(lineDraft.rate);
+    if (lineDraft.quantity.trim() === "" || lineDraft.rate.trim() === "" || !Number.isFinite(qty) || qty < 0 || !Number.isFinite(rate) || rate < 0) {
+      setLineError("Quantity and rate must be numbers, zero or more.");
+      return;
+    }
+    setLineBusy(true);
+    try {
+      const res = await fetch(getApi(`/budgeting/boq/${itemId}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
+        body: JSON.stringify({ item_name: lineDraft.item_name.trim(), unit: lineDraft.unit.trim() || undefined, quantity: qty, rate }),
+      });
+      if (!res.ok) { setLineError((await readErrorDetail(res)) || "Could not save the line"); return; }
+      setLineEditId(null);
+      await loadDocItems(docId);
+      await loadDocs();
+    } finally {
+      setLineBusy(false);
+    }
+  };
+
+  const deleteLine = async (docId: string, i: BOQItemLine) => {
+    if (!window.confirm(`Delete "${i.item_name}" from this BOQ? This cannot be undone.`)) return;
+    setLineBusy(true);
+    setLineError(null);
+    try {
+      const res = await fetch(getApi(`/budgeting/boq/${i.id}`), { method: "DELETE", headers: authHeaders() });
+      if (!res.ok) { setLineError((await readErrorDetail(res)) || "Could not delete the line"); return; }
+      await loadDocItems(docId);
+      await loadDocs();
+    } finally {
+      setLineBusy(false);
+    }
+  };
 
   const loadDocItems = useCallback(
     async (docId: string) => {
@@ -630,10 +683,37 @@ export default function BoqTab() {
                                   <th className="py-2 px-2 text-right">Supply</th>
                                   <th className="py-2 px-2 text-right">Install</th>
                                   <th className="py-2 px-2 text-right">Amount</th>
+                                  {canEditBoq && <th className="py-2 px-2 w-16" />}
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-white/[0.03]">
-                                {docItems.map((i) => (
+                                {docItems.map((i) => lineEditId === i.id ? (
+                                  <tr key={i.id} className="bg-elevated/50">
+                                    <td className="py-1.5 pl-1 pr-2">
+                                      <input value={lineDraft.item_name} onChange={(e) => setLineDraft({ ...lineDraft, item_name: e.target.value })}
+                                        className="w-full bg-input border border-border-custom rounded px-2 py-1 text-foreground" />
+                                    </td>
+                                    <td className="py-1.5 px-2">
+                                      <input value={lineDraft.unit} onChange={(e) => setLineDraft({ ...lineDraft, unit: e.target.value })}
+                                        className="w-16 bg-input border border-border-custom rounded px-2 py-1 text-center text-foreground" />
+                                    </td>
+                                    <td className="py-1.5 px-2">
+                                      <input inputMode="decimal" value={lineDraft.quantity} onChange={(e) => setLineDraft({ ...lineDraft, quantity: e.target.value })}
+                                        className="w-24 bg-input border border-border-custom rounded px-2 py-1 text-right text-foreground" />
+                                    </td>
+                                    <td className="py-1.5 px-2">
+                                      <input inputMode="decimal" value={lineDraft.rate} onChange={(e) => setLineDraft({ ...lineDraft, rate: e.target.value })}
+                                        className="w-24 bg-input border border-border-custom rounded px-2 py-1 text-right text-foreground" />
+                                    </td>
+                                    <td colSpan={3} className="py-1.5 px-2 text-right">
+                                      <button type="button" disabled={lineBusy} onClick={() => saveLine(d.id, i.id)}
+                                        className="px-2.5 py-1 bg-primary text-white rounded text-[10px] font-bold disabled:opacity-50">{lineBusy ? "Saving..." : "Save"}</button>
+                                      <button type="button" onClick={() => { setLineEditId(null); setLineError(null); }}
+                                        className="ml-1 px-2.5 py-1 bg-elevated border border-border-custom text-muted rounded text-[10px]">Cancel</button>
+                                    </td>
+                                    <td />
+                                  </tr>
+                                ) : (
                                   <tr key={i.id}>
                                     <td className="py-1.5 pl-1 pr-2 text-foreground">
                                       {i.item_name}
@@ -657,12 +737,23 @@ export default function BoqTab() {
                                     <td className="py-1.5 px-2 text-right font-sans font-semibold text-muted">
                                       {fmtINR(amountOf(i), currencyDecimalPlaces)}
                                     </td>
+                                    {canEditBoq && (
+                                      <td className="py-1.5 px-2 text-right whitespace-nowrap">
+                                        <button type="button" title="Edit line" onClick={() => startLineEdit(i)} className="text-muted hover:text-primary p-0.5">
+                                          <Icon name="edit" className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button type="button" title="Delete line" disabled={lineBusy} onClick={() => deleteLine(d.id, i)} className="text-muted hover:text-danger p-0.5 ml-1 disabled:opacity-40">
+                                          <Icon name="trash" className="w-3.5 h-3.5" />
+                                        </button>
+                                      </td>
+                                    )}
                                   </tr>
                                 ))}
                               </tbody>
                               <tfoot>
                                 <tr className="border-t border-border-custom">
                                   <td colSpan={6} className="py-2 pl-1 font-bold text-foreground">
+                                    {lineError && <span className="mr-3 font-normal text-danger">{lineError}</span>}
                                     Subtotal
                                   </td>
                                   <td className="py-2 px-2 text-right font-bold text-foreground font-sans">
