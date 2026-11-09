@@ -144,6 +144,9 @@ class LedgerTransactionResponse(BaseModel):
     debit: float = 0.0
     credit: float = 0.0
     balance: float = 0.0
+    # payment | bill | settlement | salary: what the row is, so the page only
+    # offers to delete payment vouchers.
+    kind: str = ""
 
 class PLItemResponse(BaseModel):
     head: str
@@ -395,8 +398,13 @@ def get_ledger(project_id: uuid.UUID, db: Session = Depends(get_db), _: None = D
         raw_entries.append((p.payment_date, "payment", p))
     for b in bills:
         raw_entries.append((b.invoice_date, "bill", b))
+    # A salary line is dated by its payroll run, not by when the row was saved.
+    run_dates = {
+        r.id: r.run_date
+        for r in db.query(PayrollRun).filter(PayrollRun.id.in_({s.payroll_run_id for s in salaries})).all()
+    } if salaries else {}
     for s in salaries:
-        raw_entries.append((s.created_at, "salary", s))
+        raw_entries.append((run_dates.get(s.payroll_run_id) or s.created_at, "salary", s))
         
     # Sort ascending chronologically to compute running balance.
     # R2-236: keys must be tz-normalized (see _ledger_sort_dt) or mixed
@@ -427,7 +435,8 @@ def get_ledger(project_id: uuid.UUID, db: Session = Depends(get_db), _: None = D
             ledger_entries.append(
                 LedgerTransactionResponse(
                     id=str(obj.id),
-                    date=obj.payment_date.strftime("%b %d") if obj.payment_date else "",
+                    date=obj.payment_date.strftime("%Y-%m-%d") if obj.payment_date else "",
+                    kind="payment",
                     type="Receipt" if is_in else "Expense",
                     category="Client Payment" if is_in else "Direct Payment",
                     description=obj.description or ("Receipt Payment" if is_in else "Expense Payment"),
@@ -458,7 +467,8 @@ def get_ledger(project_id: uuid.UUID, db: Session = Depends(get_db), _: None = D
                 ledger_entries.append(
                     LedgerTransactionResponse(
                         id=str(obj.id),
-                        date=obj.invoice_date.strftime("%b %d") if obj.invoice_date else "",
+                        date=obj.invoice_date.strftime("%Y-%m-%d") if obj.invoice_date else "",
+                        kind="settlement",
                         type="Receipt" if money_in else "Expense",
                         category="Settlement",
                         description=f"Invoice {obj.invoice_number}",
@@ -481,13 +491,23 @@ def get_ledger(project_id: uuid.UUID, db: Session = Depends(get_db), _: None = D
             else:
                 running_balance -= amount
 
-            category = "Client Invoice" if is_revenue_invoice_type(obj.invoice_type) else ("Subcon Invoice" if obj.invoice_type == "subcon" else "Material Bill")
-            ledger_head = "Revenue" if is_revenue_invoice_type(obj.invoice_type) else ("Subcon Cost" if obj.invoice_type == "subcon" else "Material Cost")
+            # Equipment and other expense bills were all filed as "Material Bill".
+            if is_revenue_invoice_type(obj.invoice_type):
+                category, ledger_head = "Client Invoice", "Revenue"
+            elif obj.invoice_type == "subcon":
+                category, ledger_head = "Subcon Invoice", "Subcon Cost"
+            elif obj.invoice_type == "equipment":
+                category, ledger_head = "Equipment Bill", "Equipment Cost"
+            elif obj.invoice_type == "expense":
+                category, ledger_head = "Expense Bill", "Other Cost"
+            else:
+                category, ledger_head = "Material Bill", "Material Cost"
             
             ledger_entries.append(
                 LedgerTransactionResponse(
                     id=str(obj.id),
-                    date=obj.invoice_date.strftime("%b %d") if obj.invoice_date else "",
+                    date=obj.invoice_date.strftime("%Y-%m-%d") if obj.invoice_date else "",
+                    kind="bill",
                     type="Receipt" if is_receipt else "Expense",
                     category=category,
                     description=f"Invoice {obj.invoice_number}",
@@ -514,7 +534,8 @@ def get_ledger(project_id: uuid.UUID, db: Session = Depends(get_db), _: None = D
             ledger_entries.append(
                 LedgerTransactionResponse(
                     id=str(obj.id),
-                    date=obj.created_at.strftime("%b %d") if obj.created_at else "",
+                    date=dt.strftime("%Y-%m-%d") if dt else "",
+                    kind="salary",
                     type="Expense",
                     category="Labour Wages",
                     description="Salary Payout",

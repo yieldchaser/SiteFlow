@@ -55,6 +55,7 @@ interface LedgerEntry {
   debit: number;
   credit: number;
   balance: number;
+  kind?: string;
 }
 
 interface PLItem {
@@ -116,6 +117,14 @@ interface TallySyncLog {
   marked_synced_at: string | null;
   voucher_count: number;
   created_at: string;
+}
+
+// Rupees as an accountant writes them: whole amounts plain, anything with
+// paisa to two places (never "₹41,45,450.4").
+function inr(v: number): string {
+  const n = Number(v || 0);
+  const abs = Math.abs(n).toLocaleString("en-IN", Number.isInteger(n) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${n < 0 ? "-" : ""}₹${abs}`;
 }
 
 function formatDmy(iso?: string): string {
@@ -1628,7 +1637,13 @@ export default function FinancePage() {
             });
             const totalDebit = filteredLedger.reduce((sum, e) => sum + (e.debit || 0), 0);
             const totalCredit = filteredLedger.reduce((sum, e) => sum + (e.credit || 0), 0);
-            const latestBalance = filteredLedger.length > 0 ? filteredLedger[filteredLedger.length - 1].balance : 0;
+            // Rows come newest first, so the current balance is the first row's.
+            const latestBalance = filteredLedger.length > 0 ? filteredLedger[0].balance : 0;
+            const glMoney = (v: number) => {
+              const n = Number(v || 0);
+              const abs = Math.abs(n).toLocaleString("en-IN", Number.isInteger(n) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              return `${n < 0 ? "-" : ""}₹${abs}`;
+            };
 
             const handleExportCsv = () => {
               const csv = buildCsv(
@@ -1659,21 +1674,21 @@ export default function FinancePage() {
                 {/* Summary Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="bg-card border border-border-custom rounded-lg p-4">
-                    <div className="text-[10px] font-bold text-muted uppercase tracking-wider">Total Debits (Receipts)</div>
-                    <div className="text-xl font-extrabold text-foreground mt-1 font-sans">₹{totalDebit.toLocaleString("en-IN")}</div>
-                    <div className="text-[10px] text-muted mt-1">{filteredLedger.filter(e => e.debit > 0).length} debit entries</div>
+                    <div className="text-[10px] font-bold text-muted uppercase tracking-wider">Money In</div>
+                    <div className="text-xl font-extrabold text-foreground mt-1 font-sans">{glMoney(totalDebit)}</div>
+                    <div className="text-[10px] text-muted mt-1">{filteredLedger.filter(e => e.debit > 0).length} client invoices and receipts</div>
                   </div>
                   <div className="bg-card border border-border-custom rounded-lg p-4">
-                    <div className="text-[10px] font-bold text-muted uppercase tracking-wider">Total Credits (Payments/Bills)</div>
-                    <div className="text-xl font-extrabold text-foreground mt-1 font-sans">₹{totalCredit.toLocaleString("en-IN")}</div>
-                    <div className="text-[10px] text-muted mt-1">{filteredLedger.filter(e => e.credit > 0).length} credit entries</div>
+                    <div className="text-[10px] font-bold text-muted uppercase tracking-wider">Money Out</div>
+                    <div className="text-xl font-extrabold text-foreground mt-1 font-sans">{glMoney(totalCredit)}</div>
+                    <div className="text-[10px] text-muted mt-1">{filteredLedger.filter(e => e.credit > 0).length} bills, salaries and payments</div>
                   </div>
                   <div className="bg-card border border-border-custom rounded-lg p-4">
-                    <div className="text-[10px] font-bold text-muted uppercase tracking-wider">Net Running Balance</div>
+                    <div className="text-[10px] font-bold text-muted uppercase tracking-wider">Project Balance</div>
                     <div className={`text-xl font-extrabold mt-1 font-sans ${latestBalance >= 0 ? "text-success" : "text-danger"}`}>
-                      ₹{latestBalance.toLocaleString("en-IN")}
+                      {glMoney(latestBalance)}
                     </div>
-                    <div className="text-[10px] text-muted mt-1">Double-entry project balance</div>
+                    <div className="text-[10px] text-muted mt-1">{ledgerDateFilter || ledgerSearchQuery ? "Running balance at the latest row shown" : "Money in less money out, to date"}</div>
                   </div>
                 </div>
 
@@ -1717,8 +1732,8 @@ export default function FinancePage() {
                         <th className="p-3 font-semibold">Ref / Voucher</th>
                         <th className="p-3 font-semibold">Party</th>
                         <th className="p-3 font-semibold">Category</th>
-                        <th className="p-3 font-semibold text-right">Debit (₹)</th>
-                        <th className="p-3 font-semibold text-right">Credit (₹)</th>
+                        <th className="p-3 font-semibold text-right">In (₹)</th>
+                        <th className="p-3 font-semibold text-right">Out (₹)</th>
                         <th className="p-3 font-semibold text-right">Balance (₹)</th>
                         <th className="p-3 font-semibold text-center">Action</th>
                       </tr>
@@ -1747,16 +1762,16 @@ export default function FinancePage() {
                               <span className="bg-elevated px-2 py-0.5 rounded text-[10px] font-semibold">{entry.category || entry.type}</span>
                             </td>
                             <td className="p-3 text-right font-sans font-bold text-success">
-                              {entry.debit > 0 ? `₹${entry.debit.toLocaleString("en-IN")}` : "—"}
+                              {entry.debit > 0 ? glMoney(entry.debit) : "—"}
                             </td>
                             <td className="p-3 text-right font-sans font-bold text-danger">
-                              {entry.credit > 0 ? `₹${entry.credit.toLocaleString("en-IN")}` : "—"}
+                              {entry.credit > 0 ? glMoney(entry.credit) : "—"}
                             </td>
                             <td className="p-3 text-right font-sans font-bold text-foreground">
-                              ₹{entry.balance.toLocaleString("en-IN")}
+                              {glMoney(entry.balance)}
                             </td>
                             <td className="p-3 text-center whitespace-nowrap">
-                              {entry.id && (
+                              {entry.id && entry.kind === "payment" && (
                                 <button
                                   type="button"
                                   onClick={() => handleDeletePayment(entry.id)}
@@ -1823,7 +1838,7 @@ export default function FinancePage() {
                 <div className="bg-card border border-border-custom rounded-lg p-4 flex items-center justify-between relative overflow-hidden">
                   <div className="space-y-1 z-10">
                     <span className="text-[10px] font-bold text-success/80 uppercase tracking-wider block">Advance Paid</span>
-                    <strong className="text-xl font-extrabold text-foreground tracking-tight block">₹{partySums.advance_paid.toLocaleString("en-IN")}</strong>
+                    <strong className="text-xl font-extrabold text-foreground tracking-tight block">{inr(partySums.advance_paid)}</strong>
                   </div>
                   <div className="h-9 w-9 rounded-full bg-success/10 flex items-center justify-center text-success z-10">
                     <Icon name="arrow_up" className="w-4 h-4" />
@@ -1832,7 +1847,7 @@ export default function FinancePage() {
                 <div className="bg-card border border-border-custom rounded-lg p-4 flex items-center justify-between relative overflow-hidden">
                   <div className="space-y-1 z-10">
                     <span className="text-[10px] font-bold text-danger/80 uppercase tracking-wider block">To Pay</span>
-                    <strong className="text-xl font-extrabold text-foreground tracking-tight block">₹{partySums.to_pay.toLocaleString("en-IN")}</strong>
+                    <strong className="text-xl font-extrabold text-foreground tracking-tight block">{inr(partySums.to_pay)}</strong>
                   </div>
                   <div className="h-9 w-9 rounded-full bg-danger/10 flex items-center justify-center text-danger z-10">
                     <Icon name="arrow_up" className="w-4 h-4" />
@@ -1841,7 +1856,7 @@ export default function FinancePage() {
                 <div className="bg-card border border-border-custom rounded-lg p-4 flex items-center justify-between relative overflow-hidden">
                   <div className="space-y-1 z-10">
                     <span className="text-[10px] font-bold text-danger/80 uppercase tracking-wider block">To Receive</span>
-                    <strong className="text-xl font-extrabold text-foreground tracking-tight block">₹{partySums.to_receive.toLocaleString("en-IN")}</strong>
+                    <strong className="text-xl font-extrabold text-foreground tracking-tight block">{inr(partySums.to_receive)}</strong>
                   </div>
                   <div className="h-9 w-9 rounded-full bg-danger/10 flex items-center justify-center text-danger z-10">
                     <Icon name="arrow_down" className="w-4 h-4" />
@@ -1850,7 +1865,7 @@ export default function FinancePage() {
                 <div className="bg-card border border-border-custom rounded-lg p-4 flex items-center justify-between relative overflow-hidden">
                   <div className="space-y-1 z-10">
                     <span className="text-[10px] font-bold text-success/80 uppercase tracking-wider block">Advance Received</span>
-                    <strong className="text-xl font-extrabold text-foreground tracking-tight block">₹{partySums.advance_received.toLocaleString("en-IN")}</strong>
+                    <strong className="text-xl font-extrabold text-foreground tracking-tight block">{inr(partySums.advance_received)}</strong>
                   </div>
                   <div className="h-9 w-9 rounded-full bg-success/10 flex items-center justify-center text-success z-10">
                     <Icon name="arrow_down" className="w-4 h-4" />
@@ -1928,12 +1943,12 @@ export default function FinancePage() {
                         </td>
                         <td className="p-3 text-foreground">{p.party_type || "—"}</td>
                         <td className="p-3 text-right font-bold text-foreground">
-                          ₹{Math.abs(p.balance || 0).toLocaleString("en-IN")}
+                          {inr(Math.abs(p.balance || 0))}
                           {/* R2-418: the net balance alone summed to a number that matched
                               no tile above; surfacing each row's two directions makes the
                               column reconcile with the To Pay / To Receive cards. */}
                           <div className="text-[10px] font-normal text-muted mt-0.5">
-                            Pay ₹{(p.to_pay || 0).toLocaleString("en-IN")} · Receive ₹{(p.to_receive || 0).toLocaleString("en-IN")}
+                            Pay {inr((p.to_pay || 0))} · Receive {inr((p.to_receive || 0))}
                           </div>
                         </td>
                         <td className="p-3">
@@ -2204,7 +2219,7 @@ export default function FinancePage() {
                         <td className="px-5 py-3 text-muted font-sans">{row.party}</td>
                         <td className="px-5 py-3 text-right text-danger">{row.debit > 0 ? `₹${row.debit.toLocaleString("en-IN")}` : "—"}</td>
                         <td className="px-5 py-3 text-right text-success">{row.credit > 0 ? `₹${row.credit.toLocaleString("en-IN")}` : "—"}</td>
-                        <td className="px-5 py-3 text-right text-foreground font-extrabold">₹{row.running_balance.toLocaleString("en-IN")}</td>
+                        <td className="px-5 py-3 text-right text-foreground font-extrabold">{inr(row.running_balance)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -2259,7 +2274,7 @@ export default function FinancePage() {
                           </td>
                           <td className="px-5 py-3 font-semibold text-foreground">{req.party_name}</td>
                           <td className="px-5 py-3 text-muted">{req.request_type || "—"}</td>
-                          <td className="px-5 py-3 text-foreground font-bold font-sans">₹{req.amount.toLocaleString("en-IN")}</td>
+                          <td className="px-5 py-3 text-foreground font-bold font-sans">{inr(req.amount)}</td>
                           <td className="px-5 py-3 text-muted">{req.details}</td>
                           <td className="px-5 py-3">
                             <span className={`px-2 py-0.5 rounded text-[8px] font-bold border ${
@@ -2272,8 +2287,9 @@ export default function FinancePage() {
                               {req.status.toUpperCase()}
                             </span>
                           </td>
-                          <td className="px-5 py-3 text-muted font-sans">
+                          <td className={`px-5 py-3 font-sans ${req.due_date && !["Paid", "Rejected", "Cancelled"].includes(req.status) && String(req.due_date).slice(0, 10) < todayLocalISO() ? "text-danger font-semibold" : "text-muted"}`}>
                             {req.due_date ? formatDate(req.due_date) : "Immediate"}
+                            {req.due_date && !["Paid", "Rejected", "Cancelled"].includes(req.status) && String(req.due_date).slice(0, 10) < todayLocalISO() && <span className="block text-[10px]">Overdue</span>}
                           </td>
                         </tr>
                       ))
@@ -2313,13 +2329,13 @@ export default function FinancePage() {
                       </div>
                       <div>
                         <h4 className="text-xs font-bold text-foreground">{cashAccount.name}</h4>
-                        <p className="text-[10px] text-muted mt-0.5">Opening: ₹{(cashAccount.opening_balance || 0).toLocaleString("en-IN")}</p>
+                        <p className="text-[10px] text-muted mt-0.5">Opening: {inr((cashAccount.opening_balance || 0))}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-4">
                       <div className="text-right">
                         <p className="text-[8px] text-muted uppercase tracking-wider">Running Balance</p>
-                        <span className="text-base font-bold text-foreground">₹{cashRunning.toLocaleString("en-IN")}</span>
+                        <span className="text-base font-bold text-foreground">{inr(cashRunning)}</span>
                       </div>
                     </div>
                   </div>
@@ -2387,11 +2403,11 @@ export default function FinancePage() {
                           </div>
                           <div className="col-span-2">
                             <span className="text-muted block uppercase font-medium text-[8px] tracking-wider">Running Balance</span>
-                            <span className="text-foreground font-bold mt-0.5 block text-xs">₹{acc.balance.toLocaleString("en-IN")}</span>
+                            <span className="text-foreground font-bold mt-0.5 block text-xs">{inr(acc.balance)}</span>
                           </div>
                           <div className="col-span-2">
                             <span className="text-muted block uppercase font-medium text-[8px] tracking-wider">Opening Balance</span>
-                            <span className="text-foreground font-semibold mt-0.5 block text-[10px]">₹{(acc.opening_balance ?? 0).toLocaleString("en-IN")}</span>
+                            <span className="text-foreground font-semibold mt-0.5 block text-[10px]">{inr((acc.opening_balance ?? 0))}</span>
                           </div>
                         </div>
                       </div>
@@ -2582,7 +2598,7 @@ export default function FinancePage() {
                           <span className="font-semibold text-foreground">{v.type}</span>
                           <span>{v.number}</span>
                           <span>{v.party}</span>
-                          <span>₹{(v.amount || 0).toLocaleString("en-IN")}</span>
+                          <span>{inr((v.amount || 0))}</span>
                         </div>
                       ))}
                     </div>
@@ -2664,7 +2680,7 @@ export default function FinancePage() {
                       <span className="inline-flex items-center gap-1">
                         <Icon name="arrow_up" className="w-3.5 h-3.5" /> Overspent
                       </span>
-                    )} by ₹{Math.abs(totalVariance).toLocaleString("en-IN")}
+                    )} by {inr(Math.abs(totalVariance))}
                   </Badge>
                 </div>
 
@@ -2776,7 +2792,7 @@ export default function FinancePage() {
                   <Badge tone="primary" className="inline-flex mt-1.5 font-bold mr-1.5">Project: {selectedVoucher.project_name}</Badge>
                 )}
                 {selectedVoucher.due_date && (
-                  <Badge tone="warning" className="inline-flex mt-1.5 font-bold">Due Date: {selectedVoucher.due_date}</Badge>
+                  <Badge tone="warning" className="inline-flex mt-1.5 font-bold">Due {formatDate(selectedVoucher.due_date)}</Badge>
                 )}
               </div>
 
@@ -2787,16 +2803,16 @@ export default function FinancePage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-input p-4 rounded-md border border-border-custom text-xs font-sans">
                 <div>
                   <span className="text-muted block uppercase text-[9px] tracking-wider font-sans">Amount</span>
-                  <strong className="text-foreground mt-1 block text-sm">₹{(selectedVoucher.amount ?? 0).toLocaleString("en-IN")}</strong>
+                  <strong className="text-foreground mt-1 block text-sm">{inr((selectedVoucher.amount ?? 0))}</strong>
                 </div>
                 <div>
                   <span className="text-muted block uppercase text-[9px] tracking-wider font-sans">{selectedVoucher.kind === "payment" ? "Not yet set against bills" : "Paid"}</span>
-                  <strong className="text-success mt-1 block text-sm">₹{(selectedVoucher.kind === "payment" ? (selectedVoucher.balance_due ?? 0) : (selectedVoucher.paid_amount ?? selectedVoucher.settled_amount ?? 0)).toLocaleString("en-IN")}</strong>
+                  <strong className="text-success mt-1 block text-sm">{inr((selectedVoucher.kind === "payment" ? (selectedVoucher.balance_due ?? 0) : (selectedVoucher.paid_amount ?? selectedVoucher.settled_amount ?? 0)))}</strong>
                 </div>
                 {selectedVoucher.kind !== "payment" && (
                   <div>
                     <span className="text-muted block uppercase text-[9px] tracking-wider font-sans">Balance Due</span>
-                    <strong className="text-danger mt-1 block text-sm">₹{(selectedVoucher.balance_due ?? 0).toLocaleString("en-IN")}</strong>
+                    <strong className="text-danger mt-1 block text-sm">{inr((selectedVoucher.balance_due ?? 0))}</strong>
                   </div>
                 )}
               </div>
@@ -3397,7 +3413,7 @@ export default function FinancePage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="bg-background border border-border-custom rounded-lg p-3">
                   <p className="text-[9px] text-muted uppercase font-bold">Requested Amount</p>
-                  <p className="text-foreground font-bold font-sans mt-1">₹{(selectedPR.amount || 0).toLocaleString("en-IN")}</p>
+                  <p className="text-foreground font-bold font-sans mt-1">{inr((selectedPR.amount || 0))}</p>
                 </div>
                 <div className="bg-background border border-border-custom rounded-lg p-3">
                   <p className="text-[9px] text-muted uppercase font-bold">Status</p>
@@ -3423,7 +3439,7 @@ export default function FinancePage() {
               {selectedPR.payment && (
                 <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
                   <p className="text-[9px] text-primary uppercase font-bold mb-1">Payment Recorded</p>
-                  <p className="text-foreground font-sans">₹{selectedPR.payment.paid_amount.toLocaleString("en-IN")} via {selectedPR.payment.payment_mode} on {formatDate(selectedPR.payment.payment_date)}</p>
+                  <p className="text-foreground font-sans">{inr(selectedPR.payment.paid_amount)} via {selectedPR.payment.payment_mode} on {formatDate(selectedPR.payment.payment_date)}</p>
                   <p className="text-[9px] text-muted mt-1">Deduction ₹{selectedPR.payment.deduction} · TDS ₹{selectedPR.payment.tds} · Balance Due ₹{selectedPR.payment.balance_due}</p>
                   {selectedPR.payment.reference_no && <p className="text-[9px] text-muted mt-1">Ref: {selectedPR.payment.reference_no}</p>}
                   {selectedPR.payment.remarks && <p className="text-[9px] text-muted mt-1">Remarks: {selectedPR.payment.remarks}</p>}
