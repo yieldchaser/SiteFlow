@@ -605,6 +605,11 @@ def _rep_attendance_salary(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]
     return rows
 
 
+def _payment_direction(value) -> str:
+    """'in'/'out' are storage words; a report reads Received / Paid."""
+    return {"in": "Received", "out": "Paid"}.get(str(value or "").lower(), value or "")
+
+
 def _rep_company_payments(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
     q = db.query(Payment).filter(Payment.company_id == cid)
     if pid:
@@ -624,7 +629,7 @@ def _rep_company_payments(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID])
             "Unsettled Amount": _clean(p.unsettled_amount),
             "Net Amount": net,
             "Remark": p.description or "",
-            "Payment Type": p.payment_type,
+            "Payment Type": _payment_direction(p.payment_type),
             "Payment Mode": p.payment_method,
             "Account Name": p.account_name or "",
             "Cost Code": p.cost_code or "",
@@ -1551,7 +1556,7 @@ def _rep_project_payment(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
                 "Amount": _clean(p.amount),
                 "Remark": p.description or "",
                 "Reference No.": p.reference_number or "",
-                "Payment Type": p.payment_type,
+                "Payment Type": _payment_direction(p.payment_type),
                 "Payment Mode": p.payment_method,
                 "Account Name": p.account_name or "",
                 "Category": p.category or "",

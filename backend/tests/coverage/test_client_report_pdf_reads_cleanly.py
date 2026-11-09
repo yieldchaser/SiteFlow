@@ -47,3 +47,11 @@ def test_report_download_names_project_and_file(client, db, make_tenant, auth_he
     assert b"Page 1 of 1" in body
 
     os.remove(path)
+
+
+def test_payment_reports_say_received_and_paid():
+    from app.routers.reports import _payment_direction
+
+    assert _payment_direction("in") == "Received"
+    assert _payment_direction("OUT") == "Paid"
+    assert _payment_direction(None) == ""
