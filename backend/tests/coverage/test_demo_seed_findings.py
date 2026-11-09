@@ -602,3 +602,42 @@ def test_ltif_uses_dpr_headcount_when_no_attendance_is_tagged(client, db, make_t
     body = r.json()
     assert body["total_manhours_used"] == 800.0
     assert body["manhours_source"] == "dpr"
+
+
+def test_debit_note_cuts_what_we_owe_the_supplier(client, db, make_tenant, auth_headers):
+    """A debit note to a supplier was saved and then ignored by the project
+    party balances, so To Pay stayed at the full bill."""
+    from app import models
+
+    sfx = _uuid.uuid4().hex[:8]
+    comp, user, _team = make_tenant(
+        company_name=f"DN-{sfx}", user_name=f"UDN-{sfx}", mobile=f"+9185{sfx}", email=f"dn-{sfx}@test.com",
+    )
+    hdr = auth_headers(user, comp)
+    project = models.Project(id=_uuid.uuid4(), company_id=comp.id, name="DN Site", state="Maharashtra")
+    cement = models.LibraryParty(id=_uuid.uuid4(), company_id=comp.id, name="Cement Co", party_type="Material Supplier")
+    db.add_all([project, cement])
+    db.commit()
+    team_id = client.post(
+        f"/apis/v3/projects/{project.id}/parties", json={"party_id": str(cement.id)}, headers=hdr
+    ).json()["company_team_id"]
+    bill = client.post(
+        "/apis/v3/billing/bills",
+        json={
+            "company_id": str(comp.id), "project_id": str(project.id),
+            "party_company_user_id": team_id, "invoice_number": f"PB-{sfx}",
+            "invoice_date": "2026-10-01T00:00:00Z", "invoice_type": "purchase", "subtotal": 100000, "gst_pct": 0,
+        },
+        headers=hdr,
+    )
+    assert bill.status_code == 201, bill.text
+    dn = client.post(
+        "/apis/v3/billing/debit-notes",
+        json={"company_id": str(comp.id), "project_id": str(project.id),
+              "party_company_user_id": team_id, "total_amount": 15000},
+        headers=hdr,
+    )
+    assert dn.status_code in (200, 201), dn.text
+
+    rows = {r["name"]: r for r in client.get(f"/apis/v3/projects/{project.id}/parties", headers=hdr).json()}
+    assert rows["Cement Co"]["to_pay"] == 85000, rows["Cement Co"]

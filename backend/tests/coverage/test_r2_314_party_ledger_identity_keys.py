@@ -92,8 +92,9 @@ def test_unidentified_payment_still_lands_in_one_walkin_bucket(client, db, make_
 
     rows = [r for r in _balances(client, hdr, comp) if r["Party Name"] == "Walk-in Party"]
     assert len(rows) == 1, rows
-    assert rows[0]["Balance Amount"] == 120.0, rows
-    assert rows[0]["Balance Type"] == "Receivable", rows
+    # Money received with no invoice is an advance we hold: we owe it.
+    assert rows[0]["Balance Amount"] == -120.0, rows
+    assert rows[0]["Balance Type"] == "Payable", rows
 
 
 def test_party_ledger_rows_still_carry_display_names(client, db, make_tenant, auth_headers):
@@ -113,3 +114,39 @@ def test_party_ledger_rows_still_carry_display_names(client, db, make_tenant, au
     assert not body.get("errors"), body
     names = [row["Party Name"] for row in body["rows"]]
     assert names == ["R2-314 Vendor"], names
+
+
+def test_receipts_and_notes_post_against_the_bill(client, db, make_tenant, auth_headers):
+    """A client billed 1,000 who paid 600 owes 400. Receipts posted on the
+    same side as the invoice, so the ledger said 1,600; a supplier credit
+    note and cancelled bills moved balances too."""
+    comp, user, _ = make_tenant(company_name="R2314L", user_name="U314L")
+    hdr = auth_headers(user, comp)
+    project = _mk_project(db, comp, "314l")
+    client_t = _mk_named_team(db, comp, "Client Co")
+    vendor_t = _mk_named_team(db, comp, "Vendor Co")
+
+    _mk_bill(db, comp, project, client_t, "INV-L1", 1000.0, "sale")
+    cancelled = _mk_bill(db, comp, project, client_t, "INV-L2", 5000.0, "sale")
+    cancelled.status = "Cancelled"
+    _mk_bill(db, comp, project, vendor_t, "PB-L1", 800.0, "purchase")
+    db.add(models.Payment(
+        id=uuid.uuid4(), company_id=comp.id, project_id=project.id, party_company_user_id=client_t.id,
+        payment_type="in", amount=600.0, unsettled_amount=0.0,
+        payment_method="Bank Transfer", payment_date=datetime.datetime(2026, 8, 3),
+    ))
+    db.add(models.Payment(
+        id=uuid.uuid4(), company_id=comp.id, project_id=project.id, party_company_user_id=vendor_t.id,
+        payment_type="out", amount=300.0, unsettled_amount=0.0,
+        payment_method="Bank Transfer", payment_date=datetime.datetime(2026, 8, 3),
+    ))
+    # Supplier debit note for 100 (we owe 100 less).
+    db.add(models.DebitNote(id=uuid.uuid4(), project_id=project.id, company_id=comp.id,
+                            party_company_user_id=vendor_t.id, total_amount=100.0))
+    db.commit()
+
+    rows = {r["Party Name"]: r for r in _balances(client, hdr, comp)}
+    assert rows["Client Co"]["Balance Amount"] == 400.0, rows
+    assert rows["Client Co"]["Balance Type"] == "Receivable"
+    assert rows["Vendor Co"]["Balance Amount"] == -400.0, rows
+    assert rows["Vendor Co"]["Balance Type"] == "Payable"

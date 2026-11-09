@@ -97,6 +97,21 @@ def _party_settlement(db, project_id, party_id, opening_adv, opening_pay):
                 pay_net += _to_float(amt)
             elif ptype == "in":
                 rec_net -= _to_float(amt)
+        # Notes adjust what is owed: a debit note to a supplier cuts what we
+        # owe them, an agreed credit note to a client cuts what they owe us.
+        # Both were recorded and then ignored by every balance.
+        dn_total = db.query(func.coalesce(func.sum(models.DebitNote.total_amount), 0)).filter(
+            models.DebitNote.project_id == project_id,
+            models.DebitNote.party_company_user_id.in_(team_ids),
+            models.DebitNote.approval_flag != "cancelled",
+        ).scalar()
+        cn_total = db.query(func.coalesce(func.sum(models.CreditNote.total_amount), 0)).filter(
+            models.CreditNote.project_id == project_id,
+            models.CreditNote.party_company_user_id.in_(team_ids),
+            models.CreditNote.approval_flag.notin_(("cancelled", "pending", "rejected")),
+        ).scalar()
+        pay_net += _to_float(dn_total)
+        rec_net -= _to_float(cn_total)
 
     return {
         "advance_paid": round(max(0.0, pay_net), 2),

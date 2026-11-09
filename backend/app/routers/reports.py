@@ -31,7 +31,7 @@ from app.constants import (
 )
 from app.project_health import budget_total, health_label, project_health
 from app.models import (
-    ClientReport, Project, ProjectMember, Task, Bill, WorkOrder, WorkOrderItem,
+    ClientReport, Project, ProjectParty, Task, Bill, WorkOrder, WorkOrderItem,
     MaterialIndent, MaterialIndentItem, PurchaseOrder, SiteInspection, NCR, MaterialTestResult,
     DailyProgressReport, PurchaseOrderItem, WarehouseInventory,
     StaffEmployee, AttendanceLog, PayrollRun, PayrollLineItem,
@@ -697,10 +697,15 @@ def _build_party_ledger(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
     proj_ids = _project_ids_for_company(db, cid)
 
     payments_q = db.query(Payment).filter(Payment.company_id == cid)
-    bills_q = db.query(Bill).filter(Bill.company_id == cid)
-    debit_q = db.query(DebitNote).filter(DebitNote.company_id == cid)
-    credit_q = db.query(CreditNote).filter(CreditNote.company_id == cid)
-    salaries_q = db.query(PayrollLineItem).join(PayrollRun).filter(PayrollRun.company_id == cid)
+    # Cancelled bills and notes never happened; pending credit notes are not
+    # agreed yet. All of them used to move the party's balance.
+    bills_q = db.query(Bill).filter(Bill.company_id == cid, Bill.status != "Cancelled")
+    debit_q = db.query(DebitNote).filter(DebitNote.company_id == cid, DebitNote.approval_flag != "cancelled")
+    credit_q = db.query(CreditNote).filter(
+        CreditNote.company_id == cid, CreditNote.approval_flag.notin_(("cancelled", "pending", "rejected")))
+    # A draft payroll run is a working sheet, not money owed.
+    salaries_q = db.query(PayrollLineItem).join(PayrollRun).filter(
+        PayrollRun.company_id == cid, PayrollRun.status == "finalized")
     if proj_ids:
         salaries_q = salaries_q.filter(PayrollRun.project_id.in_(proj_ids))
     else:
@@ -748,14 +753,18 @@ def _build_party_ledger(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
             # rows (no counterparty id at all) share the fallback bucket.
             party_key = str(obj.party_company_user_id) if obj.party_company_user_id else "Walk-in Party"
             party_name = _team_user_name(db, obj.party_company_user_id) or "Walk-in Party"
+            # The party's account in our books: money they pay us clears what
+            # they owe (credit); money we pay them clears what we owe (debit).
+            # Both used to post on the same side as the bill, so every receipt
+            # added to a client's balance instead of clearing it.
             if is_in:
                 txn_type = "Receipt"
                 party_type = "Client"
-                debit = amount
+                credit = amount
             else:
                 txn_type = "Expense"
                 party_type = "Vendor"
-                credit = amount
+                debit = amount
             description = obj.description or ("Receipt Payment" if is_in else "Expense Payment")
             cost_code = obj.cost_code or ""
             if obj.project_id:
@@ -784,9 +793,9 @@ def _build_party_ledger(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
                 txn_type = "Settlement"
                 party_type = "Client" if money_in else "Vendor"
                 if money_in:
-                    debit = amount
-                else:
                     credit = amount
+                else:
+                    debit = amount
             else:
                 # movement and unknown - no financial posting
                 txn_type = "Movement"
@@ -813,20 +822,21 @@ def _build_party_ledger(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
             party_key = str(obj.party_company_user_id) if obj.party_company_user_id else "Party"
             party_name = _team_user_name(db, obj.party_company_user_id) or "Party"
             txn_type = "Debit Note"
-            credit = amount
+            # A debit note to a supplier cuts what we owe them.
+            debit = amount
             description = obj.notes or "Debit Note"
         elif et == "credit":
             amount = float(obj.total_amount) if obj.total_amount is not None else 0.0
             party_key = str(obj.party_company_user_id) if obj.party_company_user_id else "Party"
             party_name = _team_user_name(db, obj.party_company_user_id) or "Party"
             txn_type = "Credit Note"
-            debit = amount
+            # A credit note to a client cuts what they owe us.
+            credit = amount
             description = obj.notes or "Credit Note"
 
         # R2-313/R2-560: the balance accumulates per party, so a party's
-        # Balance never includes another party's transactions. debit is the
-        # receivable direction and credit the payable direction in every
-        # branch above.
+        # Balance never includes another party's transactions. Positive means
+        # the party owes us, negative that we owe them.
         party_balance = running_by_party.get(party_key, 0.0) + debit - credit
         running_by_party[party_key] = party_balance
 
@@ -3396,14 +3406,23 @@ def _rep_project_operational_summary(db: Session, cid: uuid.UUID, pid: Optional[
             avg_prog = (sum(float(t.progress or 0) for t in tasks) / len(tasks)) if tasks else 0.0
             p_bills = db.query(Bill).filter(Bill.project_id == p.id, Bill.status != "Cancelled").all()
             spend = sum(float(b.subtotal or 0) for b in p_bills if is_expense_invoice_type(b.invoice_type))
-            # The customer is whoever the project's sales bills are raised to.
-            customer_ids = [b.party_company_user_id for b in sorted(
-                (b for b in p_bills if is_revenue_invoice_type(b.invoice_type) and b.party_company_user_id),
-                key=lambda b: str(b.invoice_date or b.created_at or ""), reverse=True)]
-            customer = _team_user_name(db, customer_ids[0]) if customer_ids else ""
-            member_ids = [m.company_team_id for m in db.query(ProjectMember).filter(ProjectMember.project_id == p.id).all()]
-            names = _team_user_names_batch(db, member_ids) if member_ids else {}
-            personnel = ", ".join(sorted(n for n in (names.values() if isinstance(names, dict) else []) if n)[:5])
+            # Same rules as the dashboard: the customer is the Client party
+            # linked to the project (else whoever its sales bills went to),
+            # and key personnel is the person named on the project.
+            client_link = (
+                db.query(LibraryParty.name)
+                .join(ProjectParty, ProjectParty.party_id == LibraryParty.id)
+                .filter(ProjectParty.project_id == p.id, func.lower(LibraryParty.party_type).in_(("client", "customer")))
+                .order_by(ProjectParty.created_at)
+                .first()
+            )
+            customer = client_link[0] if client_link else ""
+            if not customer:
+                customer_ids = [b.party_company_user_id for b in sorted(
+                    (b for b in p_bills if is_revenue_invoice_type(b.invoice_type) and b.party_company_user_id),
+                    key=lambda b: str(b.invoice_date or b.created_at or ""), reverse=True)]
+                customer = _team_user_name(db, customer_ids[0]) if customer_ids else ""
+            personnel = _team_user_name(db, p.key_personnel_id) if p.key_personnel_id else ""
             rows.append({
                 "Project Name": p.name,
                 "Project Category": p.category or "Construction",

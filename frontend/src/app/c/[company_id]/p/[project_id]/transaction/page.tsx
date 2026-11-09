@@ -37,13 +37,16 @@ const TAXONOMY: TxnType[] = [
   // move the party balance. A bill-shaped voucher did neither.
   { key: "payment_in", label: "Payment In", endpoint: "payment", direction: "in", paymentMode: true },
   { key: "payment_out", label: "Payment Out", endpoint: "payment", direction: "out", paymentMode: true },
-  { key: "debit_note", label: "Debit Note", endpoint: "debit", direction: "out" },
-  { key: "credit_note", label: "Credit Note", endpoint: "credit", direction: "in" },
+  // A debit note to a supplier cuts what we owe (in our favour); a credit
+  // note to a client cuts what they owe us. The signs were the other way.
+  { key: "debit_note", label: "Debit Note", endpoint: "debit", direction: "in" },
+  { key: "credit_note", label: "Credit Note", endpoint: "credit", direction: "out" },
   { key: "party_to_party_payment", label: "Party-to-Party Payment", endpoint: "request", direction: "out" },
   { key: "sales_invoice", label: "Sales Invoice", endpoint: "bill", direction: "in" },
   { key: "material_sales", label: "Material Sales", endpoint: "bill", direction: "in" },
   { key: "material_purchase", label: "Material Purchase", endpoint: "bill", direction: "out" },
-  { key: "material_return", label: "Material Return", endpoint: "credit", direction: "in" },
+  // Goods sent back to a supplier are a debit note against that supplier.
+  { key: "material_return", label: "Material Return", endpoint: "debit", direction: "in" },
   { key: "material_transfer", label: "Material Transfer", endpoint: "bill", direction: "out" },
   { key: "other_expense", label: "Other Expense", endpoint: "bill", direction: "out" },
   { key: "equipment_expense", label: "Equipment Expense", endpoint: "bill", direction: "out" },
@@ -53,6 +56,17 @@ const TAXONOMY: TxnType[] = [
 ];
 
 const isInType = (t: string) => INVOICE_TYPES_IN.includes(t);
+
+// Payments and notes carry an approval state, not a paid state. A bare
+// "Pending" on money already paid read as if it had not gone out.
+function approvalLabel(flag?: string | null): string {
+  const f = (flag || "").toLowerCase();
+  if (f === "approved" || f === "auto_approved") return "Approved";
+  if (f === "cancelled") return "Cancelled";
+  if (f === "rejected") return "Rejected";
+  if (f.startsWith("pending")) return "Awaiting approval";
+  return flag || "—";
+}
 
 // Taxonomy key -> the invoice_type the backend stores. The filter tabs are
 // taxonomy keys, so comparing them to stored types directly matched nothing for
@@ -95,6 +109,7 @@ type Note = {
   notes: string | null;
   total_amount: number;
   reference_number: string | null;
+  approval_flag?: string | null;
   created_at: string;
 };
 type PRequest = {
@@ -332,16 +347,16 @@ export default function TransactionPage() {
         status: b.status,
       });
     for (const n of debits)
-      rows.push({ id: n.id, date: n.created_at, type: "debit_note", party: memberName(n.party_company_user_id), amount: Number(n.total_amount) || 0, direction: "out", kind: "Debit Note", ref: n.reference_number || "—", status: "—" });
+      rows.push({ id: n.id, date: n.created_at, type: "debit_note", party: memberName(n.party_company_user_id), amount: Number(n.total_amount) || 0, direction: "in", kind: "Debit Note", ref: n.reference_number || "—", status: approvalLabel(n.approval_flag) });
     for (const n of credits)
-      rows.push({ id: n.id, date: n.created_at, type: "credit_note", party: memberName(n.party_company_user_id), amount: Number(n.total_amount) || 0, direction: "in", kind: "Credit Note", ref: n.reference_number || "—", status: "—" });
+      rows.push({ id: n.id, date: n.created_at, type: "credit_note", party: memberName(n.party_company_user_id), amount: Number(n.total_amount) || 0, direction: "out", kind: "Credit Note", ref: n.reference_number || "—", status: approvalLabel(n.approval_flag) });
     for (const r of requests)
       rows.push({ id: r.id, date: r.created_at, type: TAXONOMY.some((t) => t.key === r.request_type) ? r.request_type : "payment_request", party: r.party_name || memberName(r.party_company_user_id), amount: Number(r.amount) || 0, direction: "out", kind: "Payment Request", ref: "—", status: r.approval_status });
     // Recorded payments: they fed the cash tiles but were never listed.
     for (const r of feedRows) {
       if (r.type !== "Payment In" && r.type !== "Payment Out") continue;
       const inbound = r.type === "Payment In";
-      rows.push({ id: r.id, date: r.date, type: inbound ? "payment_in" : "payment_out", party: r.party || "—", amount: Number(r.amount) || 0, direction: inbound ? "in" : "out", kind: "Payment", ref: r.ref || "—", status: r.status });
+      rows.push({ id: r.id, date: r.date, type: inbound ? "payment_in" : "payment_out", party: r.party || "—", amount: Number(r.amount) || 0, direction: inbound ? "in" : "out", kind: "Payment", ref: r.ref || "—", status: approvalLabel(r.status) });
     }
     return rows.sort((a, b) => (a.date < b.date ? 1 : -1));
   }, [bills, debits, credits, requests, memberName, billParty, feedRows]);
