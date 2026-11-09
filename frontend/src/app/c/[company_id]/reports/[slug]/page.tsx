@@ -310,7 +310,7 @@ const REPORT_METADATA: Record<string, ReportMeta> = {
     title: "Fuel Efficiency Report",
     hasDownload: false,
     filters: [{ label: "Used Date", type: "date"  }, { label: "Project Name", type: "select", options: ["All"] }, { label: "Equipment Name", type: "select", options: ["All"] }],
-    columns: ['Project Name', 'Equipment Name', 'Vehicle No.', 'Party Name', 'Mileage', 'Eqp Unit', 'Active Days Used', 'Fuel Added', 'Fuel Consumed (Actual)', 'Fuel Consumed (Expected)', 'Fuel Variance']
+    columns: ['Project Name', 'Equipment Name', 'Vehicle No.', 'Hours Run', 'Fuel Added (Litres)', 'Fuel Cost (INR)', 'Litres per Hour']
   },
   "daily-based-equipment-used": {
     title: "Daily based Equipment Used Report",
@@ -496,19 +496,19 @@ const REPORT_METADATA: Record<string, ReportMeta> = {
     title: "Budget vs Actual (Material Cost)",
     hasDownload: false,
     filters: [{ label: "Project", type: "select", options: ["All"] }, { label: "Material", type: "select", options: ["All"] }],
-    columns: ['Project', 'Material', 'Unit', 'Budget Cost (INR)', 'Actual Cost (INR)', 'Variance (INR)']
+    columns: ['Project', 'Material', 'Unit', 'Budget Cost (INR)', 'Actual Cost (INR)', 'Difference (INR)']
   },
   "budget-vs-actual-material-qty": {
     title: "Budget vs Actual (Material Qty)",
     hasDownload: false,
     filters: [{ label: "Project", type: "select", options: ["All"] }, { label: "Material", type: "select", options: ["All"] }],
-    columns: ['Project', 'Material', 'Unit', 'Budget Qty', 'Actual Qty', 'Variance Qty']
+    columns: ['Project', 'Material', 'Unit', 'Budget Qty', 'Actual Qty', 'Difference Qty']
   },
   "budget-vs-actual-cost-code": {
     title: "Budget vs Actual (Cost Code)",
     hasDownload: false,
     filters: [{ label: "Project Name", type: "select", options: ["All"] }, { label: "Cost Code", type: "select", options: ["All"] }, { label: "Sub Cost Code", type: "select", options: ["All"] }],
-    columns: ['Cost Code', 'Budget Amount (INR)', 'Actual Amount (INR)', 'Variance (INR)', 'Status']
+    columns: ['Cost Code', 'Budget Amount (INR)', 'Actual Amount (INR)', 'Difference (INR)', 'Status']
   },
   "asset-allocation": {
     title: "Asset Allocation Report",

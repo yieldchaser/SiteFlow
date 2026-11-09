@@ -1304,7 +1304,7 @@ export default function ProcurementPage() {
                   <p className="text-[10px] text-muted mt-1 max-w-lg">Goods received that are not yet matched to a supplier bill. Enter the bill under Billing, then match it to the PO and GRN so the payable is on the books.</p>
                 </div>
                 {unbilledGRNs.length === 0 && (
-                  <Badge tone="success" icon="check" className="font-bold">All GRNs Reconciled</Badge>
+                  <Badge tone="success" icon="check" className="font-bold">Every GRN Matched to a Bill</Badge>
                 )}
               </div>
 

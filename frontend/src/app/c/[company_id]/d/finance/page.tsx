@@ -148,7 +148,7 @@ export default function FinancePage() {
   const { activeProjectId } = useProject();
   const projectId = activeProjectId;
 
-  const [tab, setTab] = useState<"ledger" | "general_ledger" | "party" | "cashbook" | "pl" | "tally" | "costvar" | "payment_requests" | "accounts">("ledger");
+  const [tab, setTab] = useState<"ledger" | "general_ledger" | "party" | "cashbook" | "pl" | "tally" | "payment_requests" | "accounts">("ledger");
   
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [projectLedger, setProjectLedger] = useState<LedgerEntry[]>([]);
@@ -487,7 +487,12 @@ export default function FinancePage() {
     if (typeof window !== "undefined") {
       const queryParams = new URLSearchParams(window.location.search);
       const queryTab = queryParams.get("tab");
-      if (queryTab && ["ledger", "general_ledger", "party", "cashbook", "pl", "tally", "costvar", "payment_requests", "accounts"].includes(queryTab)) {
+      if (queryTab === "costvar") {
+        // Old link: budget against spend lives on the project Budget page.
+        window.location.replace(`/c/${companyId}/d/budget`);
+        return;
+      }
+      if (queryTab && ["ledger", "general_ledger", "party", "cashbook", "pl", "tally", "payment_requests", "accounts"].includes(queryTab)) {
         setTab(queryTab as any);
       }
     }
@@ -1378,7 +1383,7 @@ export default function FinancePage() {
       {/* ── Main content area ── */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <PageHeader
-          title={tab === "ledger" ? "Finance" : tab === "general_ledger" ? "Project General Ledger" : tab === "party" ? "Party-wise Ledgers" : tab === "payment_requests" ? "Payment Requests Ledger" : tab === "accounts" ? "Company Cash & Bank Accounts" : tab === "cashbook" ? "Cash Book (Bank Ledger)" : tab === "pl" ? "Project P&L" : tab === "tally" ? "Tally Sync Gateway" : "Cost Variance Report"}
+          title={tab === "ledger" ? "Finance" : tab === "general_ledger" ? "Project General Ledger" : tab === "party" ? "Party-wise Ledgers" : tab === "payment_requests" ? "Payment Requests Ledger" : tab === "accounts" ? "Company Cash & Bank Accounts" : tab === "cashbook" ? "Cash Book (Bank Ledger)" : tab === "pl" ? "Project P&L" : "Tally Sync Gateway"}
           subtitle="Bills, payments and money in the bank"
         >
           <div className="flex items-center gap-4 relative">
@@ -2628,111 +2633,6 @@ export default function FinancePage() {
             </div>
           )}
 
-          {/* ── COST VARIANCE TAB ── */}
-          {tab === "costvar" && (() => {
-            const BUDGET_LINES: { code: string; head: string; budget: number }[] = [];
-
-            const actuals: Record<string, number> = {};
-            transactions.filter(t => t.status !== "Rejected").forEach(t => {
-              const key = t.cost_code ? t.cost_code.split(" ")[0] : "5.0";
-              actuals[key] = (actuals[key] || 0) + t.amount;
-            });
-
-            const rows = BUDGET_LINES.map(b => {
-              const actual = actuals[b.code] || 0;
-              const variance = b.budget - actual;
-              const variancePct = b.budget > 0 ? ((variance / b.budget) * 100) : 0;
-              const pctComplete = 0.60;
-              const eac = actual > 0 ? (actual / pctComplete) : b.budget;
-              return { ...b, actual, variance, variancePct, eac };
-            });
-
-            const totalBudget = rows.reduce((s, r) => s + r.budget, 0);
-            const totalActual = rows.reduce((s, r) => s + r.actual, 0);
-            const totalVariance = totalBudget - totalActual;
-            const totalEAC = rows.reduce((s, r) => s + r.eac, 0);
-
-            return (
-              <div className="space-y-5">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h2 className="text-xs font-bold text-muted uppercase tracking-wider">Budget vs Actual: Cost Variance Report</h2>
-                    <p className="text-[10px] text-muted mt-1">EAC = Estimate At Completion (projects final cost at current burn rate assuming 60% completion).</p>
-                  </div>
-                  <Badge tone={totalVariance >= 0 ? "success" : "danger"} className="font-bold">
-                    {totalVariance >= 0 ? (
-                      <span className="inline-flex items-center gap-1">
-                        <Icon name="arrow_down" className="w-3.5 h-3.5" /> Underspent
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1">
-                        <Icon name="arrow_up" className="w-3.5 h-3.5" /> Overspent
-                      </span>
-                    )} by {inr(Math.abs(totalVariance))}
-                  </Badge>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  {[
-                    { label: "Total Budget", value: `₹${totalBudget.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`, color: "text-foreground" },
-                    { label: "Actual Spend", value: `₹${totalActual.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`, color: "text-primary" },
-                    { label: "Variance", value: `₹${totalVariance.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`, color: totalVariance >= 0 ? "text-success" : "text-danger" },
-                    { label: "EAC (at 60%)", value: `₹${Math.round(totalEAC).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`, color: totalEAC > totalBudget ? "text-danger" : "text-success" },
-                  ].map(kpi => (
-                    <div key={kpi.label} className="bg-input border border-border-custom rounded-md p-4">
-                      <span className="text-[9px] uppercase text-muted tracking-wider block">{kpi.label}</span>
-                      <strong className={`text-lg font-extrabold mt-1 block font-sans ${kpi.color}`}>{kpi.value}</strong>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="bg-background border border-border-custom rounded-lg overflow-hidden">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-border-custom text-muted">
-                        <th className="px-5 py-3 text-left font-semibold">Cost Code</th>
-                        <th className="px-5 py-3 text-left font-semibold">Head</th>
-                        <th className="px-5 py-3 text-right font-semibold">Budget</th>
-                        <th className="px-5 py-3 text-right font-semibold">Actual</th>
-                        <th className="px-5 py-3 text-right font-semibold">Variance</th>
-                        <th className="px-5 py-3 text-right font-semibold">Var %</th>
-                        <th className="px-5 py-3 text-right font-semibold">EAC</th>
-                        <th className="px-5 py-3 text-center font-semibold">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map(row => {
-                        const isOver = row.variance < 0;
-                        const isWarn = row.variancePct < 10 && row.variancePct >= 0;
-                        const statusLabel = isOver ? "OVERSPENT" : isWarn ? "AT RISK" : "ON TRACK";
-                        const statusTone: BadgeTone = isOver ? "danger" : isWarn ? "warning" : "success";
-                        return (
-                          <tr key={row.code} className={`border-b border-white/[0.03] hover:bg-elevated transition-all ${isOver ? "bg-danger/[0.02]" : ""}`}>
-                            <td className="px-5 py-3 font-sans text-muted">{row.code}</td>
-                            <td className="px-5 py-3 font-semibold text-foreground">{row.head}</td>
-                            <td className="px-5 py-3 text-right font-sans text-muted">₹{row.budget.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
-                            <td className="px-5 py-3 text-right font-sans font-bold text-foreground">₹{row.actual.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
-                            <td className={`px-5 py-3 text-right font-sans font-bold ${isOver ? "text-danger" : "text-success"}`}>
-                              {row.variance >= 0 ? "+" : ""}₹{row.variance.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
-                            </td>
-                            <td className={`px-5 py-3 text-right font-sans ${isOver ? "text-danger" : isWarn ? "text-warning" : "text-success"}`}>
-                              {row.variancePct.toFixed(1)}%
-                            </td>
-                            <td className={`px-5 py-3 text-right font-sans ${row.eac > row.budget ? "text-danger" : "text-muted"}`}>
-                              ₹{Math.round(row.eac).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
-                            </td>
-                            <td className="px-5 py-3 text-center">
-                              <Badge tone={statusTone} className="font-bold">{statusLabel}</Badge>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            );
-          })()}
           </PageShell>
         </div>
       </div>

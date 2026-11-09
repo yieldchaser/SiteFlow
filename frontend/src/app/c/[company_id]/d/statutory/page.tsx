@@ -735,7 +735,7 @@ export default function StatutoryPage() {
                         <span className="font-bold text-foreground">₹{gstr1Result.total_taxable_value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
                       </div>
                       <div>
-                        <span className="text-muted block text-[10px] uppercase font-bold">Total GST Liability</span>
+                        <span className="text-muted block text-[10px] uppercase font-bold">Total GST to Pay</span>
                         <span className="font-bold text-primary font-sans">₹{gstr1Result.total_gst.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
                       </div>
                     </div>
@@ -811,7 +811,7 @@ export default function StatutoryPage() {
                         </span>
                       </div>
                       <div>
-                        <span className="text-muted block text-[10px] uppercase font-bold">Total Liability</span>
+                        <span className="text-muted block text-[10px] uppercase font-bold">Total to Pay</span>
                         <span className="font-bold text-primary font-sans">₹{pfEcrResult.total_pf_liability.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
                       </div>
                     </div>

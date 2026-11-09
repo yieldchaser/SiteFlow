@@ -2015,7 +2015,7 @@ def _rep_budget_vs_actual_cost_code(db: Session, cid: uuid.UUID, pid: Optional[u
                 "Cost Code": cc.code,
                 "Budget Amount (INR)": _clean(budget),
                 "Actual Amount (INR)": _clean(actual),
-                "Variance (INR)": _clean(variance),
+                "Difference (INR)": _clean(variance),
                 "Status": status_str,
             })
         return rows
@@ -2046,7 +2046,7 @@ def _rep_budget_vs_actual_material_cost(db: Session, cid: uuid.UUID, pid: Option
                 "Unit": b.unit or "Unit",
                 "Budget Cost (INR)": _clean(budget_cost),
                 "Actual Cost (INR)": _clean(actual_cost),
-                "Variance (INR)": _clean(variance_cost),
+                "Difference (INR)": _clean(variance_cost),
             })
         return rows
     except Exception:
@@ -2074,7 +2074,7 @@ def _rep_budget_vs_actual_material_qty(db: Session, cid: uuid.UUID, pid: Optiona
                 "Unit": b.unit or "Unit",
                 "Budget Qty": _clean(budget_qty),
                 "Actual Qty": _clean(actual_qty),
-                "Variance Qty": _clean(variance_qty),
+                "Difference Qty": _clean(variance_qty),
             })
         return rows
     except Exception:
@@ -2666,30 +2666,35 @@ def _rep_equipment_usage_detail(db: Session, cid: uuid.UUID, pid: Optional[uuid.
 
 
 def _rep_fuel_efficiency(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
+    # Measured figures only. There is no fuel norm per machine to compare
+    # against, so the old "expected" (4 L/hour for every machine) and
+    # "mileage" (5.0 for every machine) columns were invented and are gone.
     try:
         q = db.query(Equipment).filter(Equipment.company_id == cid)
         rows = []
         for eq in q.order_by(Equipment.name.asc()).all():
             fuel_q = db.query(FuelLog).filter(FuelLog.equipment_id == eq.id)
+            dep_q = db.query(EquipmentDeployment).filter(EquipmentDeployment.equipment_id == eq.id)
             if pid:
                 fuel_q = fuel_q.filter(FuelLog.project_id == pid)
+                dep_q = dep_q.filter(EquipmentDeployment.project_id == pid)
             fuel_logs = fuel_q.all()
+            deps = dep_q.all()
             total_liters = sum(float(f.liters or 0) for f in fuel_logs)
-            deps = db.query(EquipmentDeployment).filter(EquipmentDeployment.equipment_id == eq.id).all()
+            total_cost = sum(float(f.total_cost or 0) for f in fuel_logs)
             total_hours = sum(float(d.hours_used or 0) for d in deps)
-            proj = _get(db, Project, deps[0].project_id) if deps and deps[0].project_id else None
+            if not total_liters and not total_hours:
+                continue
+            project_ids = {d.project_id for d in deps} | {f.project_id for f in fuel_logs}
+            names = sorted(p.name for p in (_get(db, Project, x) for x in project_ids if x) if p)
             rows.append({
-                "Project Name": proj.name if proj else "",
+                "Project Name": ", ".join(names),
                 "Equipment Name": eq.name,
                 "Vehicle No.": eq.code,
-                "Party Name": "",
-                "Mileage": 5.0,
-                "Eqp Unit": "Hours",
-                "Active Days Used": len(deps),
-                "Fuel Added": _clean(total_liters),
-                "Fuel Consumed (Actual)": _clean(total_liters),
-                "Fuel Consumed (Expected)": _clean(total_hours * 4.0),
-                "Fuel Variance": _clean(total_liters - (total_hours * 4.0)),
+                "Hours Run": _clean(round(total_hours, 2)),
+                "Fuel Added (Litres)": _clean(round(total_liters, 2)),
+                "Fuel Cost (INR)": _clean(round(total_cost, 2)),
+                "Litres per Hour": _clean(round(total_liters / total_hours, 2)) if total_hours else "",
             })
         return rows
     except Exception:

@@ -415,7 +415,7 @@ export default function ProductionPage() {
       <main className="flex-1 flex flex-col overflow-hidden">
         <PageHeader
           title="Production Management"
-          subtitle="Recipe standards, batch execution, consumption variance, and inventory pull-through"
+          subtitle="Recipe standards, batch execution, material used against the recipe, and stock taken from stores"
         >
           <div className="flex items-center gap-2">
             <button onClick={() => setShowNewRecipeModal(true)} className="rounded-md border border-border-custom bg-elevated px-3.5 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-primary/10 cursor-pointer">
@@ -456,7 +456,7 @@ export default function ProductionPage() {
               note="Completed production volume after execution"
             />
             <MetricCard
-              label="Material Variance"
+              label="Extra Material Used"
               value={loading ? "…" : `${totals.materialVariancePct > 0 ? "+" : ""}${formatQty(totals.materialVariancePct, 1)}%`}
               accent={totals.materialVariancePct > 0 ? "text-warning" : "text-primary"}
               note="Material used against plan, averaged over every material"
@@ -493,7 +493,7 @@ export default function ProductionPage() {
 
                   <div>
                     <div className="mb-2 flex items-center justify-between text-xs">
-                      <span className="text-muted">Material variance</span>
+                      <span className="text-muted">Extra material used</span>
                       <span className={totals.materialVariancePct > 0 ? "font-semibold text-warning" : "font-semibold text-primary"}>
                         {formatQty(totals.materialVariancePct, 1)}%
                       </span>
@@ -613,7 +613,7 @@ export default function ProductionPage() {
                       <th className="px-4 py-3 font-semibold">Status</th>
                       <th className="px-4 py-3 font-semibold">Plan</th>
                       <th className="px-4 py-3 font-semibold">Actual</th>
-                      <th className="px-4 py-3 font-semibold">Variance</th>
+                      <th className="px-4 py-3 font-semibold">Extra Used</th>
                       <th className="px-4 py-3 font-semibold">Materials</th>
                     </tr>
                   </thead>

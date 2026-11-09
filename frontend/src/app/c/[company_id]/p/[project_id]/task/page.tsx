@@ -255,7 +255,7 @@ export default function TaskPage() {
                 <td colSpan={6} className="p-8">
                   <EmptyState
                     title="No tasks for this project"
-                    description="Create tasks and milestones in project planning to monitor schedule variance."
+                    description="Create tasks and milestones in project planning to see which tasks are running late."
                   />
                 </td>
               </tr>

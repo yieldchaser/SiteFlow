@@ -490,7 +490,7 @@ export default function ProjectDashboardPage() {
       cols: [
         { key: "name", label: "Budget head" },
         { key: "budget", label: "Budget" },
-        { key: "committed", label: "Committed" },
+        { key: "committed", label: "Ordered" },
         { key: "actual", label: "Spent" },
         { key: "left", label: "Left" },
       ],

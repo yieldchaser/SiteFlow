@@ -536,8 +536,8 @@ export default function BOQPage() {
             <div className="h-full overflow-y-auto p-5 space-y-4">
               {!projectId || boqItems.length === 0 ? (
                 <EmptyState
-                  title={!projectId ? "No active project selected" : "No variance data available"}
-                  description={!projectId ? "Select or create a project to view budget vs actual variance analysis." : "Upload your BOQ or log project expenditures to view budget variance and cost projections."}
+                  title={!projectId ? "No active project selected" : "Nothing to compare yet"}
+                  description={!projectId ? "Select or create a project to compare the budget with what has been spent." : "Upload your BOQ or log project expenditures to view budget variance and cost projections."}
                   action={!projectId ? {
                     label: "View Projects",
                     href: `/c/${companyId}/projects`,

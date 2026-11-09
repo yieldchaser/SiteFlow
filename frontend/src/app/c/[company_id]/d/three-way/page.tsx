@@ -205,7 +205,7 @@ export default function ThreeWayPage() {
     <div className="flex-1 flex flex-col overflow-hidden">
       <PageHeader
         title="3-Way Matching"
-        subtitle="Reconcile PO ↔ GRN ↔ Invoice automatically"
+        subtitle="Check each supplier bill against what was ordered and what reached site"
       >
         <button
           onClick={() => { setShowModal(true); setMessage(""); }}
@@ -231,7 +231,7 @@ export default function ThreeWayPage() {
                 <th className="px-6 py-4 font-medium">GRN</th>
                 <th className="px-6 py-4 font-medium">Goods received</th>
                 <th className="px-6 py-4 font-medium">Invoiced</th>
-                <th className="px-6 py-4 font-medium">Variance</th>
+                <th className="px-6 py-4 font-medium">Bill minus Received</th>
                 <th className="px-6 py-4 font-medium">Status</th>
                 <th className="px-6 py-4 font-medium">Actions</th>
               </tr>
@@ -245,7 +245,7 @@ export default function ThreeWayPage() {
                     <EmptyState
                       icon="check"
                       title="No 3-way matches found"
-                      description="Reconcile purchase orders, goods receipt notes and vendor invoices."
+                      description="Check supplier bills against purchase orders and goods received (GRN)."
                       action={{
                         label: "New Match",
                         onClick: () => { setShowModal(true); setMessage(""); },
@@ -324,7 +324,7 @@ export default function ThreeWayPage() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-muted mb-1">Variance Reason (if any)</label>
+                  <label className="block text-xs font-medium text-muted mb-1">Why the bill is different (if it is)</label>
                   <textarea className="w-full bg-input border border-border-custom rounded-md px-4 py-2 text-foreground" value={form.variance_reason} onChange={(e) => setForm({...form, variance_reason: e.target.value})} />
                 </div>
                 <div className="flex gap-3 pt-2">

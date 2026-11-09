@@ -258,7 +258,7 @@ function ChartCard({
             )}
             {actualValues[hoveredIndex] !== undefined && (
               <div className="flex items-center justify-between gap-4 border-t border-border-custom pt-1 mt-1">
-                <span className="text-muted">Variance:</span>
+                <span className="text-muted">Ahead / behind plan:</span>
                 <span className={`font-bold font-sans ${actualValues[hoveredIndex] >= plannedValues[hoveredIndex] ? "text-success" : "text-primary"}`}>
                   {(actualValues[hoveredIndex] - plannedValues[hoveredIndex]).toFixed(1)}%
                 </span>
@@ -320,13 +320,13 @@ export default function CompanyAnalyticsPage() {
           <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             {[
               {
-                label: "Budget Variance",
+                label: "Budget Left",
                 value: data ? formatCurrency(data.budget_variance) : "—",
                 hint: data ? `Spend ${formatCurrency(data.total_spend)} vs budget ${formatCurrency(data.total_budget)}` : "Loading",
                 tone: data && data.budget_variance < 0 ? "text-danger" : "text-foreground",
               },
               {
-                label: "Burn Rate",
+                label: "Budget Used",
                 value: data ? (data.burn_rate_pct == null ? "—" : `${data.burn_rate_pct}%`) : "—",
                 hint: data && data.burn_rate_pct == null ? "No budget set: not tracked" : "Share of total budget already spent",
                 tone: data && data.burn_rate_pct != null && data.burn_rate_pct > 100 ? "text-danger"
@@ -474,7 +474,7 @@ export default function CompanyAnalyticsPage() {
                       <th className="px-4 py-3 text-left">Project</th>
                       <th className="px-4 py-3 text-right">Budget</th>
                       <th className="px-4 py-3 text-right">Spend</th>
-                      <th className="px-4 py-3 text-right">Variance</th>
+                      <th className="px-4 py-3 text-right">Over / Under Budget</th>
                       <th className="px-4 py-3 text-right">Completion</th>
                     </tr>
                   </thead>

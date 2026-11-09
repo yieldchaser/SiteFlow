@@ -912,7 +912,7 @@ export default function GanttSchedulerPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-xs font-bold text-foreground">Active Schedule vs. Approved Baseline</h3>
-                  <p className="text-[10px] text-muted mt-0.5">Tracking schedule variance (SV) and critical path slippage against target dates</p>
+                  <p className="text-[10px] text-muted mt-0.5">How far each task is ahead of or behind its planned dates</p>
                 </div>
                 <button
                   onClick={handleSetBaseline}
