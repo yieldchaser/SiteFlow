@@ -155,7 +155,7 @@ export default function TowersPage() {
       <div className="flex-1 flex flex-col overflow-hidden relative font-sans">
         <PageHeader
           title="Tower & Phase Management"
-          subtitle="Multi-tower P&L tracking · Budget per tower/phase"
+          subtitle="Towers and phases of this project, with their budgets and dates"
         >
           <button onClick={() => { resetForm(); setShowForm(true); }} className="px-3.5 py-1.5 rounded-md bg-primary text-xs font-bold text-white hover:opacity-90 cursor-pointer">+ New Tower</button>
         </PageHeader>
