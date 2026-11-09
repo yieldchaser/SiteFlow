@@ -2,7 +2,7 @@
 import Badge, { type BadgeTone } from "@/components/ui/Badge";
 import UnitInput from "@/components/UnitInput";
 import {  getApiHost , readErrorDetail, detailToMessage} from "@/lib/api";
-import { authHeaders, formatLabel } from "@/lib/siteflow";
+import { authHeaders, formatLabel, formatDate } from "@/lib/siteflow";
 import React, { useState, useEffect } from "react";
 import { useProject } from "@/context/ProjectContext";
 import { useParams } from "next/navigation";
@@ -41,15 +41,27 @@ export default function WastagePage() {
   // its material picker to on-hand inventory; this mirrors it.
   const [inventory, setInventory] = useState<Array<{ material_name: string; unit: string; on_hand_qty: number }>>([]);
 
-  const [form, setForm] = useState({
+  // Quantity and value start blank. A blank value means "price it at the
+  // last purchase rate for this material", which the API works out.
+  const emptyForm = {
     material_name: "",
     wastage_type: "scrap",
-    quantity: 0,
+    quantity: "",
     unit: "kg",
-    estimated_value: 0,
+    estimated_value: "",
     reason: "",
     photo_urls: [] as string[],
-  });
+  };
+  const [form, setForm] = useState(emptyForm);
+  const [team, setTeam] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    if (!companyId) return;
+    fetch(`${getApiHost()}/apis/v3/crm/team-members/${companyId}`, { headers: authHeaders() })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d) => setTeam(Array.isArray(d) ? d : []))
+      .catch(() => setTeam([]));
+  }, [companyId]);
+  const memberName = (id?: string) => (id ? team.find((t) => t.id === id)?.name || "" : "");
 
   const fetchRecords = async () => {
     try {
@@ -90,12 +102,19 @@ export default function WastagePage() {
         // task_id is deliberately absent rather than "". The backend declares it
         // Optional[uuid.UUID] and an empty string fails UUID parsing, which used
         // to 422 every single submission.
-        body: JSON.stringify({ ...form, company_id: companyId, project_id: projectId, estimated_value_override: form.estimated_value > 0 }),
+        body: JSON.stringify({
+          ...form,
+          quantity: Number(form.quantity),
+          estimated_value: form.estimated_value === "" ? null : Number(form.estimated_value),
+          estimated_value_override: form.estimated_value !== "",
+          company_id: companyId,
+          project_id: projectId,
+        }),
       });
       if (res.ok) {
         setMessage("Wastage recorded successfully");
         setShowModal(false);
-        setForm({ material_name: "", wastage_type: "scrap", quantity: 0, unit: "kg", estimated_value: 0, reason: "", photo_urls: [] });
+        setForm(emptyForm);
         fetchRecords();
       } else {
         const err = await res.json();
@@ -120,6 +139,28 @@ export default function WastagePage() {
       console.error("Failed to update status", e);
     }
   };
+
+  // Rejecting a report removes it and puts the quantity back into stock.
+  const rejectRecord = async (r: Wastage) => {
+    if (!window.confirm(`Reject this report? ${Number(r.quantity).toLocaleString("en-IN")} ${r.unit} of ${r.material_name} goes back into stock.`)) return;
+    try {
+      const res = await fetch(`${getApiHost()}/apis/v3/wastage/${r.id}`, { method: "DELETE", headers: authHeaders() });
+      if (res.ok) {
+        setMessage("Report rejected and stock restored successfully");
+        fetchRecords();
+      } else {
+        setMessage((await readErrorDetail(res)) || "Could not reject this report");
+      }
+    } catch (e) {
+      console.error("Failed to reject wastage", e);
+      setMessage("Network error. The report was not rejected.");
+    }
+  };
+
+  const totalValue = records.reduce((s, r) => s + Number(r.estimated_value || 0), 0);
+  const pendingValue = records.filter((r) => r.status === "reported" || r.status === "reviewed").reduce((s, r) => s + Number(r.estimated_value || 0), 0);
+  const pendingCount = records.filter((r) => r.status === "reported" || r.status === "reviewed").length;
+  const inr = (v: number) => `₹${v.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 
   const statusTones: Record<string, BadgeTone> = {
     reported: "warning",
@@ -158,6 +199,34 @@ export default function WastagePage() {
           </div>
         )}
 
+        {records.length > 0 && (
+          <div className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="rounded-lg border border-border-custom bg-card p-4">
+              <div className="text-[10px] uppercase tracking-[0.2em] text-muted">Value Lost</div>
+              <div className="mt-1 text-xl font-bold text-foreground">{inr(totalValue)}</div>
+              <div className="text-xs text-muted">{records.length} {records.length === 1 ? "report" : "reports"} on this project</div>
+            </div>
+            <div className="rounded-lg border border-border-custom bg-card p-4">
+              <div className="text-[10px] uppercase tracking-[0.2em] text-muted">Waiting for Sign-off</div>
+              <div className={`mt-1 text-xl font-bold ${pendingCount > 0 ? "text-warning" : "text-foreground"}`}>{pendingCount}</div>
+              <div className="text-xs text-muted">{inr(pendingValue)} not yet approved</div>
+            </div>
+            <div className="rounded-lg border border-border-custom bg-card p-4">
+              <div className="text-[10px] uppercase tracking-[0.2em] text-muted">Biggest Cause</div>
+              {(() => {
+                const byType: Record<string, number> = {};
+                for (const r of records) byType[r.wastage_type] = (byType[r.wastage_type] || 0) + Number(r.estimated_value || 0);
+                const top = Object.entries(byType).sort((a, b) => b[1] - a[1])[0];
+                return top ? (
+                  <>
+                    <div className="mt-1 text-xl font-bold text-foreground">{typeLabels[top[0]] || formatLabel(top[0])}</div>
+                    <div className="text-xs text-muted">{inr(top[1])} of the total</div>
+                  </>
+                ) : null;
+              })()}
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {records.length === 0 && loadedFor !== projectId ? (
             <div className="col-span-full p-8 text-center text-muted text-sm">Loading wastage records...</div>
@@ -175,14 +244,14 @@ export default function WastagePage() {
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <h3 className="text-foreground font-semibold">{r.material_name}</h3>
-                    <p className="text-muted text-xs mt-1">{typeLabels[r.wastage_type] || r.wastage_type} • {r.unit}</p>
+                    <p className="text-muted text-xs mt-1">{typeLabels[r.wastage_type] || r.wastage_type} · {formatDate(r.created_at)}{memberName(r.reported_by) ? ` · ${memberName(r.reported_by)}` : ""}</p>
                   </div>
                   <Badge tone={statusTones[r.status] || "neutral"}>{formatLabel(r.status)}</Badge>
                 </div>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-muted">Quantity</span>
-                    <span className="text-foreground font-medium">{Number(r.quantity).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
+                    <span className="text-foreground font-medium">{Number(r.quantity).toLocaleString("en-IN", { maximumFractionDigits: 2 })} {r.unit}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted">Est. Value</span>
@@ -202,6 +271,9 @@ export default function WastagePage() {
                         <AuthImage key={i} src={url} alt="Wastage photo" className="w-16 h-16 rounded-lg object-cover border border-border-custom" />
                       ))}
                     </div>
+                  )}
+                  {(r.status === "reported" || r.status === "reviewed") && (
+                    <button onClick={() => rejectRecord(r)} className="px-3 py-1.5 bg-danger/10 text-danger rounded-lg text-xs font-medium hover:bg-danger/20 transition-all">Reject</button>
                   )}
                   {r.status === "reported" && (
                     <button onClick={() => updateStatus(r.id, "reviewed")} className="flex-1 px-3 py-1.5 bg-info/10 text-info rounded-lg text-xs font-medium hover:bg-info/10 transition-all">Review</button>
@@ -260,7 +332,7 @@ export default function WastagePage() {
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-muted mb-1">Quantity</label>
-                    <input type="number" required className="w-full bg-input border border-border-custom rounded-md px-4 py-2 text-foreground" value={form.quantity} onChange={(e) => setForm({...form, quantity: parseFloat(e.target.value)})} />
+                    <input type="number" required min="0.001" step="any" placeholder="0" className="w-full bg-input border border-border-custom rounded-md px-4 py-2 text-foreground" value={form.quantity} onChange={(e) => setForm({...form, quantity: e.target.value})} />
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -270,7 +342,7 @@ export default function WastagePage() {
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-muted mb-1">Est. Value (₹)</label>
-                    <input type="number" required className="w-full bg-input border border-border-custom rounded-md px-4 py-2 text-foreground" value={form.estimated_value} onChange={(e) => setForm({...form, estimated_value: parseFloat(e.target.value)})} />
+                    <input type="number" min="0" step="any" placeholder="Last purchase rate" className="w-full bg-input border border-border-custom rounded-md px-4 py-2 text-foreground" value={form.estimated_value} onChange={(e) => setForm({...form, estimated_value: e.target.value})} />
                   </div>
                 </div>
                 <div>

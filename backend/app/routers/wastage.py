@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from app.database import get_db
 from app.auth import get_current_user, verify_project_access, get_company_membership, require_permission
-from app.constants import WASTAGE_TYPE_PATTERN, WASTAGE_STATUS_PATTERN
+from app.constants import WASTAGE_TYPE_PATTERN, WASTAGE_STATUS_PATTERN, WASTAGE_STATUSES
 from app.models import MaterialWastage, MaterialTransaction, PurchaseOrder, PurchaseOrderItem, User, WarehouseInventory
 from app.workflow_controls import enforce_stock_availability
 from app.routers.delete_logs import log_deletion
@@ -20,7 +20,7 @@ class MaterialWastageCreate(BaseModel):
     project_id: uuid.UUID
     material_name: str
     wastage_type: str = Field(..., pattern=WASTAGE_TYPE_PATTERN)
-    quantity: float = Field(..., ge=0)
+    quantity: float = Field(..., gt=0)
     unit: str
     estimated_value: Optional[float] = Field(None, ge=0)
     estimated_value_override: bool = False
@@ -123,6 +123,19 @@ def update_wastage_status(wastage_id: uuid.UUID, status: str = Query(..., patter
         raise HTTPException(status_code=404, detail="Wastage record not found")
     get_company_membership(db, current_user, wastage.company_id)
     require_permission(db, current_user, wastage.company_id, "procurement:edit")
+    # A record moves one step at a time: reported, reviewed, approved,
+    # disposed. Skipping review or walking a disposed record back left the
+    # register saying things nobody had checked.
+    order = list(WASTAGE_STATUSES)
+    current = wastage.status if wastage.status in order else order[0]
+    if status != current:
+        nxt = order.index(current) + 1
+        if nxt >= len(order) or status != order[nxt]:
+            if nxt >= len(order):
+                msg = f"This wastage is already {current}. It cannot change any more."
+            else:
+                msg = f"This wastage is {current}. It can only move to {order[nxt]} next."
+            raise HTTPException(status_code=400, detail=msg)
     wastage.status = status
     db.commit()
     db.refresh(wastage)
