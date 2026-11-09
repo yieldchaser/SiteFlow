@@ -568,11 +568,16 @@ export default function ProjectsHomePage() {
                       <div className="text-sm font-medium text-foreground">{getProjectAddress(p)}</div>
                     </td>
                     <td className="px-6 py-4">
+                      {(p as { is_office?: boolean }).is_office ? (
+                        <Badge tone="neutral" className="uppercase tracking-wider">Office</Badge>
+                      ) : (
                       <Badge tone={getProjectHealthTone(getProjectHealth(p))} className="uppercase tracking-wider">
                         {getProjectHealth(p)}
                       </Badge>
+                      )}
                     </td>
                     <td className="px-6 py-4 w-52">
+                      {(p as { is_office?: boolean }).is_office ? <span className="text-xs text-muted">-</span> : (
                       <div className="flex items-center gap-3">
                         <div className="h-1.5 bg-elevated rounded-full flex-1 overflow-hidden">
                           <div
@@ -582,6 +587,7 @@ export default function ProjectsHomePage() {
                         </div>
                         <span className="text-xs font-medium text-muted">{Math.round(p.progress || 0)}%</span>
                       </div>
+                      )}
                     </td>
                     {seesFinance && (
                     <td className="px-6 py-4 text-right">

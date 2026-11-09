@@ -36,6 +36,7 @@ type Project = {
   attendance_radius_meters?: number | null;
   project_avatar?: string | null;
   progress?: number;
+  is_office?: boolean;
   cash_in?: number;
   cash_out?: number;
   todo_pending?: number;
@@ -372,6 +373,9 @@ export default function ProjectsPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3">
+                    {p.is_office ? (
+                      <span className="text-xs text-muted">Office, no progress</span>
+                    ) : (
                     <div className="flex items-center gap-2">
                       <div className="h-1.5 w-24 rounded-full bg-elevated overflow-hidden">
                         <div
@@ -383,6 +387,7 @@ export default function ProjectsPage() {
                         {Math.round(p.progress ?? 0)}%
                       </span>
                     </div>
+                    )}
                   </td>
                   {seesFinance && (
                     <td className="px-4 py-3 text-xs">

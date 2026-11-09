@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import Date, cast, func, true
 from sqlalchemy.orm import Session
 
+from app.office_projects import is_office_project
 from app.database import get_db
 from app.auth import get_current_user, verify_company_access, scope_projects, project_ids_for_user
 from app.constants import (
@@ -582,6 +583,9 @@ def get_company_operational_analytics(company_id: uuid.UUID, project_id: Optiona
                 personnel_names[tid] = uname or lpname
 
     for p in projects:
+        # Head office is not a site: no progress, health or status to count.
+        if is_office_project(p):
+            continue
         # Determine status
         p_status = p.status or "—"
         count_status = "On Hold" if p_status == "Onhold" else p_status

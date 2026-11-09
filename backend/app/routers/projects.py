@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, Numeric, Boolean, DateTime, String
 from datetime import datetime
 from typing import List, Optional
+from app.office_projects import is_office_project
 from app.database import get_db
 from app import models
 from app.auth import get_current_user, verify_company_access, verify_project_access, get_company_membership, require_permission, scope_projects
@@ -241,6 +242,7 @@ def _serialize_project(db: Session, p: models.Project, include_members=False):
         "branch_id": str(p.branch_id) if p.branch_id else None,
         "is_pinned": bool(p.is_pinned),
         "progress": progress,
+        "is_office": is_office_project(p),
         "cash_in": cash_in,
         "cash_out": cash_out,
         "todo_pending": todo_pending,
