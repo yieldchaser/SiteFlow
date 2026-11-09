@@ -385,8 +385,8 @@ export default function ProductionPage() {
   const stockLine = (item: { covers: number | null; outUnit: string; nextBatch: number }) => {
     if (item.covers === null) return "Not on any recipe now";
     const batches = item.nextBatch > 0 ? Math.floor(item.covers / item.nextBatch) : null;
-    return `Enough for ${formatQty(item.covers)} ${item.outUnit}`.trim() +
-      (batches !== null ? ` · ${batches} ${batches === 1 ? "batch" : "batches"} of ${formatQty(item.nextBatch)}` : "");
+    return `Enough for ${formatQty(item.covers, 1)} ${item.outUnit}`.trim() +
+      (batches !== null ? ` · ${batches} ${batches === 1 ? "batch" : "batches"} of ${formatQty(item.nextBatch, 1)} ${item.outUnit}` : "");
   };
 
   const totals = useMemo(() => {
