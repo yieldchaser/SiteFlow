@@ -1760,36 +1760,6 @@ def _rep_rate_card_library(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]
         return _REPORT_FAILED
 
 
-def _rep_boq_bom(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
-    try:
-        proj_ids = _project_ids_for_company(db, cid)
-        if not proj_ids:
-            return []
-        q = db.query(BOQItem).filter(BOQItem.project_id.in_(proj_ids))
-        if pid:
-            q = q.filter(BOQItem.project_id == pid)
-        rows = []
-        for b in q.all():
-            proj = _get(db, Project, b.project_id)
-            rate = float(b.rate or 0)
-            qty = float(b.quantity or 0)
-            rows.append({
-                "Project Name": proj.name if proj else "",
-                "BOQ Name": b.item_name or "",
-                "Item Name": b.item_name or "",
-                "Material Name": b.item_name or "",
-                "Unit": b.unit or "Unit",
-                "Unit Price": _clean(rate),
-                "Quantity": _clean(qty),
-                "Total Cost Price": _clean(rate * qty),
-                "Creation Date": _clean(b.created_at),
-            })
-        return rows
-    except Exception:
-        logger.exception("Report 'boq-bom' failed; returning fallback")
-        return _REPORT_FAILED
-
-
 def _boq_done_pct(db: Session, item_ids) -> dict:
     """Physical progress of each BOQ item: the average progress of the
     tasks linked to it, the same rule the BOQ page uses."""
@@ -2094,63 +2064,113 @@ def _rep_budget_vs_actual_cost_code(db: Session, cid: uuid.UUID, pid: Optional[u
         return _REPORT_FAILED
 
 
-def _rep_budget_vs_actual_material_cost(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
-    try:
-        proj_ids = _project_ids_for_company(db, cid)
-        if not proj_ids:
-            return []
-        q = db.query(BOQItem).filter(BOQItem.project_id.in_(proj_ids))
-        if pid:
-            q = q.filter(BOQItem.project_id == pid)
-        rows = []
-        for b in q.all():
-            proj = _get(db, Project, b.project_id)
-            qty = float(b.quantity or 0)
-            rate = float(b.rate or 0)
-            budget_cost = float(b.amount if b.amount is not None else (qty * rate))
-            actual_cost = 0.0
-            variance_cost = budget_cost - actual_cost
-            rows.append({
-                "Project": proj.name if proj else "",
-                "Material": b.item_name or "",
-                "Unit": b.unit or "Unit",
-                "Budget Cost (INR)": _clean(budget_cost),
-                "Actual Cost (INR)": _clean(actual_cost),
-                "Difference (INR)": _clean(variance_cost),
-            })
-        return rows
-    except Exception:
-        logger.exception("Report 'budget-vs-actual-material-cost' failed; returning fallback")
-        return _REPORT_FAILED
+def _material_flow(db: Session, proj_ids, pid):
+    """Per project and material: ordered (purchase orders), received (GRNs
+    against them), used and in stock (site material entries), plus the
+    average order rate to put a value on each. Cancelled orders left out."""
+    po_q = (
+        db.query(PurchaseOrderItem, PurchaseOrder)
+        .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.po_id)
+        .filter(PurchaseOrder.project_id.in_(proj_ids))
+    )
+    if pid:
+        po_q = po_q.filter(PurchaseOrder.project_id == pid)
+    flow: dict = {}
+
+    def slot(project_id, name, unit):
+        key = (project_id, (name or "").strip().lower())
+        if key not in flow:
+            flow[key] = {"project_id": project_id, "material": (name or "").strip(), "unit": unit or "",
+                         "ordered": 0.0, "ordered_value": 0.0, "received": 0.0, "used": 0.0, "stock": 0.0}
+        return flow[key]
+
+    po_items = []
+    for it, po in po_q.all():
+        if (po.status or "").lower() == "cancelled":
+            continue
+        f = slot(po.project_id, it.material_name, it.unit)
+        f["ordered"] += float(it.quantity or 0)
+        f["ordered_value"] += float(it.quantity or 0) * float(it.rate or 0)
+        po_items.append((it, po))
+    if po_items:
+        got: dict = {}
+        for po_item_id, qty in db.query(GRNItem.po_item_id, GRNItem.received_qty).filter(
+            GRNItem.po_item_id.in_([it.id for it, _ in po_items])
+        ).all():
+            got[po_item_id] = got.get(po_item_id, 0.0) + float(qty or 0)
+        for it, po in po_items:
+            slot(po.project_id, it.material_name, it.unit)["received"] += got.get(it.id, 0.0)
+    mt_q = db.query(MaterialTransaction).filter(MaterialTransaction.project_id.in_(proj_ids))
+    if pid:
+        mt_q = mt_q.filter(MaterialTransaction.project_id == pid)
+    for m in mt_q.all():
+        f = slot(m.project_id, m.material_name, m.unit)
+        qty = float(m.qty or 0)
+        kind = (m.type or "").lower()
+        if kind == "used":
+            f["used"] += qty
+            f["stock"] -= qty
+        elif kind in ("received", "returned"):
+            f["stock"] += qty
+        elif kind == "transferred":
+            f["stock"] -= qty
+    for f in flow.values():
+        f["rate"] = f["ordered_value"] / f["ordered"] if f["ordered"] else 0.0
+    return sorted(flow.values(), key=lambda f: (str(f["project_id"]), f["material"].lower()))
 
 
 def _rep_budget_vs_actual_material_qty(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
+    # Projects carry no per-material budget, so this used to set each BOQ
+    # work item against an "actual" of 0. It now follows each material from
+    # order to site: ordered, received, used and still in stock.
     try:
         proj_ids = _project_ids_for_company(db, cid)
         if not proj_ids:
             return []
-        q = db.query(BOQItem).filter(BOQItem.project_id.in_(proj_ids))
-        if pid:
-            q = q.filter(BOQItem.project_id == pid)
         rows = []
-        for b in q.all():
-            proj = _get(db, Project, b.project_id)
-            budget_qty = float(b.quantity or 0)
-            actual_qty = 0.0
-            variance_qty = budget_qty - actual_qty
+        for f in _material_flow(db, proj_ids, pid):
+            proj = _get(db, Project, f["project_id"])
             rows.append({
                 "Project": proj.name if proj else "",
-                "Material": b.item_name or "",
-                "Unit": b.unit or "Unit",
-                "Budget Qty": _clean(budget_qty),
-                "Actual Qty": _clean(actual_qty),
-                "Difference Qty": _clean(variance_qty),
+                "Material": f["material"],
+                "Unit": f["unit"],
+                "Ordered Qty": _clean(round(f["ordered"], 3)),
+                "Received Qty": _clean(round(f["received"], 3)),
+                "Still to Receive": _clean(round(max(f["ordered"] - f["received"], 0.0), 3)),
+                "Used Qty": _clean(round(f["used"], 3)),
+                "In Stock": _clean(round(f["stock"], 3)),
             })
         return rows
     except Exception:
         logger.exception("Report 'budget-vs-actual-material-qty' failed; returning fallback")
         return _REPORT_FAILED
 
+
+def _rep_budget_vs_actual_material_cost(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
+    # Same material flow as the quantity report, valued at each material's
+    # average order rate on that project (before GST).
+    try:
+        proj_ids = _project_ids_for_company(db, cid)
+        if not proj_ids:
+            return []
+        rows = []
+        for f in _material_flow(db, proj_ids, pid):
+            proj = _get(db, Project, f["project_id"])
+            rate = f["rate"]
+            rows.append({
+                "Project": proj.name if proj else "",
+                "Material": f["material"],
+                "Unit": f["unit"],
+                "Avg Order Rate (INR)": _clean(round(rate, 2)),
+                "Ordered Value (INR)": _clean(round(f["ordered_value"], 2)),
+                "Received Value (INR)": _clean(round(f["received"] * rate, 2)),
+                "Used Value (INR)": _clean(round(f["used"] * rate, 2)),
+                "Stock Value (INR)": _clean(round(max(f["stock"], 0.0) * rate, 2)),
+            })
+        return rows
+    except Exception:
+        logger.exception("Report 'budget-vs-actual-material-cost' failed; returning fallback")
+        return _REPORT_FAILED
 
 def _rep_project_financial_summary(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
     try:
@@ -2681,30 +2701,6 @@ def _rep_equipment_expense_summary(db: Session, cid: uuid.UUID, pid: Optional[uu
         return _REPORT_FAILED
 
 
-def _rep_equipment_trip(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
-    try:
-        q = db.query(EquipmentDeployment).join(Equipment, EquipmentDeployment.equipment_id == Equipment.id).filter(Equipment.company_id == cid)
-        if pid:
-            q = q.filter(EquipmentDeployment.project_id == pid)
-        rows = []
-        for dep in q.order_by(EquipmentDeployment.created_at.desc()).all():
-            eq = _get(db, Equipment, dep.equipment_id)
-            rows.append({
-                "Trip Name": f"{eq.name if eq else 'Equipment'} Site Run",
-                "Trip Distance": 10.0,
-                "Trip Count": 1,
-                "Load Per Trip": 5.0,
-                "Load Unit": "Tons",
-                "Total Load": 5.0,
-                "Total Distance": 10.0,
-                "Created Date": _clean(dep.created_at),
-            })
-        return rows
-    except Exception:
-        logger.exception("Report 'equipment-trip' failed; returning fallback")
-        return _REPORT_FAILED
-
-
 def _rep_equipment_usage_detail(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
     try:
         q = db.query(EquipmentDeployment).join(Equipment, EquipmentDeployment.equipment_id == Equipment.id).filter(Equipment.company_id == cid)
@@ -3035,6 +3031,9 @@ def _rep_subcon_material_issue(db: Session, cid: uuid.UUID, pid: Optional[uuid.U
 
 
 def _rep_task_material(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
+    # Material used per task from the daily progress entries, valued at the
+    # project's average order rate for that material. Every material used to
+    # be priced at Rs 100 a unit.
     try:
         proj_ids = _project_ids_for_company(db, cid)
         if not proj_ids:
@@ -3042,20 +3041,36 @@ def _rep_task_material(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
         q = db.query(DailyProgressReport).filter(DailyProgressReport.project_id.in_(proj_ids))
         if pid:
             q = q.filter(DailyProgressReport.project_id == pid)
-        rows = []
+        rates = {(f["project_id"], f["material"].lower()): f["rate"] for f in _material_flow(db, proj_ids, pid)}
+        used: dict = {}
         for dpr in q.all():
-            proj = _get(db, Project, dpr.project_id)
-            mats = dpr.materials_consumed or []
-            for m in mats:
-                if isinstance(m, dict):
-                    rows.append({
-                        "Project Name": proj.name if proj else "",
-                        "Material Name": m.get("material_name", "Material"),
-                        "Main Task Name": "",
-                        "Group Task Name": "",
-                        "Avg Unit Rate": 100.0,
-                        "Avg Cost (INR)": _clean(float(m.get("quantity", 0)) * 100.0),
-                    })
+            for m in dpr.materials_consumed or []:
+                if not isinstance(m, dict) or not m.get("material_name"):
+                    continue
+                key = (dpr.project_id, dpr.task_id, str(m["material_name"]).strip())
+                try:
+                    qty = float(m.get("quantity") or 0)
+                except (TypeError, ValueError):
+                    qty = 0.0
+                u = used.setdefault(key, {"qty": 0.0, "unit": m.get("unit") or ""})
+                u["qty"] += qty
+        rows = []
+        for (project_id, task_id, name), u in used.items():
+            proj = _get(db, Project, project_id)
+            task = _get(db, Task, task_id) if task_id else None
+            main, group = _task_ancestor_names(db, task) if task else ("", "")
+            rate = rates.get((project_id, name.lower()), 0.0)
+            rows.append({
+                "Project Name": proj.name if proj else "",
+                "Main Task Name": main,
+                "Group Task Name": group,
+                "Task Name": task.name if task else "",
+                "Material Name": name,
+                "Unit": u["unit"],
+                "Qty Used": _clean(round(u["qty"], 3)),
+                "Avg Order Rate (INR)": _clean(round(rate, 2)) if rate else "",
+                "Cost (INR)": _clean(round(u["qty"] * rate, 2)) if rate else "",
+            })
         return rows
     except Exception:
         logger.exception("Report 'task-material' failed; returning fallback")
@@ -3148,115 +3163,43 @@ def _rep_site_inspection(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
 
 
 def _rep_subcon_measurement_book(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
+    # Each work order line with the work done so far from its task (or BOQ
+    # line). It used to print the full order quantity as already done.
     try:
         proj_ids = _project_ids_for_company(db, cid)
         if not proj_ids:
             return []
-        q = db.query(WorkOrderItem).join(WorkOrder, WorkOrderItem.wo_id == WorkOrder.id).filter(WorkOrder.project_id.in_(proj_ids))
+        q = db.query(WorkOrderItem, WorkOrder).join(WorkOrder, WorkOrderItem.wo_id == WorkOrder.id).filter(WorkOrder.project_id.in_(proj_ids))
         if pid:
             q = q.filter(WorkOrder.project_id == pid)
+        pairs = q.all()
+        task_ids = {it.task_id for it, _ in pairs if it.task_id}
+        task_by_id = {t.id: t for t in db.query(Task).filter(Task.id.in_(task_ids)).all()} if task_ids else {}
+        boq_prog = _boq_done_pct(db, {it.boq_item_id for it, _ in pairs if it.boq_item_id and not it.task_id})
         rows = []
-        for it in q.all():
-            wo = _get(db, WorkOrder, it.wo_id)
-            proj = _get(db, Project, wo.project_id) if wo and wo.project_id else None
+        for it, wo in pairs:
+            proj = _get(db, Project, wo.project_id)
             boq = _get(db, BOQItem, it.boq_item_id) if it.boq_item_id else None
-            item_name = boq.item_name if boq else "Subcon Work Item"
-            unit = boq.unit if boq else "Unit"
+            task = task_by_id[it.task_id] if it.task_id in task_by_id else None
+            pct = float(task.progress or 0) if task else boq_prog.get(it.boq_item_id, 0.0)
+            pct = min(max(pct, 0.0), 100.0)
             qty = float(it.quantity or 0)
             rows.append({
                 "Project Name": proj.name if proj else "",
-                "Workorder No.": wo.wo_number if wo else "",
-                "Group": "",
-                "Section": boq.section_name or "" if boq else "",
-                "Item Name": item_name,
-                "Progress Date": _clean(wo.created_at) if wo else "",
-                "Unit": unit,
-                "Estimated Quantity": _clean(qty),
-                "Opening Quantity": 0,
-                "Number": 1,
-                "Length": 0,
-                "Width": 0,
-                "Height": 0,
-                "Progress Quantity": _clean(qty),
-                "Closing Quantity": _clean(qty),
-                "Progress Notes": "",
+                "Workorder No.": wo.wo_number or "",
+                "Subcontractor": _team_user_name(db, wo.subcontractor_id) if wo.subcontractor_id else "",
+                "Section": (boq.section_name or "") if boq else "",
+                "Item Name": boq.item_name if boq else (task.name if task else ""),
+                "Unit": boq.unit if boq else "",
+                "Order Qty": _clean(qty),
+                "Rate": _clean(float(it.rate or 0)),
+                "% Done": _clean(round(pct, 2)),
+                "Done Qty": _clean(round(qty * pct / 100.0, 4)),
+                "Remaining Qty": _clean(round(qty * (100.0 - pct) / 100.0, 4)),
             })
         return rows
     except Exception:
         logger.exception("Report 'subcon-measurement-book' failed; returning fallback")
-        return _REPORT_FAILED
-
-
-def _rep_subcon_workorder_summary(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
-    try:
-        proj_ids = _project_ids_for_company(db, cid)
-        if not proj_ids:
-            return []
-        q = db.query(WorkOrder).filter(WorkOrder.project_id.in_(proj_ids))
-        if pid:
-            q = q.filter(WorkOrder.project_id == pid)
-        rows = []
-        for wo in q.order_by(WorkOrder.created_at.desc()).all():
-            proj = _get(db, Project, wo.project_id)
-            subcon = _team_user_name(db, wo.subcontractor_id) if wo.subcontractor_id else "Subcontractor"
-            est_amt = float(wo.estimated_work_amount or 0)
-            rows.append({
-                "Project Name": proj.name if proj else "",
-                "Workorder Name": f"Work Order {wo.wo_number}",
-                "Workorder Date": _clean(wo.wo_date or wo.created_at),
-                "Workorder No.": wo.wo_number or "",
-                "Subcontractor Name": subcon,
-                "Estimated Amount": _clean(est_amt),
-                "% Order Complete": 0,
-                "Work Done Amount": 0,
-                "Billed Amount": 0,
-                "Pending Billed": _clean(est_amt),
-                "Creator Name": "",
-                "Created Date": _clean(wo.created_at),
-            })
-        return rows
-    except Exception:
-        logger.exception("Report 'subcon-workorder-summary' failed; returning fallback")
-        return _REPORT_FAILED
-
-
-def _rep_task_resource_budget_vs_actual(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
-    try:
-        proj_ids = _project_ids_for_company(db, cid)
-        if not proj_ids:
-            return []
-        q = db.query(Task).filter(Task.project_id.in_(proj_ids))
-        if pid:
-            q = q.filter(Task.project_id == pid)
-        rows = []
-        for t in q.all():
-            proj = _get(db, Project, t.project_id)
-            rows.append({
-                "Project Name": proj.name if proj else "",
-                "Main Task Name": "",
-                "Group Task Name": "",
-                "Task Name": t.name,
-                "Task Unit": "Unit",
-                "Task Qty": 100,
-                "Task Progress Qty": _clean(t.progress or 0),
-                "Resource Name": "Labour & Material",
-                "Resource Type": "Composite",
-                "Budgeted Rate": 500,
-                "Avg Unit Cost": 500,
-                "Unit": "Unit",
-                "Qty per Unit": 1,
-                "Budgeted Qty": 100,
-                "Pro Rata Budgeted Qty": _clean(t.progress or 0),
-                "Actual Used Qty": _clean(t.progress or 0),
-                "Budgeted Amount": 50000,
-                "Pro Rata Budgeted Amount": _clean(float(t.progress or 0) * 500),
-                "Actual Amount": _clean(float(t.progress or 0) * 500),
-                "Exceeded Qty": 0,
-                "Exceeded Amount": 0,
-            })
-        return rows
-    except Exception:
-        logger.exception("Report 'task-resource-budget-vs-actual' failed; returning fallback")
         return _REPORT_FAILED
 
 
@@ -3673,7 +3616,6 @@ _REPORT_HANDLERS = {
     "asset-status": _rep_asset_status,
     "attendance-salary": _rep_attendance_salary,
     "bank-statement": _rep_bank_statement,
-    "boq-bom": _rep_boq_bom,
     "boq-item": _rep_boq_item,
     "boq-measurement-book": _rep_boq_measurement_book,
     "boq-workorder-summary": _rep_boq_workorder_summary,
@@ -3693,7 +3635,6 @@ _REPORT_HANDLERS = {
     "dpr": _rep_dpr,
     "equipment-expense-summary": _rep_equipment_expense_summary,
     "equipment-library": _rep_equipment_library,
-    "equipment-trip": _rep_equipment_trip,
     "equipment-usage-detail": _rep_equipment_usage_detail,
     "fuel-efficiency": _rep_fuel_efficiency,
     "gstr1-sales": _rep_gstr1_sales,
@@ -3736,13 +3677,12 @@ _REPORT_HANDLERS = {
     "subcon-deduction-retention": _rep_subcon_deduction_retention,
     "subcon-material-issue": _rep_subcon_material_issue,
     "subcon-measurement-book": _rep_subcon_measurement_book,
-    "subcon-workorder-summary": _rep_subcon_workorder_summary,
+    "subcon-workorder-summary": _rep_boq_workorder_summary,  # same figures
     "task-attendance": _rep_task_attendance,
     "task-boq-billed-unbilled": _rep_task_boq_billed_unbilled,
     "task-material": _rep_task_material,
     "task-measurement-book": _rep_task_measurement_book,
     "task-report": _rep_task_report,
-    "task-resource-budget-vs-actual": _rep_task_resource_budget_vs_actual,
     "task-revenue-expense": _rep_task_revenue_expense,
     "todo-report": _rep_todo_report,
     "unbilled-item": _rep_unbilled_item,

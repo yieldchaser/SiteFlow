@@ -80,3 +80,48 @@ def test_payroll_library_net_and_ctc_include_pf_and_esi(db, make_tenant):
     assert float(row["Net Salary"]) == 28200.0
     assert float(row["Monthly CTC"]) == 31800.0               # + employer PF 1,800
     assert float(row["Yearly CTC"]) == 381600.0
+
+
+def test_material_reports_follow_order_receipt_and_use(db, make_tenant):
+    comp, p = _setup(db, make_tenant)
+    day = datetime.datetime(2026, 9, 2, tzinfo=datetime.timezone.utc)
+    po = models.PurchaseOrder(id=uuid.uuid4(), company_id=comp.id, project_id=p.id,
+                              po_number=f"PO-{uuid.uuid4().hex[:6]}", po_date=day, status="approved")
+    db.add(po)
+    db.flush()
+    item = models.PurchaseOrderItem(id=uuid.uuid4(), po_id=po.id, material_name="Cement OPC 53",
+                                    quantity=500, unit="bag", rate=400, tax_pct=28)
+    db.add(item)
+    grn = models.GoodsReceiptNote(id=uuid.uuid4(), company_id=comp.id, project_id=p.id, po_id=po.id,
+                                  grn_number=f"GRN-{uuid.uuid4().hex[:6]}", received_date=day)
+    db.add(grn)
+    db.flush()
+    db.add(models.GRNItem(id=uuid.uuid4(), grn_id=grn.id, po_item_id=item.id, received_qty=300))
+    db.add(models.MaterialTransaction(id=uuid.uuid4(), project_id=p.id, material_name="Cement OPC 53",
+                                      qty=300, type="received", unit="bag"))
+    db.add(models.MaterialTransaction(id=uuid.uuid4(), project_id=p.id, material_name="Cement OPC 53",
+                                      qty=120, type="used", unit="bag"))
+    task = db.query(models.Task).filter(models.Task.project_id == p.id).first()
+    db.add(models.DailyProgressReport(id=uuid.uuid4(), project_id=p.id, task_id=task.id, reported_by="SE",
+                                      dpr_date=day, executed_qty=10,
+                                      materials_consumed=[{"material_name": "Cement OPC 53", "quantity": 45, "unit": "bag"}]))
+    db.commit()
+
+    qty = _REPORT_HANDLERS["budget-vs-actual-material-qty"](db, comp.id, p.id)[0]
+    assert (float(qty["Ordered Qty"]), float(qty["Received Qty"]), float(qty["Still to Receive"])) == (500.0, 300.0, 200.0)
+    assert (float(qty["Used Qty"]), float(qty["In Stock"])) == (120.0, 180.0)
+
+    val = _REPORT_HANDLERS["budget-vs-actual-material-cost"](db, comp.id, p.id)[0]
+    assert float(val["Avg Order Rate (INR)"]) == 400.0
+    assert float(val["Used Value (INR)"]) == 48000.0
+    assert float(val["Stock Value (INR)"]) == 72000.0
+
+    tm = _REPORT_HANDLERS["task-material"](db, comp.id, p.id)[0]
+    assert tm["Task Name"] == "Slab L5"
+    assert float(tm["Qty Used"]) == 45.0
+    assert float(tm["Cost (INR)"]) == 18000.0           # 45 bags x Rs 400, not Rs 100
+
+    mb = _REPORT_HANDLERS["subcon-measurement-book"](db, comp.id, p.id)[0]
+    assert float(mb["Order Qty"]) == 100.0
+    assert float(mb["Done Qty"]) == 40.0                 # task 40% done, not the full order
+    assert float(mb["Remaining Qty"]) == 60.0

@@ -106,19 +106,13 @@ const REPORT_METADATA: Record<string, ReportMeta> = {
     title: "Task Material Report",
     hasDownload: false,
     filters: [{ label: "Project Name", type: "select", options: ["All"] }, { label: "Material Name", type: "select", options: ["All"] }, { label: "Main Task Name", type: "select", options: ["All"] }, { label: "Group Task Name", type: "select", options: ["All"] }, { label: "Task Name", type: "select", options: ["All"] }, { label: "Used Date", type: "date" }],
-    columns: ['Project Name', 'Material Name', 'Main Task Name', 'Group Task Name', 'Avg Unit Rate', 'Avg Cost (INR)']
+    columns: ['Project Name', 'Main Task Name', 'Group Task Name', 'Task Name', 'Material Name', 'Unit', 'Qty Used', 'Avg Order Rate (INR)', 'Cost (INR)']
   },
   "todo-report": {
     title: "To Do Report",
     hasDownload: false,
     filters: [{ label: "Project Name", type: "select", options: ["All"] }, { label: "Activity Name", type: "select", options: ["All"] }, { label: "Assigned To", type: "select", options: ["All"] }, { label: "Due Date", type: "date" }, { label: "Status", type: "select", options: ["All"] }, { label: "Related Task", type: "select", options: ["All"] }, { label: "Creator Name", type: "select", options: ["All"] }],
     columns: ['Activity Name', 'Project Name', 'Status', 'Creation Date', 'Due Date', 'Last Updated Date', 'Assigned To', 'Type', 'Related Task', 'Creator Name', 'Closed Date']
-  },
-  "task-resource-budget-vs-actual": {
-    title: "Task Resource Budget Vs Actual Report",
-    hasDownload: false,
-    filters: [{ label: "Project Name", type: "select", options: ["All"] }, { label: "Main Task Name", type: "select", options: ["All"] }, { label: "Group Task Name", type: "select", options: ["All"] }, { label: "Resource Name", type: "select", options: ["All"] }, { label: "Resource Type", type: "select", options: ["All"] }],
-    columns: ['Project Name', 'Main Task Name', 'Group Task Name', 'Task Name', 'Task Unit', 'Task Qty', 'Task Progress Qty', 'Resource Name', 'Resource Type', 'Budgeted Rate', 'Avg Unit Cost', 'Unit', 'Qty per Unit', 'Budgeted Qty', 'Pro Rata Budgeted Qty', 'Actual Used Qty', 'Budgeted Amount', 'Pro Rata Budgeted Amount', 'Actual Amount', 'Exceeded Qty', 'Exceeded Amount']
   },
   "site-inspection": {
     title: "Site Inspection Report",
@@ -324,12 +318,6 @@ const REPORT_METADATA: Record<string, ReportMeta> = {
     filters: [{ label: "Equipment Name", type: "select", options: ["All"] }, { label: "Vehicle No.", type: "select", options: ["All"] }, { label: "Txn Date", type: "date" }, { label: "Project Name", type: "select", options: ["All"] }, { label: "Party Name", type: "select", options: ["All"] }],
     columns: ['Equipment Name', 'Vehicle No.', 'Total Running Cost (INR)', 'Fuel Expenses (INR)', 'Maintenance Cost (INR)']
   },
-  "equipment-trip": {
-    title: "Equipment Trip Report",
-    hasDownload: false,
-    filters: [{ label: "Vehicle No.", type: "select", options: ["All"] }, { label: "Project Name", type: "select", options: ["All"] }, { label: "Date", type: "date" }],
-    columns: ['Trip Name', 'Trip Distance', 'Trip Count', 'Load Per Trip', 'Load Unit', 'Total Load', 'Total Distance', 'Created Date']
-  },
   "gstr1-sales": {
     title: "Sales (GSTR-1)",
     hasDownload: true,
@@ -364,13 +352,13 @@ const REPORT_METADATA: Record<string, ReportMeta> = {
     title: "Subcon Workorder Summary Report",
     hasDownload: false,
     filters: [{ label: "Project Name", type: "select", options: ["All"] }, { label: "Subcontractor Name", type: "select", options: ["All"] }],
-    columns: ['Project Name', 'Workorder Name', 'Workorder Date', 'Workorder No.', 'Subcontractor Name', 'Estimated Amount', '% Order Complete', 'Work Done Amount', 'Billed Amount', 'Pending Billed', 'Creator Name', 'Created Date']
+    columns: ['Project Name', 'Workorder No.', 'Subcontractor', 'Order Amount', '% Work Done', 'Work Done Amount', 'Billed Amount', 'Done but Not Billed', 'Left to Bill on Order', 'Workorder Date']
   },
   "subcon-measurement-book": {
-    title: "Subcon Measurement Book",
+    title: "Subcon Measurement Book Report",
     hasDownload: false,
     filters: [{ label: "Progress Date", type: "date"  }, { label: "Project Name", type: "select", options: ["All"] }, { label: "Subcontractor Name", type: "select", options: ["All"] }, { label: "Workorder Name", type: "select", options: ["All"] }],
-    columns: ['Project Name', 'Workorder No.', 'Group', 'Section', 'Item Name', 'Progress Date', 'Unit', 'Estimated Quantity', 'Opening Quantity', 'Number', 'Length', 'Width', 'Height', 'Progress Quantity', 'Closing Quantity', 'Progress Notes']
+    columns: ['Project Name', 'Workorder No.', 'Subcontractor', 'Section', 'Item Name', 'Unit', 'Order Qty', 'Rate', '% Done', 'Done Qty', 'Remaining Qty']
   },
   "subcon-deduction-retention": {
     title: "Subcon Deduction / Retention Report",
@@ -486,23 +474,17 @@ const REPORT_METADATA: Record<string, ReportMeta> = {
     filters: [{ label: "Project Name", type: "select", options: ["All"] }, { label: "Workorder Name", type: "select", options: ["All"] }, { label: "Workorder No.", type: "select", options: ["All"] }, { label: "Client Name", type: "select", options: ["All"] }, { label: "Progress Date", type: "date" }],
     columns: ['Project Name', 'Section', 'Item Name', 'Task Name', 'Progress Date', 'Unit', 'Estimated Quantity', 'Opening Quantity', 'Progress Quantity', 'Closing Quantity', 'Progress Notes']
   },
-  "boq-bom": {
-    title: "BOQ BOM Report",
-    hasDownload: false,
-    filters: [{ label: "Project Name", type: "select", options: ["All"] }, { label: "BOQ Name", type: "select", options: ["All"] }, { label: "Material Name", type: "select", options: ["All"] }],
-    columns: ['Project Name', 'BOQ Name', 'Item Name', 'Material Name', 'Unit', 'Unit Price', 'Quantity', 'Total Cost Price', 'Creation Date']
-  },
   "budget-vs-actual-material-cost": {
-    title: "Budget vs Actual (Material Cost)",
+    title: "Material Ordered, Received and Used (Value)",
     hasDownload: false,
     filters: [{ label: "Project", type: "select", options: ["All"] }, { label: "Material", type: "select", options: ["All"] }],
-    columns: ['Project', 'Material', 'Unit', 'Budget Cost (INR)', 'Actual Cost (INR)', 'Difference (INR)']
+    columns: ['Project', 'Material', 'Unit', 'Avg Order Rate (INR)', 'Ordered Value (INR)', 'Received Value (INR)', 'Used Value (INR)', 'Stock Value (INR)']
   },
   "budget-vs-actual-material-qty": {
-    title: "Budget vs Actual (Material Qty)",
+    title: "Material Ordered, Received and Used (Qty)",
     hasDownload: false,
     filters: [{ label: "Project", type: "select", options: ["All"] }, { label: "Material", type: "select", options: ["All"] }],
-    columns: ['Project', 'Material', 'Unit', 'Budget Qty', 'Actual Qty', 'Difference Qty']
+    columns: ['Project', 'Material', 'Unit', 'Ordered Qty', 'Received Qty', 'Still to Receive', 'Used Qty', 'In Stock']
   },
   "budget-vs-actual-cost-code": {
     title: "Budget vs Actual (Cost Code)",

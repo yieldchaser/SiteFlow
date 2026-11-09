@@ -18,12 +18,11 @@ from app.routers.reports import _REPORT_HANDLERS
 
 # Exact metadata columns matching frontend REPORT_METADATA for all 16 unproven reports
 EXPECTED_COLUMNS = {
-    "boq-bom": ['Project Name', 'BOQ Name', 'Item Name', 'Material Name', 'Unit', 'Unit Price', 'Quantity', 'Total Cost Price', 'Creation Date'],
     "boq-item": ['Project Name', 'BOQ Name', 'Client Name', 'BOQ Date', 'Section', 'Item Name', 'Unit', 'Quantity', '% Done', 'Done Quantity', 'Unit Rate', 'Amount w/o Tax', 'GST %', 'Total Amount', 'Cost Code'],
     "boq-measurement-book": ['Project Name', 'Section', 'Item Name', 'Task Name', 'Progress Date', 'Unit', 'Estimated Quantity', 'Opening Quantity', 'Progress Quantity', 'Closing Quantity', 'Progress Notes'],
     "budget-vs-actual-cost-code": ['Cost Code', 'Budget Amount (INR)', 'Actual Amount (INR)', 'Difference (INR)', 'Status'],
-    "budget-vs-actual-material-cost": ['Project', 'Material', 'Unit', 'Budget Cost (INR)', 'Actual Cost (INR)', 'Difference (INR)'],
-    "budget-vs-actual-material-qty": ['Project', 'Material', 'Unit', 'Budget Qty', 'Actual Qty', 'Difference Qty'],
+    "budget-vs-actual-material-cost": ['Project', 'Material', 'Unit', 'Avg Order Rate (INR)', 'Ordered Value (INR)', 'Received Value (INR)', 'Used Value (INR)', 'Stock Value (INR)'],
+    "budget-vs-actual-material-qty": ['Project', 'Material', 'Unit', 'Ordered Qty', 'Received Qty', 'Still to Receive', 'Used Qty', 'In Stock'],
     "cost-code-library": ['Cost Code', 'Sub Cost Code', 'Created Date', 'Description'],
     "item-wise-sales": ['Client Name', 'Invoice Date', 'Item Name', 'Unit', 'Quantity', 'Item Rate', 'Tax %', 'Total Amount', 'Invoice Created'],
     "material-received-without-po": ['Project Name', 'Party Name', 'Created By', 'Receiving Date', 'Unit', 'Quantity'],

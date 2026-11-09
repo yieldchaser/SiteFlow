@@ -33,7 +33,6 @@ const IMPLEMENTED_REPORT_SLUGS = new Set([
   "asset-status",
   "attendance-salary",
   "bank-statement",
-  "boq-bom",
   "boq-item",
   "boq-measurement-book",
   "boq-workorder-summary",
@@ -53,7 +52,6 @@ const IMPLEMENTED_REPORT_SLUGS = new Set([
   "dpr",
   "equipment-expense-summary",
   "equipment-library",
-  "equipment-trip",
   "equipment-usage-detail",
   "fuel-efficiency",
   "gstr1-sales",
@@ -102,7 +100,6 @@ const IMPLEMENTED_REPORT_SLUGS = new Set([
   "task-material",
   "task-measurement-book",
   "task-report",
-  "task-resource-budget-vs-actual",
   "task-revenue-expense",
   "todo-report",
   "unbilled-item",
@@ -216,7 +213,6 @@ export default function ReportsDashboard() {
         { name: "Task Measurement Book", hasView: true, hasDownload: false, viewSlug: "task-measurement-book" },
         { name: "Task Material Report", hasView: true, hasDownload: false, viewSlug: "task-material" },
         { name: "To Do Report", hasView: true, hasDownload: false, viewSlug: "todo-report" },
-        { name: "Task Resource Budget Vs Actual Report", hasView: true, hasDownload: false, viewSlug: "task-resource-budget-vs-actual" },
         { name: "Site Inspection Report", hasView: true, hasDownload: false, viewSlug: "site-inspection" },
         { name: "Task Revenue & Expense Report", hasView: true, hasDownload: false, viewSlug: "task-revenue-expense" },
         { name: "Task BOQ Billed & Unbilled Qty Report", hasView: true, hasDownload: false, viewSlug: "task-boq-billed-unbilled" },
@@ -279,7 +275,6 @@ export default function ReportsDashboard() {
         { name: "Fuel Efficiency Report", hasView: true, hasDownload: false, viewSlug: "fuel-efficiency" },
         { name: "Daily based Equipment Used Report", hasView: true, hasDownload: false, viewSlug: "daily-based-equipment-used" },
         { name: "Equipment Expense Summary", hasView: true, hasDownload: false, viewSlug: "equipment-expense-summary" },
-        { name: "Equipment Trip Report", hasView: true, hasDownload: false, viewSlug: "equipment-trip" }
       ]
     },
     {
@@ -348,9 +343,8 @@ export default function ReportsDashboard() {
       title: "Budget",
       icon: "bar_chart",
       reports: [
-        { name: "BOQ BOM Report", hasView: true, hasDownload: false, viewSlug: "boq-bom" },
-        { name: "Budget vs Actual (Material Cost)", hasView: true, hasDownload: false, viewSlug: "budget-vs-actual-material-cost" },
-        { name: "Budget vs Actual (Material Qty)", hasView: true, hasDownload: false, viewSlug: "budget-vs-actual-material-qty" },
+        { name: "Material Ordered, Received and Used (Value)", hasView: true, hasDownload: false, viewSlug: "budget-vs-actual-material-cost" },
+        { name: "Material Ordered, Received and Used (Qty)", hasView: true, hasDownload: false, viewSlug: "budget-vs-actual-material-qty" },
         { name: "Budget vs Actual (Cost Code)", hasView: true, hasDownload: false, viewSlug: "budget-vs-actual-cost-code" }
       ]
     },
