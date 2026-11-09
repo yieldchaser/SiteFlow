@@ -2708,7 +2708,9 @@ def _rep_daily_based_equipment_used(db: Session, cid: uuid.UUID, pid: Optional[u
             fq = db.query(FuelLog).filter(FuelLog.equipment_id == dep.equipment_id, FuelLog.project_id == dep.project_id)
             if dep.start_date:
                 start = dep.start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-                end = (dep.end_date or dep.start_date).replace(hour=23, minute=59, second=59, microsecond=999999)
+                # A machine still on site (no end date) is counted up to today,
+                # not just its first day.
+                end = (dep.end_date or datetime.now(timezone.utc)).replace(hour=23, minute=59, second=59, microsecond=999999)
                 fq = fq.filter(FuelLog.logged_date >= start, FuelLog.logged_date <= end)
             fuel_liters = sum(float(f.liters or 0) for f in fq.all())
             hours = float(dep.hours_used or 0)
@@ -3039,8 +3041,15 @@ def _rep_warehouse_stock_movement(db: Session, cid: uuid.UUID, pid: Optional[uui
             q = q.filter(MaterialTransaction.project_id == pid)
         rates = _order_rates(db, proj_ids, pid)
         balance: dict = {}
+        txns = q.order_by(MaterialTransaction.created_at.asc()).all()
+        # Usage entries from daily reports often carry no unit; take it from
+        # another entry for the same material.
+        units: dict = {}
+        for mt in txns:
+            if mt.unit:
+                units.setdefault((mt.project_id, (mt.material_name or "").strip().lower()), mt.unit)
         rows = []
-        for mt in q.order_by(MaterialTransaction.created_at.asc()).all():
+        for mt in txns:
             key = (mt.project_id, (mt.material_name or "").strip().lower())
             delta = _stock_delta(mt)
             opening = balance.get(key, 0.0)
@@ -3055,7 +3064,7 @@ def _rep_warehouse_stock_movement(db: Session, cid: uuid.UUID, pid: Optional[uui
                 "Transaction Date": _clean(mt.created_at),
                 "Transaction Type": _STOCK_TYPE_LABELS.get((mt.type or "").lower(), (mt.type or "").title()),
                 "Direction": "In" if delta >= 0 else "Out",
-                "Unit": mt.unit or "",
+                "Unit": mt.unit or (units[key] if key in units else ""),
                 "Opening Qty": _clean(round(opening, 3)),
                 "Stock Movement": _clean(round(abs(delta), 3)),
                 "Closing Qty": _clean(round(closing, 3)),

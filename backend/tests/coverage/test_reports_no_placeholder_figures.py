@@ -266,3 +266,19 @@ def test_warehouse_reports_value_stock_at_order_rate(db, make_tenant):
     tx = _REPORT_HANDLERS["warehouse-transaction"](db, comp.id, p.id)
     used = next(r for r in tx if r["Transaction Type"] == "Used")
     assert float(used["Value"]) == 30000.0                   # 20 x 1,500
+
+
+def test_equipment_still_on_site_counts_fuel_to_date(db, make_tenant):
+    comp, p = _setup(db, make_tenant)
+    eq = models.Equipment(id=uuid.uuid4(), company_id=comp.id, name="DG Set", code="DG-01",
+                          category="Power", ownership_type="owned", status="active")
+    db.add(eq)
+    db.flush()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    db.add(models.EquipmentDeployment(id=uuid.uuid4(), equipment_id=eq.id, project_id=p.id,
+                                      start_date=now - datetime.timedelta(days=10), end_date=None))
+    db.add(models.FuelLog(id=uuid.uuid4(), equipment_id=eq.id, project_id=p.id,
+                          logged_date=now - datetime.timedelta(days=3), liters=60, cost_per_liter=90, total_cost=5400))
+    db.commit()
+    row = _REPORT_HANDLERS["daily-based-equipment-used"](db, comp.id, p.id)[0]
+    assert float(row["Fuel Added (Litres)"]) == 60.0
