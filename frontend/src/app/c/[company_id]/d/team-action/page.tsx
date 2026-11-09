@@ -3,7 +3,7 @@ import { readErrorDetail, detailToMessage} from "@/lib/api";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { getApi, authHeaders, formatDate, todayLocalISO } from "@/lib/siteflow";
+import { getApi, authHeaders, formatDate, formatLabel, todayLocalISO } from "@/lib/siteflow";
 import Icon from "@/components/marketing/Icon";
 import SegmentedTabs from "@/components/ui/Tabs";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -14,6 +14,7 @@ import FieldHint from "@/components/ui/FieldHint";
 // R2-755: shared CSV guard. Quote-doubling protects the delimiter, not the
 // formula — a leading = + - @ executes when the export opens in Excel/Sheets.
 import { downloadCsv } from "@/lib/csv";
+import { printableReportHtml, openPrintWindow } from "@/lib/print-table";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -512,6 +513,24 @@ export default function TeamSchedulePage() {
     downloadCsv("team-schedule.csv", header, rows);
   };
 
+  // A clean A4 schedule, not a print of the dashboard around it.
+  const exportPdf = () => {
+    const header = ["#", "Task", "Project", "Assignee", "Start", "End", "Status", "Progress %"];
+    const rows = filteredTasks.map((t, i) => [
+      String(i + 1),
+      t.name,
+      t.project_name || "",
+      t.assigned_to_name || "Unassigned",
+      fmtDate(new Date(t.start_date)),
+      fmtDate(new Date(t.end_date)),
+      formatLabel(t.status),
+      Math.round(Number(t.progress) || 0),
+    ]);
+    if (!openPrintWindow(printableReportHtml("Team Schedule", header, rows, true))) {
+      alert("The browser blocked the print window. Allow popups for this site and try again.");
+    }
+  };
+
   const exportMSP = () => {
     const tasksXml = filteredTasks
       .map((t, i) => {
@@ -770,7 +789,7 @@ ${tasksXml}
               {exportOpen && (
                 <div className="absolute right-0 mt-1 w-44 bg-card border border-border-custom rounded-md shadow-lg z-20 overflow-hidden">
                   {[
-                    { label: "Export to PDF", fn: () => window.print() },
+                    { label: "Export to PDF", fn: exportPdf },
                     { label: "Export to Excel", fn: exportExcel },
                     { label: "Export to MSP", fn: exportMSP },
                   ].map((o) => (
