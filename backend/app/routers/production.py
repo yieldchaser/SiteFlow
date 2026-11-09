@@ -367,26 +367,34 @@ def create_batch(payload: BatchCreate, db: Session = Depends(get_db), current_us
     planned_material_qty = 0.0
     actual_material_qty = 0.0
 
+    target_output = float(recipe.target_output_qty) or 1.0
+    wastage_factor = 1.0 + float(recipe.wastage_pct or 0) / 100.0
     for recipe_material in recipe_materials:
         override = override_map.pop(recipe_material.material_name, None)
-        
+        per_unit = float(recipe_material.planned_qty) / target_output
+
+        # The recipe is written for its target output (say 8 bags of cement
+        # per 1 cum). A batch plans for its own size: a 5 cum batch plans
+        # 40 bags, plus the recipe's wastage allowance. The plan used to stay
+        # at the recipe's 8 bags whatever the batch size, so a 5 cum pour
+        # using 41 bags showed 33 bags over plan.
+        planned_qty = per_unit * planned_output_qty * wastage_factor
         if override and override.actual_qty is not None:
             actual_qty = override.actual_qty
         else:
-            # Recipe qty is the dry-material amount; scale planned material qty to
-            # the actual batch output (no wet->dry 1.54 factor needed here).
-            actual_qty = (float(recipe_material.planned_qty) / float(recipe.target_output_qty)) * actual_output_qty * (1.0 + float(recipe.wastage_pct) / 100.0)
+            # No measured figure: the recipe amount for what was produced.
+            actual_qty = per_unit * actual_output_qty * wastage_factor
         unit = override.unit if override else recipe_material.unit
-        variance_qty = actual_qty - float(recipe_material.planned_qty)
+        variance_qty = actual_qty - planned_qty
 
-        planned_material_qty += float(recipe_material.planned_qty)
+        planned_material_qty += planned_qty
         actual_material_qty += actual_qty
 
         db.add(
             ProductionBatchMaterial(
                 batch_id=batch.id,
                 material_name=recipe_material.material_name,
-                planned_qty=recipe_material.planned_qty,
+                planned_qty=planned_qty,
                 actual_qty=actual_qty,
                 unit=unit,
                 variance_qty=variance_qty,

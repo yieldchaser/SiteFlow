@@ -306,10 +306,21 @@ export default function ProductionPage() {
     }
   };
 
+  // Material variance as a percentage: each material against its own plan,
+  // then averaged. Adding bags of cement to cubic metres of sand gave totals
+  // like "152.24" that meant nothing.
+  const pctOf = (mats: { planned_qty: number; actual_qty: number }[]) => {
+    const lines = mats.filter((m) => Number(m.planned_qty) > 0);
+    if (lines.length === 0) return null;
+    return (lines.reduce((s, m) => s + (Number(m.actual_qty) - Number(m.planned_qty)) / Number(m.planned_qty), 0) / lines.length) * 100;
+  };
+  const batchPct = (batch: Batch) => pctOf(batch.materials || []);
+
   const totals = useMemo(() => {
+    const allLines = (data?.batches || []).flatMap((b) => b.materials || []);
     return {
       outputProgress: data && data.planned_output_qty > 0 ? ((data.actual_output_qty / data.planned_output_qty) * 100) : 0,
-      materialVariancePct: data && data.planned_material_qty > 0 ? (data.material_variance_qty / data.planned_material_qty) * 100 : 0,
+      materialVariancePct: pctOf(allLines) ?? 0,
       lowStockCount: data?.inventory_alerts.filter((item) => item.needs_reorder).length ?? 0,
     };
   }, [data]);
@@ -373,9 +384,9 @@ export default function ProductionPage() {
             />
             <MetricCard
               label="Material Variance"
-              value={loading ? "…" : formatQty(data?.material_variance_qty ?? 0)}
+              value={loading ? "…" : `${totals.materialVariancePct > 0 ? "+" : ""}${formatQty(totals.materialVariancePct, 1)}%`}
               accent={totals.materialVariancePct > 0 ? "text-warning" : "text-primary"}
-              note="Actual consumption minus planned consumption"
+              note="Material used against plan, averaged over every material"
             />
             <MetricCard
               label="Low Stock Alerts"
@@ -453,8 +464,8 @@ export default function ProductionPage() {
                         </div>
                         <div className="rounded-md bg-elevated p-2">
                           <div className="text-muted">Var.</div>
-                          <div className={`mt-1 font-bold ${batch.consumption_variance_qty >= 0 ? "text-warning" : "text-primary"}`}>
-                            {formatQty(batch.consumption_variance_qty)}
+                          <div className={`mt-1 font-bold ${(batchPct(batch) ?? 0) > 0 ? "text-warning" : "text-primary"}`}>
+                            {batchPct(batch) === null ? "—" : `${(batchPct(batch) ?? 0) > 0 ? "+" : ""}${formatQty(batchPct(batch) ?? 0, 1)}%`}
                           </div>
                         </div>
                       </div>
@@ -567,8 +578,8 @@ export default function ProductionPage() {
                         </td>
                         <td className="px-4 py-3 text-muted">{formatQty(batch.planned_output_qty)}</td>
                         <td className="px-4 py-3 text-success">{formatQty(batch.actual_output_qty)}</td>
-                        <td className={`px-4 py-3 font-semibold ${batch.consumption_variance_qty >= 0 ? "text-warning" : "text-primary"}`}>
-                          {formatQty(batch.consumption_variance_qty)}
+                        <td className={`px-4 py-3 font-semibold ${(batchPct(batch) ?? 0) > 0 ? "text-warning" : "text-primary"}`}>
+                          {batchPct(batch) === null ? "—" : `${(batchPct(batch) ?? 0) > 0 ? "+" : ""}${formatQty(batchPct(batch) ?? 0, 1)}%`}
                         </td>
                         <td className="px-4 py-3 text-muted">{batch.materials.length}</td>
                       </tr>
