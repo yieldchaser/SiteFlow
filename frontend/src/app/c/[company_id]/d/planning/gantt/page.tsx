@@ -454,7 +454,7 @@ export default function GanttSchedulerPage() {
           duration_days: duration,
           start_date: startDate,
           priority: priority,
-          status: "pending"
+          status: "not_started"
         }),
       });
 
@@ -708,7 +708,10 @@ export default function GanttSchedulerPage() {
                   payment: "border-primary/30 bg-primary/5",
                   critical: "border-danger/20 bg-danger/5",
                 };
-                const statusCls = m.status === "achieved" ? "bg-success/10 border-success/20 text-success" : m.status === "delayed" ? "bg-danger/10 border-danger/20 text-danger" : "bg-elevated/30 border-border-custom/20 text-muted";
+                // Delayed is not something to pick: a milestone past its date
+                // and not achieved is shown as delayed.
+                const shownStatus = m.status !== "achieved" && toLocalISODate(m.milestone_date) < todayLocalISO() ? "delayed" : m.status;
+                const statusCls = shownStatus === "achieved" ? "bg-success/10 border-success/20 text-success" : shownStatus === "delayed" ? "bg-danger/10 border-danger/20 text-danger" : "bg-elevated/30 border-border-custom/20 text-muted";
                 const icon: Record<Milestone["type"], IconName> = { start: "rocket", handover: "flag_checkered", inspection: "search", payment: "money_bag", critical: "warning" };
                 return (
                   <div key={m.id} className={`flex items-start gap-4 p-4 rounded-md border ${colors[m.type]}`}>
@@ -719,7 +722,7 @@ export default function GanttSchedulerPage() {
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="font-bold text-foreground text-xs">{m.name}</span>
-                        <span className={`text-[8px] px-1.5 py-0.5 rounded border font-bold ${statusCls}`}>{m.status.toUpperCase()}</span>
+                        <span className={`text-[8px] px-1.5 py-0.5 rounded border font-bold ${statusCls}`}>{shownStatus.toUpperCase()}</span>
                       </div>
                       <p className="text-[11px] text-muted">{m.description}</p>
                     </div>
@@ -795,9 +798,8 @@ export default function GanttSchedulerPage() {
                       onChange={(e) => setMsStatus(e.target.value as Milestone["status"])}
                       className="w-full bg-elevated border border-border-custom rounded-lg p-2 text-foreground"
                     >
-                      <option value="pending">Pending</option>
+                      <option value="upcoming">Upcoming</option>
                       <option value="achieved">Achieved</option>
-                      <option value="delayed">Delayed</option>
                     </select>
                   </div>
                   <div className="col-span-2 space-y-1">
@@ -871,7 +873,6 @@ export default function GanttSchedulerPage() {
                           >
                             <option value="upcoming">Upcoming</option>
                             <option value="achieved">Achieved</option>
-                            <option value="delayed">Delayed</option>
                           </select>
                         </div>
                       </div>

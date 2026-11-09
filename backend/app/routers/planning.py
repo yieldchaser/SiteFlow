@@ -13,7 +13,7 @@ from app.workflow_controls import (
     enforce_entry_editing_window,
     enforce_progress_over_estimate,
 )
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, field_validator, Field, model_validator
 from app.office_projects import is_office_project
 
 router = APIRouter(
@@ -54,6 +54,22 @@ class TaskTreeNode(TaskResponse):
 
 TaskTreeNode.model_rebuild()
 
+# A task is not started, in progress or completed. The planning screen saved
+# new tasks as "pending" and progress updates set "ongoing", so a daily report
+# never moved such a task on and reports did not count it as active.
+TASK_STATUSES = ("not_started", "in_progress", "completed")
+_TASK_STATUS_ALIASES = {"pending": "not_started", "ongoing": "in_progress", "": "not_started"}
+
+
+def _clean_task_status(v):
+    if v is None:
+        return v
+    v = _TASK_STATUS_ALIASES.get(str(v).strip().lower(), str(v).strip().lower())
+    if v not in TASK_STATUSES:
+        raise ValueError("Status must be not started, in progress or completed")
+    return v
+
+
 class TaskCreateRequest(BaseModel):
     project_id: UUID
     parent_id: Optional[UUID] = None
@@ -66,6 +82,11 @@ class TaskCreateRequest(BaseModel):
     boq_item_id: Optional[UUID] = None
     progress: float = Field(0.0, ge=0, le=100)
 
+    @field_validator("status")
+    @classmethod
+    def _status_ok(cls, v):
+        return _clean_task_status(v)
+
 class TaskUpdateRequest(BaseModel):
     name: Optional[str] = None
     duration_days: Optional[int] = Field(None, ge=0)
@@ -74,6 +95,11 @@ class TaskUpdateRequest(BaseModel):
     priority: Optional[str] = None
     assigned_to: Optional[UUID] = None
     progress: Optional[float] = Field(None, ge=0, le=100)
+
+    @field_validator("status")
+    @classmethod
+    def _status_ok(cls, v):
+        return _clean_task_status(v)
 
 class PredecessorCreateRequest(BaseModel):
     predecessor_id: UUID
@@ -612,7 +638,7 @@ def update_task(task_id: UUID, request: TaskUpdateRequest, db: Session = Depends
             elif request.progress >= 100:
                 task.status = "completed"
             else:
-                task.status = "ongoing"
+                task.status = "in_progress"
     elif request.status is not None:
         if request.status == "completed":
             task.progress = 100.0
@@ -895,7 +921,7 @@ def create_task_comment(task_id: UUID, payload: CommentCreate, db: Session = Dep
     # denominator, so progress is left to the explicit PATCH path.
     if payload.progress_qty_added is not None and payload.progress_qty_added > 0:
         if task.status == "not_started":
-            task.status = "ongoing"
+            task.status = "in_progress"
             db.add(task)
         planned_qty = None
         if task.boq_item_id:
