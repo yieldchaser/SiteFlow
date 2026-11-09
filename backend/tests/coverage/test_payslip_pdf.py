@@ -61,6 +61,7 @@ def test_payslip_pdf_is_one_employee_on_letterhead(client, db, make_tenant, auth
     ):
         assert expected in body, expected
     assert b"001234567890" not in body  # full account number never printed
+    assert b"(ESI)" not in body  # not covered by ESI, so no ESI row
 
 
 def test_payslip_pdf_refuses_another_company(client, db, make_tenant, auth_headers):

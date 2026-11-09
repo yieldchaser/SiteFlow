@@ -1486,7 +1486,10 @@ def get_payslip_pdf(run_id: uuid.UUID, payslip_id: uuid.UUID, db: Session = Depe
     earnings = [("Basic", amt(line.basic)), ("HRA", amt(line.hra)), ("Other Allowances", amt(line.other_allowances))]
     if amt(line.overtime_amount):
         earnings.append(("Overtime", amt(line.overtime_amount)))
-    deductions = [("PF", amt(line.pf_employee)), ("ESI", amt(line.esi_employee))]
+    deductions = [("PF", amt(line.pf_employee))]
+    # ESI only for staff it covers; "ESI 0.00" on everyone else reads as a mistake.
+    if amt(line.esi_employee) or (emp and emp.is_esi_applicable and amt(line.gross_salary) <= 21000):
+        deductions.append(("ESI", amt(line.esi_employee)))
     for label, value in (
         ("Professional Tax", amt(line.professional_tax)),
         ("TDS", amt(line.tds)),
