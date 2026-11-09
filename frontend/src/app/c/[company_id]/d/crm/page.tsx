@@ -1250,7 +1250,7 @@ export default function CRMPage() {
                   <input className={inputCls} value={qForm.subject} onChange={(e) => qSet({ subject: e.target.value })} />
                 </Field>
                 <Field label="QT No">
-                  <input className={inputCls} value={qForm.qt_no} onChange={(e) => qSet({ qt_no: e.target.value })} />
+                  <input className={inputCls} value={qForm.qt_no} onChange={(e) => qSet({ qt_no: e.target.value })} placeholder="Leave blank for the next number" />
                 </Field>
                 <Field label="QT Date">
                   <input type="date" className={inputCls} value={qForm.qt_date} onChange={(e) => qSet({ qt_date: e.target.value })} />

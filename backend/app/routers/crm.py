@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.auth import get_current_user, verify_company_access, get_company_membership, require_permission, verify_project_in_company, assert_cost_codes_known
@@ -238,10 +239,39 @@ class QuotationItemCreateRequest(BaseModel):
     billed_qty: float = Field(0.0, ge=0)
     unbilled_qty: float = Field(0.0, ge=0)
 
+def _next_quotation_no(db: Session, company_id) -> str:
+    """QT-001, QT-002 ... per company, so every quote has a number to quote
+    back to the client and on the invoice it becomes."""
+    count = (
+        db.query(func.count(CRMQuotation.id))
+        .join(CRMLead, CRMLead.id == CRMQuotation.lead_id)
+        .filter(CRMLead.company_id == company_id)
+        .scalar()
+    ) or 0
+    n = int(count) + 1
+    while db.query(CRMQuotation.id).join(CRMLead, CRMLead.id == CRMQuotation.lead_id).filter(
+        CRMLead.company_id == company_id, CRMQuotation.qt_no == f"QT-{n:03d}"
+    ).first():
+        n += 1
+    return f"QT-{n:03d}"
+
+
 class QuotationCreateRequest(BaseModel):
     subject: str
     tax_type: str = "bill_level"  # item_level, bill_level
     gst_pct: float = Field(18.00, ge=0, le=100)
+
+    @field_validator("tax_type", mode="before")
+    @classmethod
+    def _known_tax_type(cls, v):
+        # Any other value used to fall through both tax branches, so the
+        # quote showed 18% and charged nothing. "GST" means tax on the bill.
+        t = str(v or "bill_level").strip().lower().replace("-", "_").replace(" ", "_")
+        if t in ("gst", "bill", "bill_level"):
+            return "bill_level"
+        if t in ("item", "item_level"):
+            return "item_level"
+        raise ValueError("Tax type must be bill_level or item_level")
     cgst_pct: Optional[float] = Field(None, ge=0, le=100)
     sgst_pct: Optional[float] = Field(None, ge=0, le=100)
     # D4 — optional site for POS; when provided, GST head derives from
@@ -714,7 +744,7 @@ def create_quotation(lead_id: uuid.UUID, req: QuotationCreateRequest, db: Sessio
         discount=req.discount,
         additional_charges=req.additional_charges,
         round_off=req.round_off,
-        qt_no=req.qt_no,
+        qt_no=(req.qt_no or "").strip() or _next_quotation_no(db, lead.company_id),
         qt_date=req.qt_date.date() if req.qt_date else None,
         bank_account_id=uuid.UUID(str(req.bank_account_id)) if req.bank_account_id else None,
         total_amount=0.0,
