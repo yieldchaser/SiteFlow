@@ -16,7 +16,7 @@ def test_head_office_left_out_of_site_counts(client, db, make_tenant, auth_heade
     hdr = auth_headers(user, comp)
     db.add_all([
         models.Project(id=uuid.uuid4(), company_id=comp.id, name="JNPT Berth", status="Ongoing"),
-        models.Project(id=uuid.uuid4(), company_id=comp.id, name="Head Office", status="Ongoing"),
+        models.Project(id=uuid.uuid4(), company_id=comp.id, name="Head Office - Navi Mumbai", status="Ongoing"),
         models.Project(id=uuid.uuid4(), company_id=comp.id, name="Mumbai HQ", status="Ongoing",
                        category="Head Office / Office"),
     ])
@@ -32,4 +32,4 @@ def test_head_office_left_out_of_site_counts(client, db, make_tenant, auth_heade
     assert r.status_code == 200, r.text
     rows = r.json() if isinstance(r.json(), list) else r.json().get("projects", r.json().get("items", []))
     office = {p["name"]: p.get("is_office") for p in rows}
-    assert office["Head Office"] is True and office["Mumbai HQ"] is True and office["JNPT Berth"] is False
+    assert office["Head Office - Navi Mumbai"] is True and office["Mumbai HQ"] is True and office["JNPT Berth"] is False
