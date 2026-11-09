@@ -98,7 +98,7 @@ class ReportResponse(BaseModel):
 
 # ─── Endpoints ───────────────────────────────────────────────────────────────
 
-def _render_client_report_pdf(db: Session, report_name: str, summary_markdown: Optional[str], project: Project) -> bytes:
+def _render_client_report_pdf(db: Session, report_name: str, summary_markdown: Optional[str], project: Project, report_date: Optional[datetime] = None) -> bytes:
     # 1. Query Timeline Progress
     project_tasks = db.query(Task).filter(Task.project_id == project.id).all()
     tasks_total = len(project_tasks)
@@ -183,7 +183,22 @@ def _render_client_report_pdf(db: Session, report_name: str, summary_markdown: O
         custom_banner=custom_banner,
         branding=load_branding_assets(db, project.company_id),
         supplier_lines=resolve_supplier_tax_details(db, project.company_id, project),
+        details=[
+            f"Project: {project.name}" + (f" ({project.code})" if getattr(project, "code", None) else ""),
+            *([f"Client: {project.client_name}"] if getattr(project, "client_name", None) else []),
+            # The date the report was made, not the day a lost file is re-drawn.
+            f"Report Date: {_as_ist(report_date).strftime('%d %b %Y')}",
+        ],
     )
+
+
+def _as_ist(when: Optional[datetime] = None) -> datetime:
+    ist = timezone(timedelta(hours=5, minutes=30))
+    if when is None:
+        return datetime.now(ist)
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)  # stored naive UTC
+    return when.astimezone(ist)
 
 
 @router.post("/generate/{project_id}", response_model=ReportResponse, status_code=status.HTTP_201_CREATED)
@@ -277,14 +292,16 @@ def download_report(report_id: uuid.UUID, db: Session = Depends(get_db), current
     # Tenant check: the report's project belongs to a company the caller is a member of.
     get_company_membership(db, current_user, project.company_id)
 
-    pdf_filename = f"{report.id}.pdf"
-    pdf_path = os.path.join(REPORTS_DIR, pdf_filename)
+    # Cached on disk by id; downloaded under a name a person can find later.
+    from app.utils.document_pdf import pdf_filename as _pdf_name
+    pdf_path = os.path.join(REPORTS_DIR, f"{report.id}.pdf")
+    pdf_filename = _pdf_name(project.code or project.name, report.report_name or "Report")
 
     if os.path.exists(pdf_path):
         return FileResponse(pdf_path, media_type="application/pdf", filename=pdf_filename)
 
     # R2-758: Render PDF on demand when container restart/deploy wipes ephemeral disk
-    pdf_bytes = _render_client_report_pdf(db, report.report_name, report.summary_markdown, project)
+    pdf_bytes = _render_client_report_pdf(db, report.report_name, report.summary_markdown, project, report.report_date)
     try:
         os.makedirs(REPORTS_DIR, exist_ok=True)
         with open(pdf_path, "wb") as f:

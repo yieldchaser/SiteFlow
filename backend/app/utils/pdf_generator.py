@@ -246,9 +246,13 @@ def generate_client_report_pdf(
     custom_banner: str = None,
     branding: dict = None,
     supplier_lines=None,
+    details=None,
 ) -> bytes:
     """
     Generates a valid, readable minimal PDF 1.4 byte stream.
+
+    details: optional "Key: Value" lines under the title (project, report
+        date) so the client can tell which site the report is about.
     Requires no external packages (pure standard library).
 
     company_name: printed as a masthead line above the title. Sourced from
@@ -269,100 +273,6 @@ def generate_client_report_pdf(
         top-right, signature and stamp are placed in the footer band. Assets in
         unsupported formats are skipped rather than invented.
     """
-    pdf = bytearray(b"%PDF-1.4\n")
-    objects = []
-    offsets = {}
-
-    def add_object(obj_def: bytes, stream_data: bytes = None) -> int:
-        obj_id = len(objects) + 1
-        obj_header = f"{obj_id} 0 obj\n".encode("ascii")
-        obj_body = obj_def
-        if stream_data is not None:
-            obj_body += f"<< /Length {len(stream_data)} >>\nstream\n".encode("ascii")
-            obj_body += stream_data
-            obj_body += b"\nendstream\n"
-        obj_footer = b"endobj\n"
-        objects.append(obj_header + obj_body + obj_footer)
-        return obj_id
-
-    # Branding assets actually embeddable (undecodable ones are skipped).
-    assets = _collect_branding_assets(branding)
-
-    watermark = _place_asset(assets, "watermark", 495, 700)
-    if watermark:
-        wm_w = watermark[2]
-        wm_h = watermark[3]
-        wm_x = (595 - wm_w) / 2
-        wm_y = (842 - wm_h) / 2 - 10
-    logo = _place_asset(assets, "logo", 180, 60)
-    if logo:
-        logo_x = 595 - 50 - logo[2]
-        logo_y = 800 - logo[3]
-    signature = _place_asset(assets, "signature", 170, 70)
-    stamp = _place_asset(assets, "stamp", 170, 90)
-
-    # Content Stream lines
-    stream_lines = [b"BT"]
-    cursor_placed = False  # True once the first absolute "Td" has been emitted
-
-    # Masthead: company/branch name (Document Company Name Display setting).
-    if company_name:
-        safe_company = company_name.replace('(', '\\(').replace(')', '\\)')
-        stream_lines += [
-            b"/F2 11 Tf",  # Masthead Font (Helvetica-Bold 11pt)
-            b"50 810 Td",  # absolute anchor: top of page
-            f"({safe_company}) Tj".encode("latin1", "replace"),
-            b"0 -18 Td",
-        ]
-        cursor_placed = True
-
-    # R2-607: registered supplier identity lines (legal name / GSTIN / phone /
-    # address, resolved by the caller via resolve_supplier_tax_details) print
-    # under the masthead, same placement rule as the document generator.
-    for line in (supplier_lines or []):
-        safe_line = str(line).replace('(', '\\(').replace(')', '\\)')
-        stream_lines += [b"/F1 9 Tf"]  # Supplier Font (Helvetica 9pt)
-        if not cursor_placed:
-            stream_lines += [b"50 810 Td"]  # absolute anchor: top of page
-            cursor_placed = True
-        stream_lines += [
-            f"({safe_line}) Tj".encode("latin1", "replace"),
-            b"0 -14 Td",
-        ]
-
-    # Custom banner: only present when custom_pdf_template_enabled + a
-    # PdfTemplate is configured for the company, giving the "Custom" layout
-    # a visibly different look from the "Default" one.
-    if custom_banner:
-        # Single-line Tj with no text wrapping: collapse whitespace/newlines
-        # and cap length so a long template `content` value can't overrun the
-        # page margin.
-        flat_banner = " ".join(custom_banner.split())[:180]
-        safe_banner = flat_banner.replace('(', '\\(').replace(')', '\\)')
-        stream_lines += [b"/F1 9 Tf"]  # Banner Font (Helvetica 9pt)
-        if not cursor_placed:
-            stream_lines += [b"50 810 Td"]  # absolute anchor: top of page
-            cursor_placed = True
-        stream_lines += [
-            f"({safe_banner}) Tj".encode("latin1", "replace"),
-            b"0 -18 Td",
-        ]
-
-    # Title (default layout: absolute-anchored at 780; custom/masthead layout:
-    # continues 12pt below whatever the cursor is at after the lines above).
-    stream_lines += [b"/F2 20 Tf"]  # Title Font (Helvetica-Bold 20pt)
-    if not cursor_placed:
-        stream_lines += [b"50 780 Td"]
-    else:
-        stream_lines += [b"0 -12 Td"]
-    stream_lines += [
-        f"({title.replace('(', '\\(').replace(')', '\\)')}) Tj".encode("latin1", "replace"),
-        b"0 -30 Td",
-        b"/F1 10 Tf",      # Regular Font (Helvetica 10pt)
-        f"(Generated on: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}) Tj".encode("latin-1"),
-        b"0 -30 Td"
-    ]
-
     # R2-414: zero assessed lab tests means there IS no rate, so say that
     # instead of printing a "0%" headline that reads as every test failed.
     # 0% remains honest only when tests exist and all of them fail.
@@ -388,7 +298,7 @@ def generate_client_report_pdf(
         ("FINANCIALS & SUBCONTRACTOR BILLING", [
             f"Total Work Orders Issued: {metrics.get('billing_wo_count', 0)}",
             f"Total RA Bills Submitted: {metrics.get('billing_ra_count', 0)}",
-            f"Total Net Certified Amount: {metrics.get('billing_certified_net', '0.00')}"
+            f"Total Net Certified Amount: {_money_text(metrics.get('billing_certified_net', '0.00'))}"
         ]),
         ("MATERIAL PROCUREMENT", [
             f"Material Indents Raised: {metrics.get('procurement_indents', 0)}",
@@ -402,102 +312,20 @@ def generate_client_report_pdf(
         ])
     ]
 
-    # Add summary section if provided
     if summary:
         sections.insert(0, ("EXECUTIVE SUMMARY", [summary]))
 
-    # Render sections to content stream
-    for heading, lines in sections:
-        # Draw heading in bold 12pt
-        stream_lines.append(b"/F2 12 Tf")
-        safe_heading = heading.replace('(', '\\(').replace(')', '\\)')
-        stream_lines.append(f"({safe_heading}) Tj".encode("latin1", "replace"))
-        stream_lines.append(b"0 -18 Td")
-
-        # Draw details in regular 10pt
-        stream_lines.append(b"/F1 10 Tf")
-        for line in lines:
-            safe_line = line.replace('(', '\\(').replace(')', '\\)')
-            stream_lines.append(f"({safe_line}) Tj".encode("latin1", "replace"))
-            stream_lines.append(b"0 -14 Td")
-        stream_lines.append(b"0 -12 Td") # Spacing between sections
-
-    stream_lines.append(b"ET")
-
-    # Branding overlays: watermark behind the text, letterhead/seals on top.
-    if watermark:
-        stream_lines = _image_draw_ops(watermark[0], watermark[1], wm_x, wm_y, wm_w, wm_h, faded=True) + stream_lines
-    for placed in (logo, signature, stamp):
-        if not placed:
-            continue
-        name, spec, w, h = placed
-        x = logo_x if placed is logo else (595 - 50 - w if placed is stamp else 60)
-        y = logo_y if placed is logo else 58
-        stream_lines += _image_draw_ops(name, spec, x, y, w, h)
-
-    stream_data = b"\n".join(stream_lines)
-
-    # Contents, fonts, images: ids are resolved dynamically so adding branding
-    # assets cannot desynchronise the hard-coded references.
-    contents_id = add_object(b"", stream_data)
-    f1 = add_object(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\n")
-    f2 = add_object(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\n")
-
-    image_ids = {}
-    for placed in (watermark, logo, signature, stamp):
-        if not placed:
-            continue
-        name, spec, _w, _h = placed
-        image_ids[name] = _add_image_object(add_object, spec)
-
-    resources = f"     /Font << /F1 {f1} 0 R /F2 {f2} 0 R >>\n".encode("ascii")
-    if image_ids:
-        ext_gstate_id = add_object(b"<< /Type /ExtGState /ca 0.12 /CA 0.12 >>\n")
-        xobj_entries = "".join(f"/{n.upper()} {oid} 0 R " for n, oid in image_ids.items())
-        resources += (
-            b"     /XObject << " + xobj_entries.encode("ascii").strip() + b" >>\n"
-            + f"     /ExtGState << /GS1 {ext_gstate_id} 0 R >>\n".encode("ascii")
-        )
-
-    # The Pages tree is the object right after the page. The trailer must name
-    # the Catalog: it used to name object 1 (the content stream), so viewers
-    # found no document and showed a blank file.
-    page_id = add_object(
-        b"<< /Type /Page\n"
-        + f"   /Parent {len(objects) + 2} 0 R\n".encode("ascii")
-        + b"   /Resources <<\n"
-        + resources
-        + b"   >>\n"
-        + b"   /MediaBox [0 0 595 842]\n"
-        + f"   /Contents {contents_id} 0 R\n".encode("ascii")
-        + b">>\n"
+    # Laid out by the same engine as invoices: measured text, wrapped
+    # summary, IST footer with page numbers, branding in the same places.
+    return generate_document_pdf(
+        title=title,
+        party_lines=list(details or []),
+        sections=[(heading.title().replace("&", "and").replace("Ncrs", "NCRs"), lines) for heading, lines in sections],
+        company_name=company_name,
+        custom_banner=custom_banner,
+        supplier_lines=supplier_lines,
+        branding=branding,
     )
-    pages_tree_id = add_object(f"<< /Type /Pages /Kids [{page_id} 0 R] /Count 1 >>\n".encode("ascii"))
-    catalog_id = add_object(f"<< /Type /Catalog /Pages {pages_tree_id} 0 R >>\n".encode("ascii"))
-
-    # Assemble byteoffsets
-    current_offset = len(pdf)
-    for i, obj in enumerate(objects):
-        obj_id = i + 1
-        offsets[obj_id] = current_offset
-        pdf.extend(obj)
-        current_offset += len(obj)
-
-    xref_start = len(pdf)
-    pdf.extend(b"xref\n")
-    pdf.extend(f"0 {len(objects) + 1}\n".encode("ascii"))
-    pdf.extend(b"0000000000 65535 f \n")
-    for obj_id in range(1, len(objects) + 1):
-        offset = offsets[obj_id]
-        pdf.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
-
-    pdf.extend(b"trailer\n")
-    pdf.extend(f"<< /Size {len(objects) + 1} /Root {catalog_id} 0 R >>\n".encode("ascii"))
-    pdf.extend(b"startxref\n")
-    pdf.extend(f"{xref_start}\n".encode("ascii"))
-    pdf.extend(b"%%EOF\n")
-
-    return bytes(pdf)
 
 
 def _esc(s: str) -> str:
@@ -628,6 +456,13 @@ def _format_cell(cell, kind: str) -> str:
     return shown
 
 
+def _money_text(value) -> str:
+    try:
+        return _indian(float(str(value).replace(",", "")), 2)
+    except (TypeError, ValueError):
+        return str(value)
+
+
 def _ist_now():
     from datetime import timedelta, timezone as _tz
     return datetime.now(_tz(timedelta(hours=5, minutes=30)))
@@ -644,9 +479,13 @@ def generate_document_pdf(
     custom_banner: str = None,
     supplier_lines=None,
     branding: dict = None,
+    sections=None,
 ) -> bytes:
     """
     Pure-Python PDF for a line-item business document (Invoice / PO / BOQ).
+
+    sections: optional [(heading, [lines])] blocks printed after the details,
+        used by the client progress report.
 
     Reuses the same content-stream construction style as
     `generate_client_report_pdf` (manual object assembly, no external libs)
@@ -761,7 +600,7 @@ def generate_document_pdf(
     y -= 22
 
     # ── Party and document details, in two columns ──
-    LEFT_KEYS = ("party", "recipient", "place of supply", "vendor", "client", "supplier", "bill to", "ship to")
+    LEFT_KEYS = ("party", "project", "recipient", "place of supply", "vendor", "client", "supplier", "bill to", "ship to")
     left_lines = [ln for ln in party_lines if ln.split(":")[0].strip().lower().startswith(LEFT_KEYS)]
     right_lines = [ln for ln in party_lines if ln not in left_lines]
     if not left_lines:
@@ -778,6 +617,21 @@ def generate_document_pdf(
             ry -= 13
     y = min(ly, ry) - 8
     state["y"] = y
+
+    # ── Headed sections (client progress report) ──
+    for heading, lines in (sections or []):
+        need(40)
+        state["y"] -= 6
+        text(LEFT, state["y"], heading, "F2", 11)
+        state["y"] -= 5
+        hline(state["y"], gray=0.8, width=0.5)
+        state["y"] -= 14
+        for ln in lines:
+            for i, part in enumerate(_wrap_width(ln, "F1", 9.5, WIDTH)):
+                need(13)
+                text(LEFT + (10 if i else 0), state["y"], part, "F1", 9.5)
+                state["y"] -= 13
+        state["y"] -= 6
 
     # ── Line items ──
     if table_headers and col_widths:
