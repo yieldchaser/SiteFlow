@@ -165,49 +165,35 @@ def delete_tower(tower_id: UUID, db: Session = Depends(get_db), current_user: Us
 
 @router.get("/{project_id}/consolidated-pnl", response_model=List[ConsolidatedPNLItem])
 def consolidated_pnl(project_id: UUID, tower_id: Optional[UUID] = Query(None), db: Session = Depends(get_db), _: None = Depends(verify_project_access)):
-    towers = db.query(ProjectTower).filter(ProjectTower.project_id == project_id).all()
-
-    if not towers:
-        budget = db.query(ProjectBudget).filter(ProjectBudget.project_id == project_id).first()
-        if budget:
-            total_budget = float(budget.subcon_budget) + float(budget.material_budget) + float(budget.labour_budget) + float(budget.equipment_budget)
-            pos_value = db.query(PurchaseOrder).filter(PurchaseOrder.project_id == project_id).all()
-            total_po_value = sum(p.value_before_gst for p in pos_value)
-            # Active bills only: a cancelled bill must not book revenue (R2-723).
-            bills = _active_bills(db, project_id, REVENUE_INVOICE_TYPES).all()
-            total_billed = sum(float(b.subtotal) for b in bills)
-            wos = db.query(WorkOrder).filter(WorkOrder.project_id == project_id).all()
-            total_wo_value = sum(float(w.estimated_work_amount) for w in wos)
-            return [ConsolidatedPNLItem(
-                tower_id=None,
-                tower_name="Overall Project",
-                tower_code="ALL",
-                total_po_value=total_po_value,
-                total_billed=total_billed,
-                total_wo_value=total_wo_value,
-                budget=total_budget,
-                variance=total_budget - total_billed,
-            )]
-        return []
-
-    pos_value = db.query(PurchaseOrder).filter(PurchaseOrder.project_id == project_id).all()
-    total_po_value = sum(p.value_before_gst for p in pos_value)
-    # Active bills only: a cancelled bill must not book revenue (R2-723).
-    bills = _active_bills(db, project_id, REVENUE_INVOICE_TYPES).all()
-    total_billed = sum(float(b.subtotal) for b in bills)
-    wos = db.query(WorkOrder).filter(WorkOrder.project_id == project_id).all()
-    total_wo_value = sum(float(w.estimated_work_amount) for w in wos)
-
     # No document carries a tower_id (CD-5), so per-tower attribution does not
     # exist: stamping the whole project on every tower row multiplied spend by
-    # the tower count (R2-228/R2-248). One honest project-wide row until the
-    # column exists (R2-374), reconciled against the project's own budget -
-    # the construction the no-towers branch already uses.
+    # the tower count (R2-228/R2-248). One honest project-wide row (R2-374).
+    towers = db.query(ProjectTower).filter(ProjectTower.project_id == project_id).all()
     budget_row = db.query(ProjectBudget).filter(ProjectBudget.project_id == project_id).first()
     if budget_row:
         total_budget = float(budget_row.subcon_budget) + float(budget_row.material_budget) + float(budget_row.labour_budget) + float(budget_row.equipment_budget)
-    else:
+    elif towers:
         total_budget = sum(float(t.budget) for t in towers)
+    else:
+        return []
+
+    # Committed cost, counted the way the Budget module counts it: purchase
+    # orders actually placed (not drafts or cancelled ones) and work orders
+    # not cancelled.
+    pos = db.query(PurchaseOrder).filter(
+        PurchaseOrder.project_id == project_id,
+        PurchaseOrder.status.in_(("sent", "partial", "received")),
+    ).all()
+    total_po_value = sum(float(p.value_before_gst or 0) for p in pos)
+    wos = db.query(WorkOrder).filter(WorkOrder.project_id == project_id, WorkOrder.status != "cancelled").all()
+    total_wo_value = sum(float(w.estimated_work_amount or 0) for w in wos)
+    # Active bills only: a cancelled bill must not book revenue (R2-723).
+    bills = _active_bills(db, project_id, REVENUE_INVOICE_TYPES).all()
+    total_billed = sum(float(b.subtotal) for b in bills)
+
+    # Variance is the cost budget left after what is committed. It used to be
+    # budget minus what was billed to the client, comparing a cost budget with
+    # revenue.
     return [ConsolidatedPNLItem(
         tower_id=None,
         tower_name="Overall Project",
@@ -216,5 +202,5 @@ def consolidated_pnl(project_id: UUID, tower_id: Optional[UUID] = Query(None), d
         total_billed=total_billed,
         total_wo_value=total_wo_value,
         budget=total_budget,
-        variance=total_budget - total_billed,
+        variance=total_budget - total_po_value - total_wo_value,
     )]

@@ -210,7 +210,8 @@ export default function TowersPage() {
 
                 <div className="bg-card border border-border-custom rounded-lg overflow-hidden">
                 <div className="px-5 py-4 border-b border-border-custom">
-                  <h2 className="text-xs font-bold uppercase tracking-wider text-muted">Consolidated P&L by Tower</h2>
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-muted">Project Cost Against Budget</h2>
+                  <p className="text-[10px] text-muted mt-1">Orders and bills are not tagged by tower, so this is the whole project. Variance is the budget left after purchase and work orders.</p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs text-left">
@@ -219,8 +220,8 @@ export default function TowersPage() {
                         <th className="px-5 py-3 font-bold">Tower / Phase</th>
                         <th className="px-5 py-3 font-bold text-right">PO Value</th>
                         <th className="px-5 py-3 font-bold text-right">WO Value</th>
-                        <th className="px-5 py-3 font-bold text-right">Billed</th>
-                        <th className="px-5 py-3 font-bold text-right">Tower Budget</th>
+                        <th className="px-5 py-3 font-bold text-right">Billed to Client</th>
+                        <th className="px-5 py-3 font-bold text-right">Project Budget</th>
                         <th className="px-5 py-3 font-bold text-right">Variance</th>
                       </tr>
                     </thead>

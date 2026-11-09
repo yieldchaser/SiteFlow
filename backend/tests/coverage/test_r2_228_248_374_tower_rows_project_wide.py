@@ -113,7 +113,9 @@ def test_consolidated_pnl_single_overall_row_not_project_per_tower(client, db, m
     assert row["total_wo_value"] == 5000.0, row
     # Budget is the sum of the towers' own budgets, not any single tower's.
     assert row["budget"] == 600000.0, row
-    assert row["variance"] == 600000.0 - 118000.0, row
+    # Variance is the cost budget left after committed POs and WOs, not
+    # budget minus revenue billed.
+    assert row["variance"] == row["budget"] - row["total_po_value"] - row["total_wo_value"], row
 
     # No returned row wears a real tower's identity: drilling into Tower A
     # cannot dress project figures up as Tower A figures.
@@ -186,7 +188,9 @@ def test_budget_overall_row_reconciles_to_project_budget_row(client, db, make_te
     assert row["tower_code"] == "ALL", row
     assert row["budget"] == 1000000.0, row
     assert row["total_billed"] == 2000.0, row
-    assert row["variance"] == 1000000.0 - 2000.0, row
+    # Variance is the cost budget left after committed POs and WOs, not
+    # budget minus revenue billed.
+    assert row["variance"] == row["budget"] - row["total_po_value"] - row["total_wo_value"], row
 
     r = client.get(f"/apis/v3/budget/committed/{project.id}/towers", headers=hdr)
     assert r.status_code == 200, r.text
