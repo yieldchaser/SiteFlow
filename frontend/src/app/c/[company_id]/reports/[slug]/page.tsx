@@ -275,7 +275,7 @@ const REPORT_METADATA: Record<string, ReportMeta> = {
     title: "Staff Monthly Salary Slip",
     hasDownload: true,
     filters: [{ label: "Month", type: "select", options: ["All"] }, { label: "Employee Name", type: "select", options: ["All"] }, { label: "Department", type: "select", options: ["All"] }],
-    columns: ['Month', 'Employee Code', 'Employee Name', 'Designation', 'Department', 'UAN', 'Bank Account No.', 'Days Present', 'Basic Pay', 'HRA', 'Allowances', 'Gross Pay', 'PF Deduction', 'ESI Deduction', 'TDS', 'Total Deductions', 'Net Pay (INR)']
+    columns: ['Month', 'Employee Code', 'Employee Name', 'Designation', 'Department', 'UAN', 'Bank Account No.', 'Bank', 'Days Present', 'Basic Pay', 'HRA', 'Allowances', 'Gross Pay', 'PF Deduction', 'ESI Deduction', 'TDS', 'Professional Tax', 'Total Deductions', 'Net Pay (INR)']
   },
   "staff-muster-roll": {
     title: "Staff Muster Roll",

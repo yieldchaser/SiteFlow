@@ -150,10 +150,10 @@ def _render_client_report_pdf(db: Session, report_name: str, summary_markdown: O
     # 5. Resolve PDF Template settings (Settings -> Document & Fields -> PDF Template)
     company_name = ""
     custom_banner = None
-    company = db.query(Company).filter(Company.id == project.company_id).first()
+    company = _get(db, Company, project.company_id)
     if company:
         if company.document_company_name_display == "branch" and project.branch_id:
-            branch = db.query(CompanyBranch).filter(CompanyBranch.id == project.branch_id).first()
+            branch = _get(db, CompanyBranch, project.branch_id)
             company_name = branch.branch_name if branch else company.name
         else:
             company_name = company.name
@@ -193,7 +193,7 @@ def create_report(
     current_user: User = Depends(get_current_user),
     _: None = Depends(verify_project_access)
 ):
-    project = db.query(Project).filter(Project.id == project_id).first()
+    project = _get(db, Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     get_company_membership(db, current_user, project.company_id)
@@ -238,10 +238,10 @@ def list_reports(project_id: uuid.UUID, db: Session = Depends(get_db), _: None =
 
 @router.patch("/{report_id}/approve", response_model=ReportResponse)
 def approve_report(report_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    report = db.query(ClientReport).filter(ClientReport.id == report_id).first()
+    report = _get(db, ClientReport, report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-    project = db.query(Project).filter(Project.id == report.project_id).first()
+    project = _get(db, Project, report.project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     get_company_membership(db, current_user, project.company_id)
@@ -266,10 +266,10 @@ def approve_report(report_id: uuid.UUID, db: Session = Depends(get_db), current_
 
 @router.get("/{report_id}/download")
 def download_report(report_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    report = db.query(ClientReport).filter(ClientReport.id == report_id).first()
+    report = _get(db, ClientReport, report_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-    project = db.query(Project).filter(Project.id == report.project_id).first()
+    project = _get(db, Project, report.project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     # Tenant check: the report's project belongs to a company the caller is a member of.
@@ -337,6 +337,29 @@ def _period_key(rows: List[dict]) -> Optional[str]:
     return None
 
 
+def _get(db: Session, model, ident):
+    """Primary-key lookup through the session identity map, so a report that
+    names the same project on 5,000 rows asks the database once, not 5,000
+    times. That per-row query is what timed big reports out."""
+    if ident is None or ident == "":
+        return None
+    if isinstance(ident, str):
+        try:
+            ident = uuid.UUID(ident)
+        except ValueError:
+            return None
+    return db.get(model, ident)
+
+
+def _status_hours(status) -> float:
+    s = (status or "").strip().lower()
+    if s.startswith("half"):
+        return 4.0
+    if s.startswith("present") or s in ("late", "on duty", "work from home", "wfh"):
+        return 8.0
+    return 0.0
+
+
 def _clean(v):
     if v is None:
         return ""
@@ -377,10 +400,10 @@ def _rep_dpr(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
         q = q.filter(DailyProgressReport.project_id == pid)
     rows = []
     for d in q.order_by(DailyProgressReport.dpr_date.desc()).all():
-        proj = db.query(Project).filter(Project.id == d.project_id).first()
+        proj = _get(db, Project, d.project_id)
         task_name = ""
         if d.task_id:
-            t = db.query(Task).filter(Task.id == d.task_id).first()
+            t = _get(db, Task, d.task_id)
             if t:
                 task_name = t.name
         mats = d.materials_consumed or []
@@ -408,7 +431,7 @@ def _rep_task_report(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
         q = q.filter(Task.project_id == pid)
     rows = []
     for t in q.all():
-        proj = db.query(Project).filter(Project.id == t.project_id).first()
+        proj = _get(db, Project, t.project_id)
         rows.append({
             "Project Name": proj.name if proj else "",
             "Task Name": t.name,
@@ -425,8 +448,8 @@ def _rep_po_item(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
         q = q.filter(PurchaseOrder.project_id == pid)
     rows = []
     for it in q.all():
-        po = db.query(PurchaseOrder).filter(PurchaseOrder.id == it.po_id).first()
-        proj = db.query(Project).filter(Project.id == po.project_id).first() if po and po.project_id else None
+        po = _get(db, PurchaseOrder, it.po_id)
+        proj = _get(db, Project, po.project_id) if po and po.project_id else None
         received_qty = 0.0
         for gi in db.query(GRNItem).join(GoodsReceiptNote).filter(
             GoodsReceiptNote.po_id == it.po_id,
@@ -464,7 +487,7 @@ def _rep_po_summary(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
     for po in q.order_by(PurchaseOrder.po_date.desc()).all():
         items = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.po_id == po.id).all()
         material = ", ".join(i.material_name for i in items)
-        proj = db.query(Project).filter(Project.id == po.project_id).first()
+        proj = _get(db, Project, po.project_id)
         rows.append({
             "Project Name": proj.name if proj else "",
             "PO Creation Date": _clean(po.created_at),
@@ -488,7 +511,7 @@ def _rep_material_stock(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
         q = q.filter(WarehouseInventory.project_id == pid)
     rows = []
     for w in q.all():
-        proj = db.query(Project).filter(Project.id == w.project_id).first()
+        proj = _get(db, Project, w.project_id)
         rows.append({
             "Project Name": proj.name if proj else "",
             "Material Name": w.material_name,
@@ -505,8 +528,8 @@ def _rep_production_material(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUI
         q = q.filter(ProductionBatch.project_id == pid)
     rows = []
     for bm in q.all():
-        batch = db.query(ProductionBatch).filter(ProductionBatch.id == bm.batch_id).first()
-        proj = db.query(Project).filter(Project.id == batch.project_id).first() if batch and batch.project_id else None
+        batch = _get(db, ProductionBatch, bm.batch_id)
+        proj = _get(db, Project, batch.project_id) if batch and batch.project_id else None
         raw_str = ""
         if batch and batch.recipe_id:
             raw = db.query(ProductionRecipeMaterial).filter(
@@ -531,7 +554,7 @@ def _rep_attendance_salary(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]
         q = q.filter(StaffEmployee.project_id == pid)
     rows = []
     for emp in q.all():
-        proj = db.query(Project).filter(Project.id == emp.project_id).first() if emp.project_id else None
+        proj = _get(db, Project, emp.project_id) if emp.project_id else None
         # R2-325: count days present the way payroll pays for them: both
         # punch-in statuses as a full day and a muster half day as half.
         # Counting only "Present" reported off-site days and half days as
@@ -566,7 +589,7 @@ def _rep_company_payments(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID])
         q = q.filter(Payment.project_id == pid)
     rows = []
     for p in q.order_by(Payment.payment_date.desc()).all():
-        proj = db.query(Project).filter(Project.id == p.project_id).first() if p.project_id else None
+        proj = _get(db, Project, p.project_id) if p.project_id else None
         net = ""
         try:
             if p.amount is not None and p.unsettled_amount is not None:
@@ -598,10 +621,10 @@ def _rep_payment_request(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
             q = q.filter(PaymentRequest.project_id == pid)
         rows = []
         for pr in q.all():
-            proj = db.query(Project).filter(Project.id == pr.project_id).first() if pr.project_id else None
+            proj = _get(db, Project, pr.project_id) if pr.project_id else None
             creator = ""
             if pr.party_company_user_id:
-                u = db.query(User).filter(User.id == pr.party_company_user_id).first()
+                u = _get(db, User, pr.party_company_user_id)
                 if u:
                     creator = u.name
             rows.append({
@@ -646,7 +669,7 @@ def _user_name(db: Session, user_id):
     if not user_id:
         return ""
     try:
-        u = db.query(User).filter(User.id == user_id).first()
+        u = _get(db, User, user_id)
         if u:
             return u.name
     except Exception:
@@ -732,7 +755,7 @@ def _build_party_ledger(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
             description = obj.description or ("Receipt Payment" if is_in else "Expense Payment")
             cost_code = obj.cost_code or ""
             if obj.project_id:
-                proj = db.query(Project).filter(Project.id == obj.project_id).first()
+                proj = _get(db, Project, obj.project_id)
         elif et == "bill":
             # D3: route through single shared classifier so settlement never
             # leaks into revenue or expense ledgers.
@@ -767,7 +790,7 @@ def _build_party_ledger(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
                 # no debit/credit for stock movements
             description = f"Invoice {obj.invoice_number}"
             if obj.project_id:
-                proj = db.query(Project).filter(Project.id == obj.project_id).first()
+                proj = _get(db, Project, obj.project_id)
         elif et == "salary":
             amount = float(obj.net_payable) if obj.net_payable is not None else 0.0
             # R2-314: employees key by StaffEmployee.id, so two same-named
@@ -775,7 +798,7 @@ def _build_party_ledger(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
             party_key = str(obj.employee_id) if obj.employee_id else "Staff Member"
             party_name = "Staff Member"
             if obj.employee_id:
-                emp = db.query(StaffEmployee).filter(StaffEmployee.id == obj.employee_id).first()
+                emp = _get(db, StaffEmployee, obj.employee_id)
                 if emp and emp.name:
                     party_name = emp.name
             txn_type = "Salary"
@@ -898,8 +921,8 @@ def _rep_item_wise_sales(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
                 bill_by_quot.setdefault(bill.quotation_id, bill)
         rows = []
         for it in items:
-            q = db.query(CRMQuotation).filter(CRMQuotation.id == it.quotation_id).first()
-            lead = db.query(CRMLead).filter(CRMLead.id == q.lead_id).first() if q else None
+            q = _get(db, CRMQuotation, it.quotation_id)
+            lead = _get(db, CRMLead, q.lead_id) if q else None
             bill = bill_by_quot.get(it.quotation_id)
             if bill and bill.invoice_date:
                 invoice_date = bill.invoice_date
@@ -955,7 +978,7 @@ def _rep_company_sales(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
         retention_by_bill = dict(ret_q.group_by(TransactionDeduction.bill_id).all())
         rows = []
         for b in q.order_by(Bill.invoice_date.desc()).all():
-            proj = db.query(Project).filter(Project.id == b.project_id).first() if b.project_id else None
+            proj = _get(db, Project, b.project_id) if b.project_id else None
             party = _team_user_name(db, b.party_company_user_id)
             rows.append({
                 "Invoice Date": _clean(b.invoice_date),
@@ -1014,7 +1037,7 @@ def _task_ancestor_names(db: Session, task):
         while cur is not None:
             chain.append(cur)
             if cur.parent_id:
-                cur = db.query(Task).filter(Task.id == cur.parent_id).first()
+                cur = _get(db, Task, cur.parent_id)
             else:
                 cur = None
         chain.reverse()
@@ -1037,9 +1060,9 @@ def _rep_task_measurement_book(db: Session, cid: uuid.UUID, pid: Optional[uuid.U
             q = q.filter(Task.project_id == pid)
         rows = []
         for t in q.all():
-            proj = db.query(Project).filter(Project.id == t.project_id).first()
+            proj = _get(db, Project, t.project_id)
             main, group = _task_ancestor_names(db, t)
-            boq = db.query(BOQItem).filter(BOQItem.id == t.boq_item_id).first() if t.boq_item_id else None
+            boq = _get(db, BOQItem, t.boq_item_id) if t.boq_item_id else None
             dpr = db.query(DailyProgressReport).filter(
                 DailyProgressReport.task_id == t.id
             ).order_by(DailyProgressReport.dpr_date.desc()).first()
@@ -1076,7 +1099,7 @@ def _rep_material_stock_movement(db: Session, cid: uuid.UUID, pid: Optional[uuid
         running = {}
         rows = []
         for m in txns:
-            proj = db.query(Project).filter(Project.id == m.project_id).first()
+            proj = _get(db, Project, m.project_id)
             bal_key = (m.project_id, m.material_name, m.unit)
             bal = running.get(bal_key, 0.0)
             qty = float(m.qty) if m.qty is not None else 0.0
@@ -1121,12 +1144,12 @@ def _rep_material_received_used(db: Session, cid: uuid.UUID, pid: Optional[uuid.
             q = q.filter(GoodsReceiptNote.project_id == pid)
         rows = []
         for gi in q.all():
-            grn = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.id == gi.grn_id).first()
-            po_item = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.id == gi.po_item_id).first() if gi.po_item_id else None
+            grn = _get(db, GoodsReceiptNote, gi.grn_id)
+            po_item = _get(db, PurchaseOrderItem, gi.po_item_id) if gi.po_item_id else None
             po = None
             if grn and grn.po_id:
-                po = db.query(PurchaseOrder).filter(PurchaseOrder.id == grn.po_id).first()
-            proj = db.query(Project).filter(Project.id == grn.project_id).first() if grn and grn.project_id else None
+                po = _get(db, PurchaseOrder, grn.po_id)
+            proj = _get(db, Project, grn.project_id) if grn and grn.project_id else None
             party = ""
             if po and po.vendor_id:
                 party = _team_user_name(db, po.vendor_id)
@@ -1161,8 +1184,8 @@ def _rep_task_attendance(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
             q = q.filter(AttendanceLog.project_id == pid)
         rows = []
         for a in q.order_by(AttendanceLog.attendance_date.desc()).all():
-            proj = db.query(Project).filter(Project.id == a.project_id).first()
-            emp = db.query(StaffEmployee).filter(StaffEmployee.id == a.employee_id).first() if a.employee_id else None
+            proj = _get(db, Project, a.project_id)
+            emp = _get(db, StaffEmployee, a.employee_id) if a.employee_id else None
             workforce = emp.name if emp else ""
             rows.append({
                 "Workforce Name": workforce,
@@ -1212,17 +1235,17 @@ def _rep_gstr1_sales(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
             q = q.filter(Bill.project_id == pid)
         rows = []
         for b in q.order_by(Bill.invoice_date.desc()).all():
-            proj = db.query(Project).filter(Project.id == b.project_id).first() if b.project_id else None
+            proj = _get(db, Project, b.project_id) if b.project_id else None
             party = _team_user_name(db, b.party_company_user_id)
             # D4: derive split from site state vs supplier GSTIN
             comp_gstin = None
             try:
-                comp = db.query(Company).filter(Company.id == cid).first()
+                comp = _get(db, Company, cid)
                 comp_gstin = getattr(comp, "gstin", None)
                 # Branch GSTIN takes precedence when document masthead resolves to branch
                 if proj and getattr(proj, "branch_id", None):
                     from app.models import CompanyBranch as _Br
-                    br = db.query(_Br).filter(_Br.id == proj.branch_id).first()
+                    br = _get(db, _Br, proj.branch_id)
                     if br and getattr(br, "gstin", None):
                         comp_gstin = br.gstin
             except Exception:
@@ -1256,15 +1279,15 @@ def _rep_gstr2_purchase(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
             bills_q = bills_q.filter(Bill.project_id == pid)
         bills = bills_q.order_by(Bill.invoice_date.desc()).all()
         for b in bills:
-            proj = db.query(Project).filter(Project.id == b.project_id).first() if b.project_id else None
+            proj = _get(db, Project, b.project_id) if b.project_id else None
             party = _team_user_name(db, b.party_company_user_id)
             comp_gstin = None
             try:
-                comp = db.query(Company).filter(Company.id == cid).first()
+                comp = _get(db, Company, cid)
                 comp_gstin = getattr(comp, "gstin", None)
                 if proj and getattr(proj, "branch_id", None):
                     from app.models import CompanyBranch as _Br2
-                    br = db.query(_Br2).filter(_Br2.id == proj.branch_id).first()
+                    br = _get(db, _Br2, proj.branch_id)
                     if br and getattr(br, "gstin", None):
                         comp_gstin = br.gstin
             except Exception:
@@ -1311,7 +1334,7 @@ def _rep_gstr2_purchase(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
             outstanding = round(max(float(p.amount or 0) - settled_by_payment.get(p.id, 0.0), 0.0), 2)
             if outstanding <= 0:
                 continue
-            proj = db.query(Project).filter(Project.id == p.project_id).first() if p.project_id else None
+            proj = _get(db, Project, p.project_id) if p.project_id else None
             party = _team_user_name(db, p.party_company_user_id)
             rows.append({
                 "Party Name": party,
@@ -1339,12 +1362,12 @@ def _rep_sales_deduction_retention(db: Session, cid: uuid.UUID, pid: Optional[uu
             q = q.filter(Bill.project_id == pid)
         rows = []
         for d in q.all():
-            b = db.query(Bill).filter(Bill.id == d.bill_id).first()
+            b = _get(db, Bill, d.bill_id)
             # Sales report: deductions on revenue invoices only. Subcontractor
             # and purchase bill deductions belong to the expense-side reports.
             if not b or not is_revenue_invoice_type(b.invoice_type):
                 continue
-            proj = db.query(Project).filter(Project.id == b.project_id).first() if b.project_id else None
+            proj = _get(db, Project, b.project_id) if b.project_id else None
             party = _team_user_name(db, b.party_company_user_id)
             rows.append({
                 "Amount": _clean(d.amount),
@@ -1407,7 +1430,7 @@ def _rep_bank_statement(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
             for p in ps:
                 proj = proj_cache.get(p.project_id)
                 if proj is None and p.project_id:
-                    proj = db.query(Project).filter(Project.id == p.project_id).first()
+                    proj = _get(db, Project, p.project_id)
                     proj_cache[p.project_id] = proj
                 party = party_cache.get(p.party_company_user_id)
                 if party is None:
@@ -1454,7 +1477,7 @@ def _rep_project_wise_payment_summary(db: Session, cid: uuid.UUID, pid: Optional
         for proj_id, ps in by_proj.items():
             proj = proj_cache.get(proj_id)
             if proj is None and proj_id:
-                proj = db.query(Project).filter(Project.id == proj_id).first()
+                proj = _get(db, Project, proj_id)
                 proj_cache[proj_id] = proj
             # R2-320: receipts and payouts are unlike populations and are never
             # netted into one figure; each direction reports its own count,
@@ -1485,7 +1508,7 @@ def _rep_project_payment(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
             q = q.filter(Payment.project_id == pid)
         rows = []
         for p in q.order_by(Payment.payment_date.desc()).all():
-            proj = db.query(Project).filter(Project.id == p.project_id).first() if p.project_id else None
+            proj = _get(db, Project, p.project_id) if p.project_id else None
             party = _team_user_name(db, p.party_company_user_id)
             rows.append({
                 "Payment Date": _clean(p.payment_date),
@@ -1694,7 +1717,7 @@ def _rep_boq_bom(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
             q = q.filter(BOQItem.project_id == pid)
         rows = []
         for b in q.all():
-            proj = db.query(Project).filter(Project.id == b.project_id).first()
+            proj = _get(db, Project, b.project_id)
             rate = float(b.rate or 0)
             qty = float(b.quantity or 0)
             rows.append({
@@ -1724,7 +1747,7 @@ def _rep_boq_item(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
             q = q.filter(BOQItem.project_id == pid)
         rows = []
         for b in q.all():
-            proj = db.query(Project).filter(Project.id == b.project_id).first()
+            proj = _get(db, Project, b.project_id)
             qty = float(b.quantity or 0)
             rate = float(b.rate or 0)
             amt_wo_tax = qty * rate
@@ -1766,7 +1789,7 @@ def _rep_boq_measurement_book(db: Session, cid: uuid.UUID, pid: Optional[uuid.UU
             q = q.filter(BOQItem.project_id == pid)
         rows = []
         for b in q.all():
-            proj = db.query(Project).filter(Project.id == b.project_id).first()
+            proj = _get(db, Project, b.project_id)
             qty = float(b.quantity or 0)
             rows.append({
                 "Project Name": proj.name if proj else "",
@@ -1802,7 +1825,7 @@ def _rep_boq_workorder_summary(db: Session, cid: uuid.UUID, pid: Optional[uuid.U
             q = q.filter(WorkOrder.project_id == pid)
         rows = []
         for wo in q.order_by(WorkOrder.created_at.desc()).all():
-            proj = db.query(Project).filter(Project.id == wo.project_id).first()
+            proj = _get(db, Project, wo.project_id)
             est_amt = float(wo.estimated_work_amount or 0)
             rows.append({
                 "Project Name": proj.name if proj else "",
@@ -1829,7 +1852,7 @@ def _rep_quotation(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
         q = db.query(CRMQuotation).join(CRMLead, CRMQuotation.lead_id == CRMLead.id).filter(CRMLead.company_id == cid)
         rows = []
         for qt in q.order_by(CRMQuotation.created_at.desc()).all():
-            lead = db.query(CRMLead).filter(CRMLead.id == qt.lead_id).first()
+            lead = _get(db, CRMLead, qt.lead_id)
             items = db.query(CRMQuotationItem).filter(CRMQuotationItem.quotation_id == qt.id).all()
             item_subtotal = sum(float(it.total_amount or 0) for it in items)
             tax_amount = float(qt.cgst_amount or 0) + float(qt.sgst_amount or 0) + float(qt.igst_amount or 0)
@@ -1858,8 +1881,8 @@ def _rep_quotation_item(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
         q = db.query(CRMQuotationItem).join(CRMQuotation, CRMQuotationItem.quotation_id == CRMQuotation.id).join(CRMLead, CRMQuotation.lead_id == CRMLead.id).filter(CRMLead.company_id == cid)
         rows = []
         for it in q.order_by(CRMQuotationItem.created_at.desc()).all():
-            qt = db.query(CRMQuotation).filter(CRMQuotation.id == it.quotation_id).first()
-            lead = db.query(CRMLead).filter(CRMLead.id == qt.lead_id).first() if qt else None
+            qt = _get(db, CRMQuotation, it.quotation_id)
+            lead = _get(db, CRMLead, qt.lead_id) if qt else None
             qty = float(it.qty or 0)
             selling_price = float(it.selling_price or 0)
             sales_amt = qty * selling_price
@@ -1898,7 +1921,7 @@ def _rep_task_boq_billed_unbilled(db: Session, cid: uuid.UUID, pid: Optional[uui
             q = q.filter(Task.project_id == pid)
         rows = []
         for t in q.all():
-            proj = db.query(Project).filter(Project.id == t.project_id).first()
+            proj = _get(db, Project, t.project_id)
             rows.append({
                 "Project Name": proj.name if proj else "",
                 "Main Task Name": "",
@@ -1972,7 +1995,7 @@ def _rep_budget_vs_actual_material_cost(db: Session, cid: uuid.UUID, pid: Option
             q = q.filter(BOQItem.project_id == pid)
         rows = []
         for b in q.all():
-            proj = db.query(Project).filter(Project.id == b.project_id).first()
+            proj = _get(db, Project, b.project_id)
             qty = float(b.quantity or 0)
             rate = float(b.rate or 0)
             budget_cost = float(b.amount if b.amount is not None else (qty * rate))
@@ -2002,7 +2025,7 @@ def _rep_budget_vs_actual_material_qty(db: Session, cid: uuid.UUID, pid: Optiona
             q = q.filter(BOQItem.project_id == pid)
         rows = []
         for b in q.all():
-            proj = db.query(Project).filter(Project.id == b.project_id).first()
+            proj = _get(db, Project, b.project_id)
             budget_qty = float(b.quantity or 0)
             actual_qty = 0.0
             variance_qty = budget_qty - actual_qty
@@ -2158,8 +2181,8 @@ def _rep_all_expense_deduction_retention(db: Session, cid: uuid.UUID, pid: Optio
             q = q.filter(Bill.project_id == pid)
         rows = []
         for d in q.order_by(TransactionDeduction.created_at.desc()).all():
-            bill = db.query(Bill).filter(Bill.id == d.bill_id).first()
-            proj = db.query(Project).filter(Project.id == bill.project_id).first() if bill and bill.project_id else None
+            bill = _get(db, Bill, d.bill_id)
+            proj = _get(db, Project, bill.project_id) if bill and bill.project_id else None
             party = _team_user_name(db, bill.party_company_user_id) if bill else ""
             rows.append({
                 "Entry Creation Date": _clean(d.created_at),
@@ -2188,7 +2211,7 @@ def _rep_company_expense(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
         for b in q.order_by(Bill.invoice_date.desc()).all():
             if not is_expense_invoice_type(b.invoice_type):
                 continue
-            proj = db.query(Project).filter(Project.id == b.project_id).first() if b.project_id else None
+            proj = _get(db, Project, b.project_id) if b.project_id else None
             party = _team_user_name(db, b.party_company_user_id)
             total = float(b.total_payable or 0)
             paid = float(b.paid_amount or 0)
@@ -2230,7 +2253,7 @@ def _rep_company_transactions(db: Session, cid: uuid.UUID, pid: Optional[uuid.UU
         if pid:
             bills_q = bills_q.filter(Bill.project_id == pid)
         for b in bills_q.order_by(Bill.created_at.desc()).all():
-            proj = db.query(Project).filter(Project.id == b.project_id).first() if b.project_id else None
+            proj = _get(db, Project, b.project_id) if b.project_id else None
             party = _team_user_name(db, b.party_company_user_id)
             total = float(b.total_payable or 0)
             paid = float(b.paid_amount or 0)
@@ -2259,7 +2282,7 @@ def _rep_company_transactions(db: Session, cid: uuid.UUID, pid: Optional[uuid.UU
         if pid:
             payments_q = payments_q.filter(Payment.project_id == pid)
         for p in payments_q.order_by(Payment.created_at.desc()).all():
-            proj = db.query(Project).filter(Project.id == p.project_id).first() if p.project_id else None
+            proj = _get(db, Project, p.project_id) if p.project_id else None
             party = _team_user_name(db, p.party_company_user_id)
             amt = float(p.amount or 0)
             rows.append({
@@ -2407,7 +2430,7 @@ def _rep_project_level_party_balance(db: Session, cid: uuid.UUID, pid: Optional[
         for ct in q.all():
             party_name = _team_user_name(db, ct.id)
             for p_id in (proj_ids if not pid else [pid]):
-                proj = db.query(Project).filter(Project.id == p_id).first()
+                proj = _get(db, Project, p_id)
                 # Cancelled bills owe nothing; "material" was never an
                 # invoice type, so material purchases always read 0. Equipment
                 # bills and the client side (sales against receipts) were left
@@ -2465,8 +2488,8 @@ def _rep_subcon_deduction_retention(db: Session, cid: uuid.UUID, pid: Optional[u
             q = q.filter(Bill.project_id == pid)
         rows = []
         for d in q.order_by(TransactionDeduction.created_at.desc()).all():
-            bill = db.query(Bill).filter(Bill.id == d.bill_id).first()
-            proj = db.query(Project).filter(Project.id == bill.project_id).first() if bill and bill.project_id else None
+            bill = _get(db, Bill, d.bill_id)
+            proj = _get(db, Project, bill.project_id) if bill and bill.project_id else None
             party = _team_user_name(db, bill.party_company_user_id) if bill else ""
             rows.append({
                 "Item Name": d.deduction_type,
@@ -2493,8 +2516,8 @@ def _rep_daily_based_equipment_used(db: Session, cid: uuid.UUID, pid: Optional[u
             q = q.filter(EquipmentDeployment.project_id == pid)
         rows = []
         for dep in q.order_by(EquipmentDeployment.start_date.desc()).all():
-            eq = db.query(Equipment).filter(Equipment.id == dep.equipment_id).first()
-            proj = db.query(Project).filter(Project.id == dep.project_id).first() if dep.project_id else None
+            eq = _get(db, Equipment, dep.equipment_id)
+            proj = _get(db, Project, dep.project_id) if dep.project_id else None
             fuel = db.query(FuelLog).filter(FuelLog.equipment_id == dep.equipment_id, FuelLog.project_id == dep.project_id).all()
             fuel_liters = sum(float(f.liters or 0) for f in fuel)
             rows.append({
@@ -2551,7 +2574,7 @@ def _rep_equipment_trip(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
             q = q.filter(EquipmentDeployment.project_id == pid)
         rows = []
         for dep in q.order_by(EquipmentDeployment.created_at.desc()).all():
-            eq = db.query(Equipment).filter(Equipment.id == dep.equipment_id).first()
+            eq = _get(db, Equipment, dep.equipment_id)
             rows.append({
                 "Trip Name": f"{eq.name if eq else 'Equipment'} Site Run",
                 "Trip Distance": 10.0,
@@ -2575,8 +2598,8 @@ def _rep_equipment_usage_detail(db: Session, cid: uuid.UUID, pid: Optional[uuid.
             q = q.filter(EquipmentDeployment.project_id == pid)
         rows = []
         for dep in q.order_by(EquipmentDeployment.start_date.desc()).all():
-            eq = db.query(Equipment).filter(Equipment.id == dep.equipment_id).first()
-            proj = db.query(Project).filter(Project.id == dep.project_id).first() if dep.project_id else None
+            eq = _get(db, Equipment, dep.equipment_id)
+            proj = _get(db, Project, dep.project_id) if dep.project_id else None
             rows.append({
                 "Project Name": proj.name if proj else "",
                 "Equipment Name": eq.name if eq else "",
@@ -2610,7 +2633,7 @@ def _rep_fuel_efficiency(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
             total_liters = sum(float(f.liters or 0) for f in fuel_logs)
             deps = db.query(EquipmentDeployment).filter(EquipmentDeployment.equipment_id == eq.id).all()
             total_hours = sum(float(d.hours_used or 0) for d in deps)
-            proj = db.query(Project).filter(Project.id == deps[0].project_id).first() if deps and deps[0].project_id else None
+            proj = _get(db, Project, deps[0].project_id) if deps and deps[0].project_id else None
             rows.append({
                 "Project Name": proj.name if proj else "",
                 "Equipment Name": eq.name,
@@ -2637,8 +2660,8 @@ def _rep_material_purchase_item(db: Session, cid: uuid.UUID, pid: Optional[uuid.
             q = q.filter(PurchaseOrder.project_id == pid)
         rows = []
         for it in q.all():
-            po = db.query(PurchaseOrder).filter(PurchaseOrder.id == it.po_id).first()
-            proj = db.query(Project).filter(Project.id == po.project_id).first() if po and po.project_id else None
+            po = _get(db, PurchaseOrder, it.po_id)
+            proj = _get(db, Project, po.project_id) if po and po.project_id else None
             party = _team_user_name(db, po.vendor_id) if po and po.vendor_id else ""
             qty = float(it.quantity or 0)
             rate = float(it.rate or 0)
@@ -2694,10 +2717,10 @@ def _rep_material_received_without_po(db: Session, cid: uuid.UUID, pid: Optional
             q = q.filter(GoodsReceiptNote.project_id == pid)
         rows = []
         for grn in q.order_by(GoodsReceiptNote.received_date.desc()).all():
-            proj = db.query(Project).filter(Project.id == grn.project_id).first()
+            proj = _get(db, Project, grn.project_id)
             items = db.query(GRNItem).filter(GRNItem.grn_id == grn.id).all()
             for it in items:
-                po_item = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.id == it.po_item_id).first() if it.po_item_id else None
+                po_item = _get(db, PurchaseOrderItem, it.po_item_id) if it.po_item_id else None
                 rows.append({
                     "Project Name": proj.name if proj else "",
                     "Party Name": "",
@@ -2722,8 +2745,8 @@ def _rep_material_request_item(db: Session, cid: uuid.UUID, pid: Optional[uuid.U
             q = q.filter(MaterialIndent.project_id == pid)
         rows = []
         for it in q.all():
-            ind = db.query(MaterialIndent).filter(MaterialIndent.id == it.indent_id).first()
-            proj = db.query(Project).filter(Project.id == ind.project_id).first() if ind and ind.project_id else None
+            ind = _get(db, MaterialIndent, it.indent_id)
+            proj = _get(db, Project, ind.project_id) if ind and ind.project_id else None
             req_qty = float(it.quantity or 0)
             req_user = _team_user_name(db, ind.requested_by) if (ind and ind.requested_by) else ""
             app_user = _team_user_name(db, ind.approved_by) if (ind and ind.approved_by) else ""
@@ -2759,11 +2782,11 @@ def _rep_unbilled_item(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
             q = q.filter(GoodsReceiptNote.project_id == pid)
         rows = []
         for it in q.all():
-            grn = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.id == it.grn_id).first()
-            proj = db.query(Project).filter(Project.id == grn.project_id).first() if grn and grn.project_id else None
-            po = db.query(PurchaseOrder).filter(PurchaseOrder.id == grn.po_id).first() if grn and grn.po_id else None
+            grn = _get(db, GoodsReceiptNote, it.grn_id)
+            proj = _get(db, Project, grn.project_id) if grn and grn.project_id else None
+            po = _get(db, PurchaseOrder, grn.po_id) if grn and grn.po_id else None
             party = _team_user_name(db, po.vendor_id) if po and po.vendor_id else ""
-            po_item = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.id == it.po_item_id).first() if it.po_item_id else None
+            po_item = _get(db, PurchaseOrderItem, it.po_item_id) if it.po_item_id else None
             rows.append({
                 "Project Name": proj.name if proj else "",
                 "Party Name": party,
@@ -2876,7 +2899,7 @@ def _rep_subcon_material_issue(db: Session, cid: uuid.UUID, pid: Optional[uuid.U
             q = q.filter(MaterialTransaction.project_id == pid)
         rows = []
         for mt in q.all():
-            proj = db.query(Project).filter(Project.id == mt.project_id).first()
+            proj = _get(db, Project, mt.project_id)
             qty = float(mt.qty or 0)
             rows.append({
                 "Project Name": proj.name if proj else "",
@@ -2902,7 +2925,7 @@ def _rep_task_material(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
             q = q.filter(DailyProgressReport.project_id == pid)
         rows = []
         for dpr in q.all():
-            proj = db.query(Project).filter(Project.id == dpr.project_id).first()
+            proj = _get(db, Project, dpr.project_id)
             mats = dpr.materials_consumed or []
             for m in mats:
                 if isinstance(m, dict):
@@ -2927,8 +2950,8 @@ def _rep_asset_allocation(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID])
             q = q.filter(EquipmentDeployment.project_id == pid)
         rows = []
         for dep in q.order_by(EquipmentDeployment.start_date.desc()).all():
-            eq = db.query(Equipment).filter(Equipment.id == dep.equipment_id).first()
-            proj = db.query(Project).filter(Project.id == dep.project_id).first() if dep.project_id else None
+            eq = _get(db, Equipment, dep.equipment_id)
+            proj = _get(db, Project, dep.project_id) if dep.project_id else None
             rows.append({
                 "Asset Code": eq.code if eq else "",
                 "Asset Name": eq.name if eq else "",
@@ -2954,7 +2977,7 @@ def _rep_asset_status(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
         for eq in q.order_by(Equipment.name.asc()).all():
             deps = db.query(EquipmentDeployment).filter(EquipmentDeployment.equipment_id == eq.id).order_by(EquipmentDeployment.start_date.desc()).all()
             last_dep = deps[0] if deps else None
-            last_proj = db.query(Project).filter(Project.id == last_dep.project_id).first() if last_dep and last_dep.project_id else None
+            last_proj = _get(db, Project, last_dep.project_id) if last_dep and last_dep.project_id else None
             rows.append({
                 "Asset Code": eq.code,
                 "Asset Name": eq.name,
@@ -2987,8 +3010,8 @@ def _rep_site_inspection(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
             q = q.filter(SiteInspection.project_id == pid)
         rows = []
         for insp in q.order_by(SiteInspection.inspection_date.desc()).all():
-            proj = db.query(Project).filter(Project.id == insp.project_id).first()
-            chk = db.query(QualityChecklist).filter(QualityChecklist.id == insp.checklist_id).first()
+            proj = _get(db, Project, insp.project_id)
+            chk = _get(db, QualityChecklist, insp.checklist_id)
             rows.append({
                 "Project Name": proj.name if proj else "",
                 "Inspection Date": _clean(insp.inspection_date),
@@ -3015,9 +3038,9 @@ def _rep_subcon_measurement_book(db: Session, cid: uuid.UUID, pid: Optional[uuid
             q = q.filter(WorkOrder.project_id == pid)
         rows = []
         for it in q.all():
-            wo = db.query(WorkOrder).filter(WorkOrder.id == it.wo_id).first()
-            proj = db.query(Project).filter(Project.id == wo.project_id).first() if wo and wo.project_id else None
-            boq = db.query(BOQItem).filter(BOQItem.id == it.boq_item_id).first() if it.boq_item_id else None
+            wo = _get(db, WorkOrder, it.wo_id)
+            proj = _get(db, Project, wo.project_id) if wo and wo.project_id else None
+            boq = _get(db, BOQItem, it.boq_item_id) if it.boq_item_id else None
             item_name = boq.item_name if boq else "Subcon Work Item"
             unit = boq.unit if boq else "Unit"
             qty = float(it.quantity or 0)
@@ -3055,7 +3078,7 @@ def _rep_subcon_workorder_summary(db: Session, cid: uuid.UUID, pid: Optional[uui
             q = q.filter(WorkOrder.project_id == pid)
         rows = []
         for wo in q.order_by(WorkOrder.created_at.desc()).all():
-            proj = db.query(Project).filter(Project.id == wo.project_id).first()
+            proj = _get(db, Project, wo.project_id)
             subcon = _team_user_name(db, wo.subcontractor_id) if wo.subcontractor_id else "Subcontractor"
             est_amt = float(wo.estimated_work_amount or 0)
             rows.append({
@@ -3088,7 +3111,7 @@ def _rep_task_resource_budget_vs_actual(db: Session, cid: uuid.UUID, pid: Option
             q = q.filter(Task.project_id == pid)
         rows = []
         for t in q.all():
-            proj = db.query(Project).filter(Project.id == t.project_id).first()
+            proj = _get(db, Project, t.project_id)
             rows.append({
                 "Project Name": proj.name if proj else "",
                 "Main Task Name": "",
@@ -3128,7 +3151,7 @@ def _rep_task_revenue_expense(db: Session, cid: uuid.UUID, pid: Optional[uuid.UU
             q = q.filter(Task.project_id == pid)
         rows = []
         for t in q.all():
-            proj = db.query(Project).filter(Project.id == t.project_id).first()
+            proj = _get(db, Project, t.project_id)
             prog = float(t.progress or 0)
             rev = prog * 1000.0
             exp = prog * 700.0
@@ -3157,8 +3180,8 @@ def _rep_todo_report(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
             q = q.filter(Todo.project_id == pid)
         rows = []
         for td in q.order_by(Todo.created_at.desc()).all():
-            proj = db.query(Project).filter(Project.id == td.project_id).first() if td.project_id else None
-            task = db.query(Task).filter(Task.id == td.linked_task_id).first() if td.linked_task_id else None
+            proj = _get(db, Project, td.project_id) if td.project_id else None
+            task = _get(db, Task, td.linked_task_id) if td.linked_task_id else None
             creator = _team_user_name(db, td.created_by) if td.created_by else ""
             rows.append({
                 "Activity Name": td.title,
@@ -3190,13 +3213,13 @@ def _rep_ot_shift(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
         # when basic was blank.
         from app.routers.hr import _working_days_in_month, _employee_working_days
         from app.models import Holiday, PayrollProfile
-        company = db.query(Company).filter(Company.id == cid).first()
+        company = _get(db, Company, cid)
         weekly_offs = company.weekly_off_days if company else []
         working_days: dict = {}
         rows = []
         for a in q.order_by(AttendanceLog.attendance_date.desc()).all():
-            emp = db.query(StaffEmployee).filter(StaffEmployee.id == a.employee_id).first()
-            proj = db.query(Project).filter(Project.id == a.project_id).first() if a.project_id else None
+            emp = _get(db, StaffEmployee, a.employee_id)
+            proj = _get(db, Project, a.project_id) if a.project_id else None
             ot_hrs = float(a.overtime_hours or 0)
             profile = db.query(PayrollProfile).filter(PayrollProfile.employee_id == a.employee_id).first()
             if profile and float(profile.overtime_rate or 0) > 0:
@@ -3387,8 +3410,8 @@ def _rep_company_attendance(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID
             q = q.filter(AttendanceLog.project_id == pid)
         rows = []
         for a in q.order_by(AttendanceLog.attendance_date.desc()).all():
-            emp = db.query(StaffEmployee).filter(StaffEmployee.id == a.employee_id).first()
-            proj = db.query(Project).filter(Project.id == a.project_id).first() if a.project_id else None
+            emp = _get(db, StaffEmployee, a.employee_id)
+            proj = _get(db, Project, a.project_id) if a.project_id else None
             rows.append({
                 "Date": _clean(a.attendance_date),
                 "Employee Code": emp.employee_code if emp else "",
@@ -3399,9 +3422,14 @@ def _rep_company_attendance(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID
                 "Punch In": _clean(a.punch_in),
                 "Punch Out": _clean(a.punch_out),
                 "Status": a.status,
-                "Hours Worked": _clean(a.hours_worked or 8),
+                # Hours from the punch when there is one; otherwise from the
+                # status. Defaulting to 8 credited an absent day with a shift.
+                "Hours Worked": _clean(a.hours_worked if a.hours_worked is not None else _status_hours(a.status)),
                 "Overtime Hours": _clean(a.overtime_hours or 0),
-                "Geofence Status": "Inside" if a.is_within_geofence else "Outside",
+                "Geofence Status": (
+                    "Marked manually" if getattr(a, "marked_manually", False) or a.is_within_geofence is None
+                    else "Inside" if a.is_within_geofence else "Outside"
+                ),
             })
         return rows
     except Exception:
@@ -3414,8 +3442,8 @@ def _rep_staff_monthly_salary_slip(db: Session, cid: uuid.UUID, pid: Optional[uu
         q = db.query(PayrollLineItem).join(PayrollRun, PayrollLineItem.payroll_run_id == PayrollRun.id).filter(PayrollRun.company_id == cid)
         rows = []
         for item in q.order_by(PayrollLineItem.created_at.desc()).all():
-            pr = db.query(PayrollRun).filter(PayrollRun.id == item.payroll_run_id).first()
-            emp = db.query(StaffEmployee).filter(StaffEmployee.id == item.employee_id).first() if item.employee_id else None
+            pr = _get(db, PayrollRun, item.payroll_run_id)
+            emp = _get(db, StaffEmployee, item.employee_id) if item.employee_id else None
             gross = float(item.gross_salary or 0)
             deductions = float(item.total_deductions or 0)
             net = float(item.net_payable or 0)
@@ -3453,7 +3481,7 @@ def _rep_staff_muster_roll(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]
             q = q.filter(MusterRoll.project_id == pid)
         rows = []
         for m in q.order_by(MusterRoll.date.desc()).all():
-            proj = db.query(Project).filter(Project.id == m.project_id).first() if m.project_id else None
+            proj = _get(db, Project, m.project_id) if m.project_id else None
             present = int(m.workers_present or 0)
             absent = int(m.workers_absent or 0)
             rows.append({
@@ -3480,8 +3508,8 @@ def _rep_staff_punch_report(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID
             q = q.filter(FaceRecognitionLog.project_id == pid)
         rows = []
         for f in q.order_by(FaceRecognitionLog.created_at.desc()).all():
-            emp = db.query(StaffEmployee).filter(StaffEmployee.id == f.employee_id).first() if f.employee_id else None
-            proj = db.query(Project).filter(Project.id == f.project_id).first() if f.project_id else None
+            emp = _get(db, StaffEmployee, f.employee_id) if f.employee_id else None
+            proj = _get(db, Project, f.project_id) if f.project_id else None
             rows.append({
                 "Punch Time": _clean(f.created_at),
                 "Employee Code": emp.employee_code if emp else "",
@@ -3619,7 +3647,7 @@ def get_report_data(
 
     get_company_membership(db, current_user, cid)
     if pid is not None:
-        project = db.query(Project).filter(Project.id == pid).first()
+        project = _get(db, Project, pid)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
         get_company_membership(db, current_user, project.company_id)
