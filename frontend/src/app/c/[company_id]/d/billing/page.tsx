@@ -149,26 +149,6 @@ export default function SubcontractorBillingPage() {
     }
   };
 
-  const fetchTowers = async () => {
-    try {
-      const res = await fetch(`${getApiHost()}/apis/v3/towers/${projectId}`, { headers: authHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        setTowers(data.map((t: any) => ({ id: t.id, tower_name: t.tower_name, tower_code: t.tower_code })));
-      }
-    } catch (e) { console.error(e); }
-  };
-
-  const fetchPNL = async () => {
-    if (!projectId) return;
-    try {
-      const url = selectedTower === "all"
-        ? `${getApiHost()}/apis/v3/towers/${projectId}/consolidated-pnl`
-        : `${getApiHost()}/apis/v3/towers/${projectId}/consolidated-pnl?tower_id=${selectedTower}`;
-      const res = await fetch(url, { headers: authHeaders() });
-      if (res.ok) setPnlData(await res.json());
-    } catch (e) { console.error(e); }
-  };
 
   const fetchBills = async (nameMap: Record<string, string> = {}) => {
     try {
@@ -275,19 +255,11 @@ export default function SubcontractorBillingPage() {
         fetchWorkOrders(nameMap),
         fetchBills(nameMap),
         fetchNotes(nameMap),
-        fetchTowers(),
       ]);
       setLoadedFor(projectId);
     })();
   }, [companyId, projectId]);
 
-  const [towers, setTowers] = useState<Array<{ id: string; tower_name: string; tower_code: string }>>([]);
-  const [selectedTower, setSelectedTower] = useState<string>("all");
-  const [pnlData, setPnlData] = useState<any[]>([]);
-
-  useEffect(() => {
-    fetchPNL();
-  }, [selectedTower]);
 
   useEffect(() => {
     (async () => {
@@ -715,14 +687,10 @@ export default function SubcontractorBillingPage() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden font-sans">
       <PageHeader
-        title="Subcontractor Billing & WOs"
-        subtitle="RA Billing Engine · Post-tax & Pre-tax Retentions · TDS Auditor Logs"
+        title="Subcontractor Billing"
+        subtitle="Running bills, work orders, retention and TDS for subcontractors"
       >
         <div className="flex items-center gap-2">
-          <select value={selectedTower} onChange={(e) => setSelectedTower(e.target.value)} className="bg-card border border-border-custom rounded-md px-2.5 py-1.5 text-xs text-foreground outline-none">
-            <option value="all">All Towers/Phases</option>
-            {towers.map((t) => <option key={t.id} value={t.id}>{t.tower_name} ({t.tower_code})</option>)}
-          </select>
           <button
             onClick={() => {
               if (tab === "wo") setShowWOModal(true);
@@ -971,40 +939,6 @@ export default function SubcontractorBillingPage() {
                 </div>
               </div>
 
-              {/* Tower-wise P&L Summary */}
-              {pnlData.length > 0 && (
-                <div className="bg-card border border-border-custom rounded-lg overflow-hidden">
-                  <div className="px-5 py-4 border-b border-border-custom">
-                    <h2 className="text-xs font-bold uppercase tracking-wider text-muted">Tower-wise P&L Breakdown</h2>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs text-left">
-                      <thead>
-                        <tr className="border-b border-border-custom text-muted">
-                          <th className="px-5 py-3 font-bold">Tower/Phase</th>
-                          <th className="px-5 py-3 font-bold text-right">Budget</th>
-                          <th className="px-5 py-3 font-bold text-right">PO Value</th>
-                          <th className="px-5 py-3 font-bold text-right">WO Value</th>
-                          <th className="px-5 py-3 font-bold text-right">Billed</th>
-                          <th className="px-5 py-3 font-bold text-right">Variance</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pnlData.map((p) => (
-                          <tr key={p.tower_id} className="border-b border-border-custom hover:bg-elevated transition-all">
-                            <td className="px-5 py-3.5 text-foreground font-semibold">{p.tower_name}</td>
-                            <td className="px-5 py-3.5 text-right font-sans text-muted">{fmtAmount(p.budget || 0)}</td>
-                            <td className="px-5 py-3.5 text-right font-sans text-warning">{fmtAmount(p.total_po_value || 0)}</td>
-                            <td className="px-5 py-3.5 text-right font-sans">{fmtAmount(p.total_wo_value || 0)}</td>
-                            <td className="px-5 py-3.5 text-right font-sans text-primary">{fmtAmount(p.total_billed || 0)}</td>
-                            <td className="px-5 py-3.5 text-right font-sans text-muted">{fmtAmount((p.budget || 0) - (p.total_billed || 0))}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
 
             </div>
           )}
