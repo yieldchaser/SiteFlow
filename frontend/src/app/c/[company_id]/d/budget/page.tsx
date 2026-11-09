@@ -24,6 +24,7 @@ interface BudgetCommitted {
   subcon_actual: number;
   equipment_committed: number;
   equipment_actual: number;
+  other_actual?: number;
   total_budget: number;
   total_committed: number;
   total_actual: number;
@@ -114,7 +115,22 @@ export default function BudgetPage() {
     }
   };
 
-  const fmt = (v: number) => Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+  const fmt = (v: number) => Math.round(Number(v || 0)).toLocaleString("en-IN");
+  // Money the budget still has once every order is paid. A bill raised
+  // without an order is spend too, so whichever is larger, ordered or
+  // spent, comes off the budget.
+  const leftAfterOrders = (b: number, c: number, a: number) => b - Math.max(c, a);
+  const money = (v: number) => (v < 0 ? `-₹${fmt(-v)}` : `₹${fmt(v)}`);
+  const rows = budget ? [
+    { label: "Material", b: budget.material_budget, c: budget.material_committed, a: budget.material_actual },
+    { label: "Labour", b: budget.labour_budget, c: budget.labour_committed, a: budget.labour_actual },
+    { label: "Subcontractor", b: budget.subcon_budget, c: budget.subcon_committed, a: budget.subcon_actual },
+    { label: "Equipment", b: budget.equipment_budget, c: budget.equipment_committed, a: budget.equipment_actual },
+    ...((budget.other_actual || 0) > 0 ? [{ label: "Other Expenses", b: 0, c: 0, a: budget.other_actual || 0 }] : []),
+  ] : [];
+  const totalLeftAfterOrders = budget ? budget.total_budget - rows.reduce((s, r) => s + Math.max(r.c, r.a), 0) : 0;
+  // The scope table only adds something once costs are booked per tower.
+  const realTowerRows = towerBreakdowns.filter((t) => t.tower_id);
   const pct = (used: number, total: number) => total > 0 ? ((used / total) * 100).toFixed(1) : "0.0";
 
   const noBudget = budget ? (budget.total_budget || 0) <= 0 : false;
@@ -127,8 +143,8 @@ export default function BudgetPage() {
         <div className="absolute top-[-10%] right-[-10%] h-[50vw] w-[50vw] rounded-full bg-primary opacity-[0.02] blur-[120px] pointer-events-none" />
 
         <PageHeader
-          title="Budget & Committed Costs"
-          subtitle="Committed vs Actuals · POs and WOs vs Bills"
+          title="Budget"
+          subtitle="What is ordered and what is spent, against the budget"
         >
           <div className="flex items-center gap-2">
             <button onClick={() => setShowBudgetModal(true)} className="px-3.5 py-1.5 rounded-md bg-primary text-xs font-bold text-white hover:opacity-90 cursor-pointer">+ Set Budget</button>
@@ -158,9 +174,9 @@ export default function BudgetPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                 {[
                   { label: "Total Budget", value: `₹${fmt(budget.total_budget)}`, color: "text-foreground" },
-                  { label: "Total Committed", value: `₹${fmt(budget.total_committed)}`, color: "text-warning" },
-                  { label: "Total Actual", value: `₹${fmt(budget.total_actual)}`, color: "text-primary" },
-                  { label: "Committed Variance", value: noBudget ? "—" : `₹${fmt(budget.total_committed_variance)}`, color: noBudget ? "text-muted" : (budget.total_committed_variance >= 0 ? "text-success" : "text-danger") },
+                  { label: "Ordered (POs + WOs)", value: `₹${fmt(budget.total_committed)}`, color: "text-warning" },
+                  { label: "Spent", value: `₹${fmt(budget.total_actual)}`, color: "text-primary" },
+                  { label: "Left After Orders", value: noBudget ? "—" : money(totalLeftAfterOrders), color: noBudget ? "text-muted" : (totalLeftAfterOrders >= 0 ? "text-success" : "text-danger") },
                 ].map((s, idx) => (
                   <div key={idx} className="bg-card border border-border-custom rounded-lg p-4">
                     <span className="text-[10px] font-bold text-muted uppercase tracking-wider block">{s.label}</span>
@@ -171,13 +187,14 @@ export default function BudgetPage() {
 
               {noBudget && (
                 <div className="p-4 rounded-md bg-warning/10 border border-warning/20 text-xs text-warning">
-                  No budget has been set for this project: set one to see committed variance and utilization.
+                  No budget has been set for this project yet. Set one to see how much is left.
                 </div>
               )}
 
               <div className="bg-card border border-border-custom rounded-lg overflow-hidden">
                 <div className="px-5 py-4 border-b border-border-custom">
-                  <h2 className="text-xs font-bold uppercase tracking-wider text-muted">Committed vs Actuals</h2>
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-muted">By Category</h2>
+                  <p className="text-[11px] text-muted mt-0.5">Ordered is purchase and work orders placed. Spent is approved bills, payroll, wastage and equipment running cost. Left After Orders takes off whichever is larger.</p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs text-left">
@@ -185,20 +202,15 @@ export default function BudgetPage() {
                       <tr className="border-b border-border-custom text-muted">
                         <th className="px-5 py-3 font-bold">Category</th>
                         <th className="px-5 py-3 font-bold text-right">Budget</th>
-                        <th className="px-5 py-3 font-bold text-right">Committed</th>
-                        <th className="px-5 py-3 font-bold text-right">Actual Billed</th>
-                        <th className="px-5 py-3 font-bold text-right">Committed Var.</th>
-                        <th className="px-5 py-3 font-bold text-right">Actual Var.</th>
-                        <th className="px-5 py-3 font-bold text-center">Utilization</th>
+                        <th className="px-5 py-3 font-bold text-right">Ordered</th>
+                        <th className="px-5 py-3 font-bold text-right">Spent</th>
+                        <th className="px-5 py-3 font-bold text-right">Left After Orders</th>
+                        <th className="px-5 py-3 font-bold text-right">Left After Spend</th>
+                        <th className="px-5 py-3 font-bold text-center">% Spent</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {[
-                        { label: "Material", b: budget.material_budget, c: budget.material_committed, a: budget.material_actual },
-                        { label: "Labour", b: budget.labour_budget, c: budget.labour_committed, a: budget.labour_actual },
-                        { label: "Subcontractor", b: budget.subcon_budget, c: budget.subcon_committed, a: budget.subcon_actual },
-                        { label: "Equipment", b: budget.equipment_budget, c: budget.equipment_committed, a: budget.equipment_actual },
-                      ].map((row) => {
+                      {rows.map((row) => {
                         const noRowBudget = row.b <= 0;
                         return (
                         <tr key={row.label} className="border-b border-border-custom hover:bg-elevated transition-all">
@@ -206,8 +218,8 @@ export default function BudgetPage() {
                           <td className="px-5 py-3.5 text-right font-sans text-muted">₹{fmt(row.b)}</td>
                           <td className="px-5 py-3.5 text-right font-sans text-warning">₹{fmt(row.c)}</td>
                           <td className="px-5 py-3.5 text-right font-sans text-primary">₹{fmt(row.a)}</td>
-                          <td className="px-5 py-3.5 text-right font-sans text-muted">{noRowBudget ? "—" : `₹${fmt(row.b - row.c)}`}</td>
-                          <td className="px-5 py-3.5 text-right font-sans text-muted">{noRowBudget ? "—" : `₹${fmt(row.b - row.a)}`}</td>
+                          <td className={`px-5 py-3.5 text-right font-sans ${!noRowBudget && leftAfterOrders(row.b, row.c, row.a) < 0 ? "text-danger" : "text-muted"}`}>{noRowBudget ? "—" : money(leftAfterOrders(row.b, row.c, row.a))}</td>
+                          <td className={`px-5 py-3.5 text-right font-sans ${!noRowBudget && row.b - row.a < 0 ? "text-danger" : "text-muted"}`}>{noRowBudget ? "—" : money(row.b - row.a)}</td>
                           <td className="px-5 py-3.5 text-center">
                             <div className="flex items-center justify-center gap-2">
                               <div className="w-24 bg-elevated rounded-full h-1.5 overflow-hidden">
@@ -225,14 +237,14 @@ export default function BudgetPage() {
               </div>
 
               {/* Tower / Scope Committed Breakdown */}
-              {towerBreakdowns.length > 0 && (
+              {realTowerRows.length > 0 && (
                 <div className="bg-card border border-border-custom rounded-lg overflow-hidden mt-6">
                   <div className="px-5 py-4 border-b border-border-custom flex items-center justify-between">
                     <div>
-                      <h2 className="text-xs font-bold uppercase tracking-wider text-muted">Tower / Phase Committed Breakdown</h2>
-                      <p className="text-[11px] text-muted mt-0.5">PO & WO commitments attributed by tower and project scope</p>
+                      <h2 className="text-xs font-bold uppercase tracking-wider text-muted">By Tower</h2>
+                      <p className="text-[11px] text-muted mt-0.5">Ordered and spent per tower</p>
                     </div>
-                    <span className="text-[10px] text-muted font-bold uppercase">{towerBreakdowns.length} Scope{towerBreakdowns.length > 1 ? "s" : ""}</span>
+                    <span className="text-[10px] text-muted font-bold uppercase">{realTowerRows.length} {realTowerRows.length === 1 ? "tower" : "towers"}</span>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs text-left">
@@ -240,15 +252,15 @@ export default function BudgetPage() {
                         <tr className="border-b border-border-custom text-muted">
                           <th className="px-5 py-3 font-bold">Tower / Scope</th>
                           <th className="px-5 py-3 font-bold text-right">Budget</th>
-                          <th className="px-5 py-3 font-bold text-right">Committed (POs/WOs)</th>
-                          <th className="px-5 py-3 font-bold text-right">Actual Billed</th>
-                          <th className="px-5 py-3 font-bold text-right">Committed Var.</th>
-                          <th className="px-5 py-3 font-bold text-right">Actual Var.</th>
-                          <th className="px-5 py-3 font-bold text-center">Utilization</th>
+                          <th className="px-5 py-3 font-bold text-right">Ordered</th>
+                          <th className="px-5 py-3 font-bold text-right">Spent</th>
+                          <th className="px-5 py-3 font-bold text-right">Left After Orders</th>
+                          <th className="px-5 py-3 font-bold text-right">Left After Spend</th>
+                          <th className="px-5 py-3 font-bold text-center">% Spent</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {towerBreakdowns.map((t, idx) => {
+                        {realTowerRows.map((t, idx) => {
                           const noTowerBudget = (t.budget || 0) <= 0;
                           return (
                             <tr key={t.tower_id || idx} className="border-b border-border-custom hover:bg-elevated transition-all">
