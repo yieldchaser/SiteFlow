@@ -1,6 +1,6 @@
 from uuid import UUID
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -36,6 +36,7 @@ class DrawingPinResponse(BaseModel):
     tagged_user_id: Optional[UUID] = None
     created_by: Optional[UUID] = None
     resolved: Optional[bool] = None
+    category: str = "Observation"
     created_at: datetime
 
     class Config:
@@ -117,6 +118,9 @@ class PinCreateRequest(BaseModel):
     y_coordinate: float = Field(..., ge=0, le=9999.99, example=60.2)
     comment: str = Field(..., example="Check structural column thickness here")
     tagged_user_id: Optional[UUID] = None
+    # The kind of pin; the screen filters by it. It was never sent or stored,
+    # so every pin reloaded as an Observation.
+    category: Literal["RFI", "Clash", "Observation", "Approval"] = "Observation"
 
 class PinResolveRequest(BaseModel):
     resolved: bool
@@ -171,6 +175,7 @@ def get_drawings(project_id: UUID, db: Session = Depends(get_db), _: None = Depe
                     comment=p.comment,
                     tagged_user_id=p.tagged_user_id,
                     created_by=p.created_by,
+                    category=p.category or "Observation",
                     resolved=p.resolved,
                     created_at=p.created_at
                 )
@@ -296,6 +301,7 @@ def update_drawing(drawing_id: UUID, req: DrawingUpdateRequest, db: Session = De
                 comment=p.comment,
                 tagged_user_id=p.tagged_user_id,
                 created_by=p.created_by,
+                category=p.category or "Observation",
                 resolved=p.resolved,
                 created_at=p.created_at
             )
@@ -459,6 +465,7 @@ def approve_drawing_revision(revision_id: UUID, req: RevisionApproveRequest, db:
             comment=p.comment,
             tagged_user_id=p.tagged_user_id,
             created_by=p.created_by,
+            category=p.category or "Observation",
             resolved=p.resolved,
             created_at=p.created_at
         )
@@ -498,7 +505,8 @@ def add_pin_to_revision(revision_id: UUID, req: PinCreateRequest, db: Session = 
         y_coordinate=req.y_coordinate,
         comment=req.comment,
         tagged_user_id=req.tagged_user_id,
-        created_by=membership.id
+        created_by=membership.id,
+        category=req.category,
     )
     db.add(pin)
     db.commit()
@@ -512,6 +520,7 @@ def add_pin_to_revision(revision_id: UUID, req: PinCreateRequest, db: Session = 
         comment=pin.comment,
         tagged_user_id=pin.tagged_user_id,
         created_by=pin.created_by,
+        category=pin.category,
         resolved=pin.resolved,
         created_at=pin.created_at
     )

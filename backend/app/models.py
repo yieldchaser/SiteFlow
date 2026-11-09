@@ -441,6 +441,8 @@ class DrawingPin(Base):
     tagged_user_id = Column(UUID(as_uuid=True), ForeignKey("company_team.id"), nullable=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("company_team.id"), nullable=True)
     resolved = Column(Boolean, default=False, nullable=True)
+    # RFI / Clash / Observation / Approval (migration 20261109_000004).
+    category = Column(String(20), default="Observation", server_default="Observation", nullable=False)
     created_at = Column(DateTime(timezone=True), default=func.now(), nullable=False)
 
 class MaterialIndent(Base):

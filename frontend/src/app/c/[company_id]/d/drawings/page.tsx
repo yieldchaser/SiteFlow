@@ -25,8 +25,8 @@ interface RFIPin {
   y: number;
   category: PinCategory;
   comment: string;
-  photoAttached: boolean;
-  user: string;
+  // Team member who dropped the pin; the name is looked up when shown.
+  userId: string | null;
   date: string;
   resolved: boolean;
 }
@@ -39,9 +39,8 @@ interface Revision {
   approvalStatus: string;
   comments: string;
   date: string;
-  uploadedBy: string;
   pins: RFIPin[];
-  approvedBy?: string;
+  approvedById?: string | null;
 }
 
 interface Drawing {
@@ -91,9 +90,9 @@ export default function DrawingsPage() {
   const [tempXY, setTempXY] = useState({ x: 0, y: 0 });
   const [newPinComment, setNewPinComment] = useState("");
   const [newPinCat, setNewPinCat] = useState<PinCategory>("RFI");
-  const [newPinPhoto, setNewPinPhoto] = useState(false);
   const [newPinTaggedUserId, setNewPinTaggedUserId] = useState("");
   const [teamMembers, setTeamMembers] = useState<Array<{ id: string; name: string }>>([]);
+  const memberName = (id?: string | null) => (id ? teamMembers.find((t) => t.id === id)?.name || "" : "");
 
   // Add revision modal
   const [showRevModal, setShowRevModal] = useState(false);
@@ -122,7 +121,7 @@ export default function DrawingsPage() {
           id: d.id,
           name: d.name,
           category: d.category,
-          createdAt: d.created_at ? d.created_at.split("T")[0] : "",
+          createdAt: d.created_at || "",
           revisions: (d.revisions || []).map((r: any) => ({
             id: r.id,
             version: r.version_code,
@@ -130,21 +129,21 @@ export default function DrawingsPage() {
             status: r.approval_status === "approved" ? "current" : (r.approval_status === "rejected" ? "locked" : "superseded"),
             approvalStatus: r.approval_status || "pending",
             comments: r.comments || "",
-            date: r.created_at ? r.created_at.split("T")[0] : "",
-            uploadedBy: "Auto-synced",
-            pins: (r.pins || []).map((p: any) => ({
+            date: r.created_at || "",
+            // Pins come oldest first; number them in that order (they all
+            // showed "#0" after a reload) and keep the kind the API stored.
+            pins: (r.pins || []).map((p: any, i: number) => ({
               id: p.id,
-              seq: 0,
+              seq: i + 1,
               x: p.x_coordinate,
               y: p.y_coordinate,
-              category: "Observation",
+              category: (["RFI", "Clash", "Observation", "Approval"].includes(p.category) ? p.category : "Observation") as PinCategory,
               comment: p.comment,
-              photoAttached: false,
-              user: "System",
-              date: p.created_at ? p.created_at.split("T")[0] : "",
+              userId: p.created_by || null,
+              date: p.created_at || "",
               resolved: p.resolved === true,
             })),
-            approvedBy: r.approved_by ? "Approver" : undefined,
+            approvedById: r.approved_by || null,
           })).sort((a: Revision, b: Revision) => {
             const numA = parseInt(a.version.replace(/\D/g, "")) || 0;
             const numB = parseInt(b.version.replace(/\D/g, "")) || 0;
@@ -208,7 +207,6 @@ export default function DrawingsPage() {
     setTempXY({ x, y });
     setNewPinComment("");
     setNewPinCat("RFI");
-    setNewPinPhoto(false);
     setShowPinModal(true);
   };
 
@@ -228,6 +226,7 @@ export default function DrawingsPage() {
           y_coordinate: tempXY.y,
           comment: newPinComment,
           tagged_user_id: newPinTaggedUserId || null,
+          category: newPinCat,
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -235,9 +234,8 @@ export default function DrawingsPage() {
       const pinData = {
         id: saved.id, seq: nextSeq,
         x: tempXY.x, y: tempXY.y,
-        category: newPinCat, comment: newPinComment,
-        photoAttached: newPinPhoto,
-        user: "Current User", date: formatDate(new Date()),
+        category: (saved.category || newPinCat) as PinCategory, comment: newPinComment,
+        userId: saved.created_by || null, date: saved.created_at || new Date().toISOString(),
         resolved: false,
       };
       setDrawings(prev => prev.map(d => d.id !== activeDrawingId ? d : {
@@ -374,8 +372,7 @@ export default function DrawingsPage() {
         status: saved.approval_status === "approved" ? "current" : (saved.approval_status === "rejected" ? "locked" : "superseded"),
         approvalStatus: saved.approval_status || "pending",
         comments: saved.comments || "",
-        date: saved.created_at ? saved.created_at.split("T")[0] : todayLocalISO(),
-        uploadedBy: "Current User",
+        date: saved.created_at || todayLocalISO(),
         pins: [],
       };
 
@@ -499,7 +496,7 @@ export default function DrawingsPage() {
                     ) : (
                       <div className="font-bold text-foreground text-sm">{activeDrawing.name}</div>
                     )}
-                    <div className="text-[10px] text-muted mt-0.5">{activeDrawing.category} · Active: {registerActiveRev?.version ?? "—"} · {registerActiveRev?.date ?? "—"} · {registerActiveRev?.approvalStatus === "approved" ? "Approved" : registerActiveRev?.approvalStatus === "rejected" ? "Rejected" : "Pending"}</div>
+                    <div className="text-[10px] text-muted mt-0.5">{activeDrawing.category} · Active: {registerActiveRev?.version ?? "—"} · {registerActiveRev?.date ? formatDate(registerActiveRev.date) : "—"} · {registerActiveRev?.approvalStatus === "approved" ? "Approved" : registerActiveRev?.approvalStatus === "rejected" ? "Rejected" : "Pending"}</div>
                   </div>
                   <div className="flex items-center gap-2">
                     {openCount > 0 && (
@@ -526,7 +523,7 @@ export default function DrawingsPage() {
                     // plain <img> asked the website for them and showed nothing.
                     <AuthImage key={activeRev.id} src={activeRev.fileUrl} alt={activeDrawing.name}
                       onLoad={() => setImgLoaded(true)}
-                      className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-500 ${imgLoaded ? "opacity-60" : "opacity-0"}`} />
+                      className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-500 ${imgLoaded ? "opacity-100" : "opacity-0"}`} />
                   )}
 
                   {/* Blueprint grid overlay */}
@@ -582,7 +579,6 @@ export default function DrawingsPage() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <Badge tone={pin.category === "RFI" ? "warning" : pin.category === "Clash" ? "danger" : pin.category === "Observation" ? "info" : "success"} className="font-bold">{pin.category} #{pin.seq}</Badge>
                           {pin.resolved && <span className="text-[9px] text-success font-bold bg-success/10 px-1.5 py-0.5 rounded inline-flex items-center gap-1"><Icon name="check" className="w-3 h-3" /> Resolved</span>}
-                          {pin.photoAttached && <span className="text-[9px] text-info bg-info/10 px-1.5 py-0.5 rounded inline-flex items-center gap-1"><Icon name="camera" className="w-3 h-3" /> Photo</span>}
                         </div>
                         <div className="flex items-center gap-2">
                           <button onClick={() => handleToggleResolved(pin.id)}
@@ -593,7 +589,7 @@ export default function DrawingsPage() {
                         </div>
                       </div>
                       <p className="text-foreground leading-relaxed">{pin.comment}</p>
-                      <div className="text-[10px] text-muted">Logged by {pin.user} · {pin.date}</div>
+                      <div className="text-[10px] text-muted">Logged by {memberName(pin.userId) || "a team member"} · {formatDate(pin.date)}</div>
                     </div>
                   );
                 })()}
@@ -626,14 +622,14 @@ export default function DrawingsPage() {
                               </span>
                             </div>
                             <div className="text-[10px] text-muted line-clamp-2">{rev.comments}</div>
-                            <div className="text-[9px] text-muted mt-1">{rev.date} · {rev.uploadedBy} · {rev.approvalStatus === "approved" ? "Approved" : rev.approvalStatus === "rejected" ? "Rejected" : "Pending"}</div>
+                            <div className="text-[9px] text-muted mt-1">{formatDate(rev.date)} · {rev.approvalStatus === "approved" ? "Approved" : rev.approvalStatus === "rejected" ? "Rejected" : "Pending"}</div>
                             {rev.pins.length > 0 && (
                               <div className="flex items-center gap-2 mt-1 text-[9px]">
                                 <span className="text-muted">{rev.pins.length} pins</span>
                                 {revOpenPins > 0 && <span className="text-warning font-bold">{revOpenPins} open</span>}
                               </div>
                             )}
-                            {rev.approvedBy && <div className="text-[9px] text-success mt-0.5">Approved by {rev.approvedBy}</div>}
+                            {rev.approvedById && memberName(rev.approvedById) && <div className="text-[9px] text-success mt-0.5">Approved by {memberName(rev.approvedById)}</div>}
                           </button>
                           {/* Lock / Unlock for non-current revisions */}
                           {rev.status !== "current" && (
@@ -760,10 +756,6 @@ export default function DrawingsPage() {
                 ))}
               </select>
             </div>
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input type="checkbox" checked={newPinPhoto} onChange={e => setNewPinPhoto(e.target.checked)} className="accent-primary" />
-              <span className="text-muted">Attach site photo proof</span>
-            </label>
             <div className="flex gap-2 justify-end border-t border-border-custom pt-3">
               <button onClick={() => setShowPinModal(false)} className="px-4 py-2 bg-elevated text-muted hover:text-foreground rounded-md text-xs">Cancel</button>
               <button onClick={handleAddPin} disabled={!newPinComment.trim()}

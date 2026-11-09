@@ -1,7 +1,7 @@
 "use client";
 import { getApiHost, readErrorDetail } from "@/lib/api";
 import UnitInput from "@/components/UnitInput";
-import { authHeaders, formatDate, formatLabel } from "@/lib/siteflow";
+import { authHeaders, formatDate, formatLabel, todayLocalISO } from "@/lib/siteflow";
 
 import React, { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
@@ -135,6 +135,8 @@ export default function DPRPage() {
 
   // Form states
   const [selectedTaskId, setSelectedTaskId] = useState("");
+  // The day the work was done: yesterday's report is often written next morning.
+  const [reportDate, setReportDate] = useState(todayLocalISO());
   const [executedQty, setExecutedQty] = useState("");
   const [workersDeployed, setWorkersDeployed] = useState("");
   const [weather, setWeather] = useState("Clear");
@@ -178,10 +180,13 @@ export default function DPRPage() {
       const res = await fetch(`${getApiHost()}/apis/v3/planning/tasks?project_id=${projectId}`, { headers: authHeaders() });
       if (res.ok) {
         const data = await res.json();
-        setTasks(data);
-        if (data.length > 0) {
-          setSelectedTaskId(data[0].id);
-        }
+        // Work still to do first; finished tasks at the bottom. The form used
+        // to preselect whatever came first, often a task already completed.
+        const done = (t: Task) => (t.status || "").toLowerCase() === "completed";
+        const ordered = [...(data as Task[])].sort((a, b) => Number(done(a)) - Number(done(b)));
+        setTasks(ordered);
+        const firstOpen = ordered.find((t) => !done(t));
+        setSelectedTaskId(firstOpen ? firstOpen.id : "");
       }
     } catch (e) {
       console.error(e);
@@ -289,7 +294,9 @@ export default function DPRPage() {
           project_id: projectId,
           task_id: selectedTaskId && /^[0-9a-fA-F-]{36}$/.test(selectedTaskId) ? selectedTaskId : null,
           reported_by: reportedBy || "—",
-          dpr_date: new Date().toISOString(),
+          // Noon local time, so the day never shifts when stored in UTC (a
+          // report filed before 5:30 am IST used to land on the previous day).
+          dpr_date: new Date(`${reportDate}T12:00:00`).toISOString(),
           executed_qty: parseFloat(executedQty) || 0.0,
           workers_deployed: parseInt(workersDeployed) || 0,
           weather: weather,
@@ -481,6 +488,17 @@ export default function DPRPage() {
                     <option key={t.id} value={t.id}>{t.name} ({formatLabel(t.status)})</option>
                   ))}
                 </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-muted">Report Date</label>
+                <input
+                  type="date"
+                  value={reportDate}
+                  max={todayLocalISO()}
+                  onChange={(e) => setReportDate(e.target.value || todayLocalISO())}
+                  className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground"
+                />
               </div>
 
               <div className="space-y-1">
