@@ -1215,7 +1215,11 @@ export default function FinancePage() {
 
   // Header-chip counts (lifted from the inline IIFE so the header chips and the
   // toolbar buttons can share the same source of truth). Fix for R2-101.
-  const txnsForHeader = txnSummary.transactions || [];
+  // Same project scope as the dashboard list below.
+  const txnsForHeader = useMemo(() => {
+    const all = txnSummary.transactions || [];
+    return projectId && !txnAllProjects ? all.filter((t: any) => String(t.project_id || "") === String(projectId)) : all;
+  }, [txnSummary, projectId, txnAllProjects]);
   // Pending = not yet approved. A bill's status is about payment (Unpaid,
   // Paid), so an approved but unpaid bill is not pending.
   const isAwaitingApproval = (t: any) =>
