@@ -459,8 +459,22 @@ def create_batch(payload: BatchCreate, db: Session = Depends(get_db), current_us
     return _batch_response(db, batch)
 
 
+class BatchCompleteRequest(BaseModel):
+    """What the site actually got and used, recorded when a running batch ends.
+
+    Both are optional: without them the batch keeps the quantities it was
+    logged with (the recipe plan scaled to the batch)."""
+    actual_output_qty: Optional[float] = Field(None, ge=0)
+    materials: Optional[List[BatchMaterialInput]] = None
+
+
 @router.patch("/batches/{batch_id}/complete", response_model=BatchResponse)
-def complete_batch(batch_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def complete_batch(
+    batch_id: UUID,
+    payload: Optional[BatchCompleteRequest] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     batch = db.query(ProductionBatch).filter(ProductionBatch.id == batch_id).first()
     if not batch:
         raise HTTPException(status_code=404, detail="Batch not found")
@@ -478,6 +492,23 @@ def complete_batch(batch_id: UUID, db: Session = Depends(get_db), current_user: 
 
     batch.status = "completed"
     batch.completed_at = datetime.utcnow()
+
+    # Record the actual figures before stock moves, so the deduction and the
+    # variance both use what was really consumed rather than the plan.
+    if payload is not None:
+        if payload.actual_output_qty is not None:
+            batch.actual_output_qty = payload.actual_output_qty
+        actual_by_name = {m.material_name: m.actual_qty for m in (payload.materials or []) if m.actual_qty is not None}
+        if actual_by_name:
+            total_actual = 0.0
+            for bm in db.query(ProductionBatchMaterial).filter(ProductionBatchMaterial.batch_id == batch.id).all():
+                if bm.material_name in actual_by_name:
+                    bm.actual_qty = actual_by_name[bm.material_name]
+                    bm.variance_qty = float(bm.actual_qty) - float(bm.planned_qty)
+                total_actual += float(bm.actual_qty)
+            batch.actual_material_qty = total_actual
+            batch.consumption_variance_qty = total_actual - float(batch.planned_material_qty or 0)
+        db.flush()
 
     # Deduct inventory if not already deducted
     tx_exists = db.query(MaterialTransaction).filter(

@@ -156,6 +156,14 @@ export default function ProductionPage() {
   const [actualOutputQty, setActualOutputQty] = useState("10.0");
   const [batchStatus, setBatchStatus] = useState("completed");
   const [batchNotes, setBatchNotes] = useState("");
+  // Material actually used, per recipe material. Blank means "as per the
+  // recipe for this output", which the API works out.
+  const [matUsed, setMatUsed] = useState<Record<string, string>>({});
+  // Completing a running batch: what came out and what went in.
+  const [completing, setCompleting] = useState<Batch | null>(null);
+  const [completeOutput, setCompleteOutput] = useState("");
+  const [completeMats, setCompleteMats] = useState<Record<string, string>>({});
+  const [completeError, setCompleteError] = useState("");
 
   const fetchSummary = async () => {
     try {
@@ -181,21 +189,41 @@ export default function ProductionPage() {
     }
   }, [projectId]);
 
-  const handleCompleteBatch = async (batchId: string) => {
+  const openComplete = (batch: Batch) => {
+    setCompleting(batch);
+    setCompleteOutput(String(batch.actual_output_qty ?? batch.planned_output_qty ?? ""));
+    setCompleteMats({});
+    setCompleteError("");
+  };
+
+  const handleCompleteBatch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!completing) return;
+    setSubmitting(true);
+    setCompleteError("");
     try {
-      const res = await fetch(`${getApiHost()}/apis/v3/production/batches/${batchId}/complete`, {
+      const res = await fetch(`${getApiHost()}/apis/v3/production/batches/${completing.id}/complete`, {
         method: "PATCH",
-        headers: authHeaders(),
+        headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
+        body: JSON.stringify({
+          actual_output_qty: completeOutput === "" ? null : Number(completeOutput),
+          materials: completing.materials
+            .filter((m) => (completeMats[m.material_name] ?? "") !== "")
+            .map((m) => ({ material_name: m.material_name, actual_qty: Number(completeMats[m.material_name]), unit: m.unit })),
+        }),
       });
       if (res.ok) {
+        setCompleting(null);
         void fetchSummary();
       } else {
-        const err = await res.json();
-        alert(detailToMessage(err.detail, "Failed to complete batch"));
+        const err = await res.json().catch(() => ({}));
+        setCompleteError(detailToMessage(err.detail, "Could not complete the batch"));
       }
-    } catch (e) {
-      console.error("Failed to complete batch", e);
-      alert("Network error completing batch");
+    } catch (err) {
+      console.error("Failed to complete batch", err);
+      setCompleteError("Network error. The batch was not completed.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -282,7 +310,11 @@ export default function ProductionPage() {
         actual_output_qty: Number(actualOutputQty),
         status: batchStatus,
         notes: batchNotes || null,
-        materials: [],
+        materials: batchStatus === "completed"
+          ? (data?.recipes.find((r) => r.id === selectedRecipeId)?.materials || [])
+              .filter((m) => (matUsed[m.material_name] ?? "") !== "")
+              .map((m) => ({ material_name: m.material_name, actual_qty: Number(matUsed[m.material_name]), unit: m.unit }))
+          : [],
       };
       const res = await fetch(`${getApiHost()}/apis/v3/production/batches`, {
         method: "POST",
@@ -293,6 +325,7 @@ export default function ProductionPage() {
         setShowLogBatchModal(false);
         setBatchNumber("");
         setBatchNotes("");
+        setMatUsed({});
         void fetchSummary();
       } else {
         const err = await res.json();
@@ -609,7 +642,7 @@ export default function ProductionPage() {
                             </Badge>
                             {batch.status === "running" && (
                               <button
-                                onClick={() => handleCompleteBatch(batch.id)}
+                                onClick={() => openComplete(batch)}
                                 className="rounded bg-primary px-2 py-1 text-[10px] font-bold text-white hover:opacity-90"
                               >
                                 Complete
@@ -805,6 +838,7 @@ export default function ProductionPage() {
                 <label className="text-[10px] uppercase tracking-[0.2em] text-muted block mb-1">Select Recipe Standard</label>
                 <select value={selectedRecipeId} onChange={(e) => {
                   setSelectedRecipeId(e.target.value);
+                  setMatUsed({});
                   const selected = data?.recipes.find(r => r.id === e.target.value);
                   if (selected) {
                     setPlannedOutputQty(String(selected.target_output_qty));
@@ -825,8 +859,8 @@ export default function ProductionPage() {
                 <div>
                   <label className="text-[10px] uppercase tracking-[0.2em] text-muted block mb-1">Status</label>
                   <select value={batchStatus} onChange={(e) => setBatchStatus(e.target.value)} className="w-full bg-elevated border border-border-custom rounded px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary">
-                    <option value="completed">Completed (Deducts Stock)</option>
-                    <option value="running">Running (Pending Deduction)</option>
+                    <option value="completed">Completed, take stock out now</option>
+                    <option value="running">Running, take stock out when it finishes</option>
                   </select>
                 </div>
               </div>
@@ -840,6 +874,32 @@ export default function ProductionPage() {
                   <input type="number" step="0.01" value={actualOutputQty} onChange={(e) => setActualOutputQty(e.target.value)} required className="w-full bg-elevated border border-border-custom rounded px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary" />
                 </div>
               </div>
+              {batchStatus === "completed" && (() => {
+                const recipe = data?.recipes.find((r) => r.id === selectedRecipeId);
+                if (!recipe || recipe.materials.length === 0) return null;
+                const factor = (1 + (Number(recipe.wastage_pct) || 0) / 100) / (Number(recipe.target_output_qty) || 1);
+                return (
+                  <div>
+                    <label className="text-[10px] uppercase tracking-[0.2em] text-muted block mb-1">Material Used</label>
+                    <p className="mb-2 text-[11px] text-muted">Leave a line blank if it went as per the recipe.</p>
+                    <div className="space-y-2">
+                      {recipe.materials.map((m) => (
+                        <div key={m.id} className="flex items-center gap-3">
+                          <span className="flex-1 text-xs text-foreground">{m.material_name}</span>
+                          <input
+                            type="number" min="0" step="any"
+                            value={matUsed[m.material_name] ?? ""}
+                            onChange={(e) => setMatUsed((prev) => ({ ...prev, [m.material_name]: e.target.value }))}
+                            placeholder={formatQty(Number(m.planned_qty) * factor * (Number(actualOutputQty) || 0))}
+                            className="w-28 bg-elevated border border-border-custom rounded px-2 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
+                          />
+                          <span className="w-10 text-[11px] text-muted">{m.unit}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
               <div>
                 <label className="text-[10px] uppercase tracking-[0.2em] text-muted block mb-1">Notes</label>
                 <textarea value={batchNotes} onChange={(e) => setBatchNotes(e.target.value)} placeholder="Pour location details, slump verification, grid lines..." className="w-full h-16 bg-elevated border border-border-custom rounded px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary resize-none" />
@@ -847,6 +907,49 @@ export default function ProductionPage() {
               <div className="flex justify-end gap-2 border-t border-border-custom pt-4">
                 <button type="button" onClick={() => setShowLogBatchModal(false)} className="rounded px-4 py-2 text-xs font-semibold text-muted hover:text-foreground">Cancel</button>
                 <button type="submit" disabled={submitting} className="rounded bg-primary px-4 py-2 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50">{submitting ? "Logging..." : "Log Batch"}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {completing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg rounded-xl border border-border-custom bg-card p-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border-custom pb-4">
+              <h3 className="text-lg font-bold text-foreground">Complete {completing.batch_number}</h3>
+              <button onClick={() => setCompleting(null)} className="text-muted hover:text-foreground text-lg">&times;</button>
+            </div>
+            <form onSubmit={handleCompleteBatch} className="mt-4 space-y-4">
+              {completeError && <div className="rounded bg-danger/10 border border-danger/20 p-3 text-xs text-danger">{completeError}</div>}
+              <p className="text-xs text-muted">Stock is taken out of the store when you complete the batch. Leave a material blank if it went as per the plan.</p>
+              <div>
+                <label className="text-[10px] uppercase tracking-[0.2em] text-muted block mb-1">Actual Output Qty</label>
+                <input type="number" min="0" step="any" value={completeOutput} onChange={(e) => setCompleteOutput(e.target.value)} className="w-full bg-elevated border border-border-custom rounded px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary" />
+              </div>
+              {completing.materials.length > 0 && (
+                <div>
+                  <label className="text-[10px] uppercase tracking-[0.2em] text-muted block mb-1">Material Used</label>
+                  <div className="space-y-2">
+                    {completing.materials.map((m) => (
+                      <div key={m.id} className="flex items-center gap-3">
+                        <span className="flex-1 text-xs text-foreground">{m.material_name}<span className="ml-2 text-muted">plan {formatQty(m.planned_qty)}</span></span>
+                        <input
+                          type="number" min="0" step="any"
+                          value={completeMats[m.material_name] ?? ""}
+                          onChange={(e) => setCompleteMats((prev) => ({ ...prev, [m.material_name]: e.target.value }))}
+                          placeholder={formatQty(m.actual_qty)}
+                          className="w-28 bg-elevated border border-border-custom rounded px-2 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary"
+                        />
+                        <span className="w-10 text-[11px] text-muted">{m.unit}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="flex justify-end gap-2 border-t border-border-custom pt-4">
+                <button type="button" onClick={() => setCompleting(null)} className="rounded px-4 py-2 text-xs font-semibold text-muted hover:text-foreground">Cancel</button>
+                <button type="submit" disabled={submitting} className="rounded bg-primary px-4 py-2 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50">{submitting ? "Completing..." : "Complete Batch"}</button>
               </div>
             </form>
           </div>
