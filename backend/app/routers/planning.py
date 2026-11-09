@@ -363,7 +363,11 @@ def get_lookahead(project_id: UUID, days: int = 14, db: Session = Depends(get_db
         .all()
     )
 
-    critical_ids = compute_critical_task_ids(tasks, db)
+    # The critical path belongs to the whole project; worked out from only the
+    # tasks in this window, a task here read critical while the full plan
+    # said otherwise.
+    all_tasks = db.query(Task).filter(Task.project_id == project_id).all()
+    critical_ids = compute_critical_task_ids(all_tasks, db)
 
     assigned_ids = [t.assigned_to for t in tasks if t.assigned_to]
     teams = db.query(CompanyTeam).filter(CompanyTeam.id.in_(assigned_ids)).all() if assigned_ids else []
