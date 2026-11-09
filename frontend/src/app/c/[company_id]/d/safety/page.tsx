@@ -331,6 +331,13 @@ export default function SafetyPage() {
               <Icon name="toolbox_talk" className="w-3.5 h-3.5" />
               + Add Talk
             </button>
+          ) : tab === 3 ? (
+            <button
+              onClick={() => setShowPPEModal(true)}
+              className="py-2 px-4 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary/90 transition-colors cursor-pointer flex items-center gap-1.5"
+            >
+              + Record Check
+            </button>
           ) : null
         }
       />
@@ -600,12 +607,6 @@ export default function SafetyPage() {
         <div>
           <div className="flex justify-between items-center mb-5">
             <h2 className="text-base font-semibold text-foreground">PPE Compliance</h2>
-            <button
-              onClick={() => setShowPPEModal(true)}
-              className="py-2 px-4 rounded-lg bg-info text-white text-xs font-semibold hover:opacity-90 transition-opacity"
-            >
-              + Record Check
-            </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] gap-6 items-start">
             {/* Donut */}
@@ -721,7 +722,11 @@ export default function SafetyPage() {
                 <label className="text-[10px] uppercase tracking-wider text-muted block mb-1">Incident Type</label>
                 <select
                   value={incidentForm.incident_type}
-                  onChange={(e) => setIncidentForm({ ...incidentForm, incident_type: e.target.value })}
+                  onChange={(e) => setIncidentForm({
+                    ...incidentForm,
+                    incident_type: e.target.value,
+                    lost_time_days: e.target.value === "LTI" || e.target.value === "Fatal" ? incidentForm.lost_time_days : 0,
+                  })}
                   className="w-full bg-elevated border border-border-custom rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary"
                 >
                   {["Near Miss", "First Aid", "LTI", "Fatal"].map((t) => (
@@ -769,6 +774,9 @@ export default function SafetyPage() {
                     placeholder="Name (if any)"
                   />
                 </div>
+                {/* Only an LTI or a fatality loses working days; on other types
+                    the number was accepted and then left out of every figure. */}
+                {(incidentForm.incident_type === "LTI" || incidentForm.incident_type === "Fatal") && (
                 <div>
                   <label className="text-[10px] uppercase tracking-wider text-muted block mb-1">Lost Time Days</label>
                   <input
@@ -779,6 +787,7 @@ export default function SafetyPage() {
                     className="w-full bg-elevated border border-border-custom rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary"
                   />
                 </div>
+                )}
                 <div>
                   <label className="text-[10px] uppercase tracking-wider text-muted block mb-1">Reported By *</label>
                   <input

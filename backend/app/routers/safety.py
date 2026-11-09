@@ -10,7 +10,7 @@ from app.database import get_db
 from app.auth import get_current_user, get_company_membership, require_permission
 from app.models import SafetyIncident, ToolboxTalk, PPECheck, Project, AttendanceLog, User, DailyProgressReport
 from app.routers.delete_logs import log_deletion
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, List
 from datetime import datetime, timezone
 import uuid
@@ -34,6 +34,15 @@ class IncidentCreate(BaseModel):
     lost_time_days: int = Field(0, ge=0)
     reported_by: str
     reported_at: datetime       # ISO datetime string
+
+    @model_validator(mode="after")
+    def lost_days_only_for_lost_time(self):
+        # Lost days count only for an LTI or a fatality; on a near miss or a
+        # first-aid case they were accepted and then silently left out of
+        # every statistic.
+        if self.lost_time_days and self.incident_type not in ("LTI", "Fatal"):
+            raise ValueError("Lost time days apply only to an LTI or a fatal incident")
+        return self
 
     @field_validator("reported_at")
     @classmethod

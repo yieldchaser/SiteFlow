@@ -98,3 +98,20 @@ def test_legacy_stored_row_still_counts_as_lti(client, db, make_tenant, auth_hea
     assert body["lti_count"] == 1, body
     assert body["total_lost_days"] == 7, body
     assert body["ltif"] > 0, body
+
+
+def test_lost_days_refused_on_near_miss(client, db, make_tenant, auth_headers):
+    """Lost days on a near miss were accepted and then silently left out of
+    every statistic (only LTI and Fatal count). They are refused instead."""
+    comp, user, _team = make_tenant(
+        company_name=f"R2252D-{_SUFFIX}", user_name="U2252D",
+        mobile=f"+9192{_SUFFIX}", email=f"r2252d-{_SUFFIX}@test.com",
+    )
+    proj = _seed_project(db, comp)
+    hdr = auth_headers(user, comp)
+
+    r = client.post("/apis/v3/safety/incidents", json=_payload(proj.id, "Near Miss"), headers=hdr)
+    assert r.status_code == 422, r.text
+    clean = dict(_payload(proj.id, "Near Miss"), lost_time_days=0)
+    ok = client.post("/apis/v3/safety/incidents", json=clean, headers=hdr)
+    assert ok.status_code in (200, 201), ok.text
