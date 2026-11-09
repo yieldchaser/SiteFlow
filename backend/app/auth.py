@@ -478,10 +478,17 @@ _READ_MODULE_BY_ROUTER = {
 }
 
 
+# Reads every screen needs whatever the role: the project list, the team
+# list behind people pickers, and the subcontractor list used by attendance.
+_SHARED_READ_ENDPOINTS = {"list_projects_v3", "get_project_v3", "list_team_members", "list_subcontractors"}
+
+
 def _enforce_module_read(request: Optional[Request], db: Session, current_user, company_id) -> None:
     if request is None or request.method != "GET":
         return
     endpoint = request.scope.get("endpoint")
+    if getattr(endpoint, "__name__", "") in _SHARED_READ_ENDPOINTS:
+        return
     router_name = (getattr(endpoint, "__module__", "") or "").rsplit(".", 1)[-1]
     module = _READ_MODULE_BY_ROUTER.get(router_name)
     if module:

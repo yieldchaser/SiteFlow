@@ -190,6 +190,10 @@ export default function ProjectsHomePage() {
         const progressById = new Map<string, number>(
           (ops?.projects || []).map((o: { project_id: string; progress?: number }) => [String(o.project_id), Number(o.progress) || 0])
         );
+        // Health worked out by the server from status and budget vs spend.
+        const healthById = new Map<string, string>(
+          (ops?.projects || []).map((o: { project_id: string; health?: string }) => [String(o.project_id), o.health === "Onhold" ? "On Hold" : String(o.health || "")])
+        );
         const cashById = new Map<string, { in: number; out: number }>(
           (fin?.project_summaries || []).map((f: { project_id: string; payment_in?: number; payment_out?: number }) => [
             String(f.project_id),
@@ -200,6 +204,7 @@ export default function ProjectsHomePage() {
           list.map((p) => ({
             ...p,
             progress: progressById.get(String(p.id)) ?? p.progress,
+            health: healthById.get(String(p.id)) || p.health,
             cashflow_in: cashById.get(String(p.id))?.in ?? p.cashflow_in,
             cashflow_out: cashById.get(String(p.id))?.out ?? p.cashflow_out,
           }))

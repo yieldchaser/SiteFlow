@@ -550,6 +550,9 @@ export default function DashboardPage() {
                     startDate: val(o.start_date) || p.startDate,
                     endDate: val(o.end_date) || p.endDate,
                     progress: Number(o.progress) || 0,
+                    // The server works health out from status and budget vs
+                    // spend; the stored field said Critical for a cancelled job.
+                    health: o.health ? (o.health === "Onhold" ? "On Hold" : o.health) : p.health,
                     customerName: val(o.customer_name) || p.customerName,
                     keyPersonnel: val(o.key_personnel) || p.keyPersonnel,
                   };
@@ -656,7 +659,7 @@ export default function DashboardPage() {
                     {/* Summary Counters Grid */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
                       <div className="rounded-md border border-border-custom bg-card p-5 flex flex-col justify-center items-center text-center transition-all">
-                        <span className="text-[11px] font-bold text-danger [.light-theme_&]:text-danger uppercase tracking-wider block mb-1">Not Started Projects</span>
+                        <span className="text-[11px] font-bold text-info uppercase tracking-wider block mb-1">Not Started Projects</span>
                         <span className="text-2xl font-bold text-foreground">{notStartedCount}</span>
                       </div>
                       <div className="rounded-md border border-border-custom bg-card p-5 flex flex-col justify-center items-center text-center transition-all">
@@ -1056,16 +1059,18 @@ export default function DashboardPage() {
                                       p.status === "Ongoing" ? "bg-success/15 text-success border-success/30" :
                                       p.status === "Onhold" || p.status === "On Hold" ? "bg-warning/10 text-warning border-warning/20" :
                                       p.status === "Completed" ? "bg-elevated text-muted border-border-custom" :
-                                      "bg-danger/10 text-danger border-danger/20"
+                                      p.status === "Cancelled" ? "bg-danger/10 text-danger border-danger/20" :
+                                      "bg-info/10 text-info border-info/20"
                                     }`}>
-                                      {formatLabel(p.status)}
+                                      {p.status === "Onhold" ? "On Hold" : p.status}
                                     </span>
                                   </td>
                                   <td className="px-4 py-3 text-center border-r border-border-custom">
                                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
                                       p.health === "Healthy" ? "bg-success/15 text-success border-success/30" :
                                       p.health === "Warning" ? "bg-warning/10 text-warning border-warning/20" :
-                                      "bg-danger/10 text-danger border-danger/20"
+                                      p.health === "Critical" ? "bg-danger/10 text-danger border-danger/20" :
+                                      "bg-elevated text-muted border-border-custom"
                                     }`}>
                                       {p.health}
                                     </span>

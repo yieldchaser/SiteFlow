@@ -13,7 +13,8 @@ from app.workflow_controls import (
     enforce_entry_editing_window,
     enforce_progress_over_estimate,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+from app.office_projects import is_office_project
 
 router = APIRouter(
     prefix="/planning",
@@ -966,6 +967,12 @@ class ProjectResponseSchema(BaseModel):
     stage: Optional[str] = None
     key_personnel_id: Optional[UUID] = None
     is_pinned: bool = False
+    is_office: bool = False
+
+    @model_validator(mode="after")
+    def _office_flag(self):
+        self.is_office = is_office_project(self)
+        return self
 
     class Config:
         from_attributes = True

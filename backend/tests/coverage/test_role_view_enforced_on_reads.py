@@ -45,3 +45,18 @@ def test_supervisor_cannot_read_finance_or_crm_but_can_read_site_work(client, db
         assert client.get(url, headers=own).status_code != 403, url
 
     assert client.get(f"/apis/v3/equipment/{comp.id}", headers=sup).status_code == 200
+
+
+def test_shared_lists_stay_open_to_every_role(client, db, make_tenant, auth_headers):
+    """The project list, team list and subcontractor list feed pickers on
+    every screen, so a role without planning, crm or billing still gets them."""
+    comp, _, _ = make_tenant(company_name=f"Open Co {_SFX}", user_name="Owner2",
+                             email=f"open-{_SFX}@example.com")
+    db.add(models.Project(id=uuid.uuid4(), company_id=comp.id, name="Head Office - Pune", status="Ongoing"))
+    db.commit()
+    client_role = _member(db, comp, {"projects:view": True, "reports:view": True}, auth_headers)
+    r = client.get(f"/apis/v3/planning/projects?company_id={comp.id}", headers=client_role)
+    assert r.status_code == 200, r.text
+    assert r.json()[0]["is_office"] is True
+    assert client.get(f"/apis/v3/crm/team-members/{comp.id}", headers=client_role).status_code == 200
+    assert client.get(f"/apis/v3/billing/subcontractors?company_id={comp.id}", headers=client_role).status_code == 200
