@@ -13,7 +13,7 @@ import PageHeader from "@/components/PageHeader";
 import FieldHint from "@/components/ui/FieldHint";
 // R2-755: shared CSV guard. Quote-doubling protects the delimiter, not the
 // formula — a leading = + - @ executes when the export opens in Excel/Sheets.
-import { buildCsv } from "@/lib/csv";
+import { downloadCsv } from "@/lib/csv";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -509,8 +509,7 @@ export default function TeamSchedulePage() {
     ]);
     // R2-755: task names and assignee names are user-controlled; the old
     // builder only quote-doubled, which does not stop a formula.
-    const csv = buildCsv(header, rows);
-    downloadBlob(csv, "team-schedule.csv", "text/csv;charset=utf-8");
+    downloadCsv("team-schedule.csv", header, rows);
   };
 
   const exportMSP = () => {

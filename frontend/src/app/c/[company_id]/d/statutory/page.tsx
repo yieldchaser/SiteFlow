@@ -6,6 +6,7 @@ import { useProject } from "@/context/ProjectContext";
 import { usePermissions } from "@/context/PermissionsContext";
 import { getApiHost, readErrorDetail } from "@/lib/api";
 import { authHeaders, formatDate, formatLabel } from "@/lib/siteflow";
+import { downloadCsv, csvMoney } from "@/lib/csv";
 import Badge, { type BadgeTone } from "@/components/ui/Badge";
 import PageShell from "@/components/layout/PageShell";
 import PageHeader from "@/components/PageHeader";
@@ -141,28 +142,10 @@ const QUARTERS = [
 const currentCalendarYear = new Date().getFullYear();
 const YEARS = Array.from({ length: 6 }, (_, i) => currentCalendarYear - 3 + i);
 
+// Every export goes through the shared writer: BOM for Excel, formula
+// guard, numbers without float noise.
 function downloadCSV(filename: string, headers: string[], rows: (string | number | null | undefined)[][]) {
-  const csvContent = [
-    headers.join(","),
-    ...rows.map((row) =>
-      row
-        .map((val) => {
-          const str = String(val ?? "").replace(/"/g, '""');
-          return str.includes(",") || str.includes('"') || str.includes("\n") ? `"${str}"` : str;
-        })
-        .join(",")
-    ),
-  ].join("\n");
-
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.setAttribute("href", url);
-  link.setAttribute("download", filename);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  downloadCsv(filename, headers, rows);
 }
 
 function getClosedTdsQuarterAndFy(now = new Date()): { quarter: string; fy: number } {
@@ -336,11 +319,11 @@ export default function StatutoryPage() {
       r.invoice_date,
       r.party_name || "",
       r.party_gstin || "",
-      r.taxable_value,
-      r.gst_amount,
-      r.cgst,
-      r.sgst,
-      r.igst,
+      csvMoney(r.taxable_value),
+      csvMoney(r.gst_amount),
+      csvMoney(r.cgst),
+      csvMoney(r.sgst),
+      csvMoney(r.igst),
     ]);
     downloadCSV(`GSTR1_${gstr1Result.return_period}.csv`, headers, rows);
   };
@@ -362,12 +345,12 @@ export default function StatutoryPage() {
       r.uan || "",
       r.employee_code,
       r.name,
-      r.pf_wages,
-      r.ee_pf_contribution,
-      r.er_pf_contribution,
-      r.eps_contribution,
-      r.epf_contribution,
-      r.total_pf,
+      csvMoney(r.pf_wages),
+      csvMoney(r.ee_pf_contribution),
+      csvMoney(r.er_pf_contribution),
+      csvMoney(r.eps_contribution),
+      csvMoney(r.epf_contribution),
+      csvMoney(r.total_pf),
     ]);
     downloadCSV(`PF_ECR_${pfEcrResult.return_period}.csv`, headers, rows);
   };
@@ -388,8 +371,8 @@ export default function StatutoryPage() {
       r.name || "",
       r.invoice_number,
       r.tds_section,
-      r.gross_payment,
-      r.tds_deducted,
+      csvMoney(r.gross_payment),
+      csvMoney(r.tds_deducted),
       r.deduction_date,
     ]);
     downloadCSV(`TDS_26Q_${tdsResult.quarter}_${tdsResult.year}.csv`, headers, rows);

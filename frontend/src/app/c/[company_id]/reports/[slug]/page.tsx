@@ -12,7 +12,7 @@ import { TableSkeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { isMissingOrDemoTenant, redirectToLogin } from "@/lib/company-guard";
 // R2-755: shared CSV guard, so this export cannot drift from the other four.
-import { csvSafeCell, csvQuote } from "@/lib/csv";
+import { downloadCsv, csvFileSlug } from "@/lib/csv";
 
 const escapeHtml = (value: unknown) =>
   String(value)
@@ -859,22 +859,7 @@ export default function DynamicReportViewPage() {
     }
 
     // Default to CSV / Excel (CSV formatted stream)
-    const csvContent = [
-      headers.join(","),
-      ...dataRows.map(r => r.map(c => csvQuote(csvSafeCell(c))).join(","))
-    ].join("\n");
-
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    
-    const extension = "csv";
-    const cleanFileName = meta.title.toLowerCase().replace(/[^a-z0-9]/g, "_") + `_export.${extension}`;
-    link.setAttribute("download", cleanFileName);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadCsv(`${csvFileSlug(meta.title).toLowerCase()}.csv`, headers, dataRows);
 
     showToast("Report exported successfully as CSV!");
   };

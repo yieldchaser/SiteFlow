@@ -9,7 +9,7 @@ import { useProject } from "@/context/ProjectContext";
 import Icon, { type IconName } from "@/components/marketing/Icon";
 // R2-755: shared CSV guard. Quote-doubling protects the delimiter, not the
 // formula — a leading = + - @ executes when the export opens in Excel/Sheets.
-import { buildCsv } from "@/lib/csv";
+import { downloadCsv, csvMoney } from "@/lib/csv";
 import PageShell from "@/components/layout/PageShell";
 import PageHeader from "@/components/PageHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -1646,27 +1646,20 @@ export default function FinancePage() {
             };
 
             const handleExportCsv = () => {
-              const csv = buildCsv(
-                ["Date", "Description", "Ref / Voucher", "Party", "Category", "Debit", "Credit", "Balance"],
+              downloadCsv(
+                `general-ledger-${todayLocalISO()}.csv`,
+                ["Date", "Description", "Ref / Voucher", "Party", "Category", "In", "Out", "Balance"],
                 filteredLedger.map(e => [
                   e.date || "",
                   e.description || "",
                   e.ref || "",
                   e.party || "",
                   e.category || "",
-                  String(e.debit || 0),
-                  String(e.credit || 0),
-                  String(e.balance || 0),
+                  csvMoney(e.debit || 0),
+                  csvMoney(e.credit || 0),
+                  csvMoney(e.balance || 0),
                 ])
               );
-              const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-              const url = URL.createObjectURL(blob);
-              const link = document.createElement("a");
-              link.href = url;
-              link.setAttribute("download", `General_Ledger_${todayLocalISO()}.csv`);
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
             };
 
             return (
@@ -1818,18 +1811,13 @@ export default function FinancePage() {
               return matchQ && matchS;
             });
             const exportCsv = () => {
-              const rows = [["Party ID", "Name", "Type", "Balance", "Status"]];
-              filteredParties.forEach(p => rows.push([p.party_id_custom || "", p.name, p.party_type || "", String(p.balance), p.status]));
               // R2-755: party names and IDs are user-controlled free text; the
-              // old builder only quote-doubled, which does not stop a formula.
-              const csv = buildCsv(rows[0], rows.slice(1));
-              const blob = new Blob([csv], { type: "text/csv" });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = "parties.csv";
-              a.click();
-              URL.revokeObjectURL(url);
+              // shared writer neutralises formulas as well as quoting.
+              downloadCsv(
+                `parties-${todayLocalISO()}.csv`,
+                ["Party ID", "Name", "Type", "Balance", "Status"],
+                filteredParties.map(p => [p.party_id_custom || "", p.name, p.party_type || "", csvMoney(p.balance), p.status]),
+              );
             };
             return (
             <div className="space-y-6 relative h-full flex flex-col">

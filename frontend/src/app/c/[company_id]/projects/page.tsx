@@ -9,7 +9,7 @@ import { CustomFieldsSection, useCustomFields } from "@/components/CustomFieldsS
 import Icon from "@/components/marketing/Icon";
 // R2-755: shared CSV guard — quote-doubling protects the delimiter, not the
 // formula. A leading = + - @ is executed when the export opens in Excel/Sheets.
-import { buildCsv } from "@/lib/csv";
+import { downloadCsv, csvMoney } from "@/lib/csv";
 
 import PageShell from "@/components/layout/PageShell";
 import PageHeader from "@/components/PageHeader";
@@ -240,19 +240,12 @@ export default function ProjectsPage() {
       statusLabel(p.status),
       p.stage || "",
       p.category || "",
-      String(p.progress ?? 0),
-      String(p.cash_in ?? 0),
-      String(p.cash_out ?? 0),
-      String(p.todo_pending ?? 0),
+      Number(p.progress ?? 0),
+      csvMoney(p.cash_in ?? 0),
+      csvMoney(p.cash_out ?? 0),
+      Number(p.todo_pending ?? 0),
     ]);
-    const csv = buildCsv(headers, rows);
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "projects.csv";
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCsv("projects.csv", headers, rows);
   };
 
   return (

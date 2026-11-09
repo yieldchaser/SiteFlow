@@ -8,7 +8,7 @@ import { authHeaders } from "@/lib/siteflow";
 import Icon, { type IconName } from "@/components/marketing/Icon";
 // R2-755: shared CSV guard. Quote-doubling protects the delimiter, not the
 // formula — a leading = + - @ executes when the export opens in Excel/Sheets.
-import { buildCsv } from "@/lib/csv";
+import { downloadCsv, csvHeader, csvFileSlug } from "@/lib/csv";
 import PageShell from "@/components/layout/PageShell";
 import PageHeader from "@/components/PageHeader";
 
@@ -396,20 +396,11 @@ export default function ReportsDashboard() {
 
       // R2-755: this export quoted its cells but never neutralised a leading
       // = + - @, so a value typed by a user executed as a formula on open.
-      const csvContent = buildCsv(
-        headers,
+      downloadCsv(
+        `${csvFileSlug(selectedReport.name).toLowerCase()}.csv`,
+        headers.map(csvHeader),
         rows.map(r => headers.map(h => r[h] ?? "")),
       );
-
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.setAttribute("href", url);
-      const cleanFileName = selectedReport.name.toLowerCase().replace(/[^a-z0-9]/g, "_") + ".csv";
-      link.setAttribute("download", cleanFileName);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
 
       showToast(
         data.period_applied === false
