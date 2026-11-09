@@ -806,6 +806,8 @@ class StaffEmployee(Base):
     bank_name = Column(String(100), nullable=True)
     # False for staff exempt from professional tax.
     pt_applicable = Column(Boolean, default=True, server_default="1", nullable=False)
+    # This person's weekly off days. None = the company's weekly off.
+    weekly_off_days = Column(JSONB, nullable=True)
     status = Column(String(50), default="active", nullable=False)
     date_of_joining = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=func.now(), nullable=False)
@@ -1650,6 +1652,8 @@ class Holiday(Base):
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(255), nullable=False)
     date = Column(DateTime(timezone=True), nullable=False)
+    # None = a holiday for every site; set = only that site (a local festival).
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=func.now(), nullable=False)
 
 

@@ -3188,7 +3188,7 @@ def _rep_ot_shift(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
         # own hourly overtime rate, else 1.5x basic per hour over that month's
         # working days. The report used to divide by 30 and invent Rs 100/hour
         # when basic was blank.
-        from app.routers.hr import _working_days_in_month
+        from app.routers.hr import _working_days_in_month, _employee_working_days
         from app.models import Holiday, PayrollProfile
         company = db.query(Company).filter(Company.id == cid).first()
         weekly_offs = company.weekly_off_days if company else []
@@ -3204,12 +3204,14 @@ def _rep_ot_shift(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
             else:
                 d = a.attendance_date
                 month = f"{d.year:04d}-{d.month:02d}"
-                if month not in working_days:
+                key = (month, a.employee_id)
+                if key not in working_days:
                     start = datetime(d.year, d.month, 1)
                     end = datetime(d.year + (d.month == 12), d.month % 12 + 1, 1)
                     hols = db.query(Holiday).filter(Holiday.company_id == cid, Holiday.date >= start, Holiday.date < end).all()
-                    working_days[month] = _working_days_in_month(month, weekly_offs, holidays=hols)
-                days = working_days[month]
+                    working_days[key] = (_employee_working_days(emp, month, weekly_offs, hols) if emp
+                                         else _working_days_in_month(month, weekly_offs, holidays=hols))
+                days = working_days[key]
                 basic = float(emp.basic_salary or 0) if emp else 0.0
                 ot_rate = (basic / days / 8.0) * 1.5 if days > 0 else 0.0
             ot_earnings = round(ot_hrs * ot_rate, 2)

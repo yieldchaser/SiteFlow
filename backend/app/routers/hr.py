@@ -131,6 +131,23 @@ class _SalaryPaymentFields(BaseModel):
     bank_name: Optional[str] = Field(None, max_length=100)
     # False for staff exempt from professional tax.
     pt_applicable: Optional[bool] = None
+    # This person's weekly off. None = the company's weekly off; [] = none.
+    weekly_off_days: Optional[List[str]] = None
+
+    @field_validator("weekly_off_days", mode="before")
+    @classmethod
+    def _weekday_names(cls, v):
+        if v is None:
+            return None
+        names = {d[:3].lower(): d for d in ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")}
+        out = []
+        for d in v:
+            full = names.get(str(d).strip()[:3].lower())
+            if not full:
+                raise ValueError(f"{d} is not a day of the week")
+            if full not in out:
+                out.append(full)
+        return out
 
     @field_validator("bank_name", mode="before")
     @classmethod
@@ -235,6 +252,7 @@ class EmployeeResponse(BaseModel):
     bank_ifsc: Optional[str] = None
     bank_name: Optional[str] = None
     pt_applicable: Optional[bool] = True
+    weekly_off_days: Optional[List[str]] = None
     status: str
     date_of_joining: Optional[datetime]
     created_at: datetime
@@ -1019,6 +1037,15 @@ def _working_days_in_month(payroll_month: str, weekly_off_days, holidays=None) -
     )
 
 
+def _employee_working_days(emp, payroll_month: str, company_weekly_off, holidays) -> int:
+    """Working days in the month for this person: their own weekly off if
+    set (else the company's), less holidays for every site and for their
+    own site."""
+    off = emp.weekly_off_days if getattr(emp, "weekly_off_days", None) is not None else company_weekly_off
+    mine = [h for h in (holidays or []) if getattr(h, "project_id", None) in (None, emp.project_id)]
+    return _working_days_in_month(payroll_month, off or [], holidays=mine)
+
+
 def _compute_payslip(emp: StaffEmployee, days_present: float, days_in_month: int, overtime_hours: float = 0.0, pf_wage_ceiling: float = 15000.0, overtime_rate: float = 0.0, pt_state: Optional[str] = None, pay_month: int = 0) -> dict:
     """
     Compute one employee's payslip.
@@ -1125,14 +1152,8 @@ def run_payroll(payload: PayrollRunCreate, db: Session = Depends(get_db), curren
         Holiday.date >= month_start,
         Holiday.date < month_end,
     ).all()
-    if payload.days_in_month is not None:
-        effective_days_in_month = int(payload.days_in_month)
-    else:
-        effective_days_in_month = _working_days_in_month(
-            payload.payroll_month,
-            company.weekly_off_days if company else [],
-            holidays=holidays,
-        )
+    company_weekly_off = company.weekly_off_days if company else []
+    run_days_in_month = int(payload.days_in_month) if payload.days_in_month is not None else None
 
     # R2-606: a payroll run is a money entry into a period, so it obeys the
     # same Entry Controls back-dating window as bills and payments (R2-381).
@@ -1203,6 +1224,10 @@ def run_payroll(payload: PayrollRunCreate, db: Session = Depends(get_db), curren
 
     payslips = []
     for emp in employees:
+        # An explicit days_in_month wins; otherwise each person's own weekly
+        # off and their site's holidays set their working days.
+        effective_days_in_month = run_days_in_month if run_days_in_month is not None else _employee_working_days(
+            emp, payload.payroll_month, company_weekly_off, holidays)
         # Count attendance days this month. The supervisor muster offers Half
         # Day and Paid Leave too: a half day is half a paid day and a muster
         # paid leave is a full one. Counting only Present docked both.
@@ -2296,6 +2321,7 @@ def get_leave_balances(
 class HolidayResponse(BaseModel):
     id: uuid.UUID
     company_id: uuid.UUID
+    project_id: Optional[uuid.UUID] = None
     name: str
     date: datetime
     created_at: datetime
@@ -2307,11 +2333,24 @@ class HolidayResponse(BaseModel):
 class HolidayCreate(BaseModel):
     name: str
     date: datetime
+    # None = every site.
+    project_id: Optional[uuid.UUID] = None
+
+    @field_validator("project_id", mode="before")
+    @classmethod
+    def _blank_is_all_sites(cls, v):
+        return v or None
 
 
 class HolidayUpdate(BaseModel):
     name: Optional[str] = None
     date: Optional[datetime] = None
+    project_id: Optional[uuid.UUID] = None
+
+    @field_validator("project_id", mode="before")
+    @classmethod
+    def _blank_is_all_sites(cls, v):
+        return v or None
 
 
 @router.get("/holidays/{company_id}", response_model=List[HolidayResponse])
@@ -2324,7 +2363,9 @@ def create_holiday(company_id: uuid.UUID, payload: HolidayCreate, db: Session = 
     require_permission(db, current_user, company_id, "payroll:edit")
     # R2-220: pin the calendar date at UTC midnight so a tz-offset input
     # cannot shift the holiday to the previous day on Postgres.
-    obj = Holiday(company_id=company_id, name=payload.name, date=_utc_midnight(payload.date))
+    if payload.project_id:
+        _check_employee_site(db, company_id, payload.project_id)
+    obj = Holiday(company_id=company_id, name=payload.name, date=_utc_midnight(payload.date), project_id=payload.project_id)
     db.add(obj)
     db.commit()
     return obj
@@ -2337,7 +2378,10 @@ def update_holiday(holiday_id: uuid.UUID, payload: HolidayUpdate, db: Session = 
         raise HTTPException(status_code=404, detail="Holiday not found")
     get_company_membership(db, current_user, obj.company_id)
     require_permission(db, current_user, obj.company_id, "payroll:edit")
-    for k, v in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    if changes.get("project_id"):
+        _check_employee_site(db, obj.company_id, changes["project_id"])
+    for k, v in changes.items():
         # R2-220: same UTC-midnight pinning on update.
         if k == "date" and v is not None:
             v = _utc_midnight(v)

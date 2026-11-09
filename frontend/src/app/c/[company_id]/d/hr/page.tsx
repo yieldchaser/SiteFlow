@@ -41,10 +41,14 @@ interface Employee {
   ifsc: string;
   bankName: string;
   ptOn: boolean;
+  weeklyOff: string;
 }
 
 // Where someone works and how they are paid: shared by the add and edit forms.
-type SitePay = { site: string; pfOn: boolean; paidBy: "bank" | "cash"; bankAccount: string; ifsc: string; bankName: string; ptOn: boolean };
+// weeklyOff: "" = company's weekly off, "none" = works every day, else a day name.
+type SitePay = { site: string; pfOn: boolean; paidBy: "bank" | "cash"; bankAccount: string; ifsc: string; bankName: string; ptOn: boolean; weeklyOff: string };
+const WEEK_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const weeklyOffFromApi = (v: string[] | null | undefined) => (v == null ? "" : v.length === 0 ? "none" : v[0]);
 
 function sitePayBody(v: SitePay) {
   return {
@@ -56,6 +60,7 @@ function sitePayBody(v: SitePay) {
     bank_ifsc: v.paidBy === "bank" ? v.ifsc.trim() || null : null,
     bank_name: v.paidBy === "bank" ? v.bankName.trim() || null : null,
     pt_applicable: v.ptOn,
+    weekly_off_days: v.weeklyOff === "" ? null : v.weeklyOff === "none" ? [] : [v.weeklyOff],
   };
 }
 
@@ -94,6 +99,14 @@ function SitePayFields({ value, onChange, projects }: {
         <select value={value.ptOn ? "yes" : "no"} onChange={(e) => onChange({ ...value, ptOn: e.target.value === "yes" })} className={box}>
           <option value="yes">Yes, deduct PT</option>
           <option value="no">Exempt from PT</option>
+        </select>
+      </div>
+      <div>
+        <label className={lab}>Weekly off</label>
+        <select value={value.weeklyOff} onChange={(e) => onChange({ ...value, weeklyOff: e.target.value })} className={box}>
+          <option value="">Same as company</option>
+          {WEEK_DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
+          <option value="none">No weekly off (works every day)</option>
         </select>
       </div>
       <div>
@@ -230,7 +243,7 @@ export default function HRPayrollPage() {
   // Holidays & Calendar states
   const [holidays, setHolidays] = useState<any[]>([]);
   const [showAddHolidayModal, setShowAddHolidayModal] = useState(false);
-  const [holidayForm, setHolidayForm] = useState({ name: "", date: "" });
+  const [holidayForm, setHolidayForm] = useState({ name: "", date: "", site: "" });
   
   // Workforce Configuration Drawers
   const [showWorkforceDrawer, setShowWorkforceDrawer] = useState(false);
@@ -242,7 +255,7 @@ export default function HRPayrollPage() {
   // here was silently not paid.
   const emptyDetails = { basic: "", hra: "", allowances: "", tds: "", designation: "", department: "", mobile: "", uan: "", joined: "", otRate: "" };
   const [detailsForm, setDetailsForm] = useState(emptyDetails);
-  const [detailsPay, setDetailsPay] = useState<SitePay>({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "", bankName: "", ptOn: true });
+  const [detailsPay, setDetailsPay] = useState<SitePay>({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "", bankName: "", ptOn: true, weeklyOff: "" });
 
   const openDetailsDrawer = (emp: Employee) => {
     setSelectedEmpDetail(emp);
@@ -266,6 +279,7 @@ export default function HRPayrollPage() {
       ifsc: emp.ifsc,
       bankName: emp.bankName,
       ptOn: emp.ptOn,
+      weeklyOff: emp.weeklyOff,
     });
     setShowDetailsDrawer(true);
     fetch(`${getApiHost()}/apis/v3/hr/payroll-profiles/${emp.id}`, { headers: authHeaders() })
@@ -442,7 +456,7 @@ export default function HRPayrollPage() {
     uan: "",
     joined: todayLocalISO()
   });
-  const [newPay, setNewPay] = useState<SitePay>({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "", bankName: "", ptOn: true });
+  const [newPay, setNewPay] = useState<SitePay>({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "", bankName: "", ptOn: true, weeklyOff: "" });
 
   const fetchEmployees = async () => {
     if (!companyId) return;
@@ -477,6 +491,7 @@ export default function HRPayrollPage() {
           ifsc: emp.bank_ifsc || "",
           bankName: emp.bank_name || "",
           ptOn: emp.pt_applicable !== false,
+          weeklyOff: weeklyOffFromApi(emp.weekly_off_days),
         }));
         setEmployees(mapped);
       }
@@ -493,6 +508,7 @@ export default function HRPayrollPage() {
         setHolidays(data.map((h: any) => ({
           id: h.id,
           holidayName: h.name,
+          site: h.project_id || "",
           date: h.date ? h.date.split("T")[0] : "",
           day: h.date ? new Date(h.date).toLocaleDateString("en-IN", { weekday: "long" }) : "",
         })));
@@ -727,7 +743,7 @@ export default function HRPayrollPage() {
           uan: "",
           joined: todayLocalISO()
         });
-        setNewPay({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "", bankName: "", ptOn: true });
+        setNewPay({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "", bankName: "", ptOn: true, weeklyOff: "" });
       } else {
         const err = await readErrorDetail(res);
         alert(err || 'Action failed');
@@ -743,14 +759,14 @@ export default function HRPayrollPage() {
       const res = await fetch(`${getApiHost()}/apis/v3/hr/holidays/${companyId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
-        body: JSON.stringify({ name: holidayForm.name, date: new Date(holidayForm.date).toISOString() }),
+        body: JSON.stringify({ name: holidayForm.name, date: new Date(holidayForm.date).toISOString(), project_id: holidayForm.site || null }),
       });
       if (res.ok) {
         const h = await res.json();
         const d = new Date(h.date);
-        setHolidays((prev) => [...prev, { id: h.id, holidayName: h.name, date: h.date.split("T")[0], day: d.toLocaleDateString("en-IN", { weekday: "long" }) }]);
+        setHolidays((prev) => [...prev, { id: h.id, holidayName: h.name, site: h.project_id || "", date: h.date.split("T")[0], day: d.toLocaleDateString("en-IN", { weekday: "long" }) }]);
         setShowAddHolidayModal(false);
-        setHolidayForm({ name: "", date: "" });
+        setHolidayForm({ name: "", date: "", site: "" });
         triggerLocalToast("Holiday added successfully");
       } else {
         const err = await res.json().catch(() => ({}));
@@ -2045,13 +2061,14 @@ export default function HRPayrollPage() {
                         <th className="pb-2">Holiday Name</th>
                         <th className="pb-2">Date</th>
                         <th className="pb-2">Day</th>
+                        <th className="pb-2">Applies to</th>
                         <th className="pb-2 text-right">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border-custom">
                       {holidays.length === 0 ? (
                         <tr>
-                          <td colSpan={4} className="p-8">
+                          <td colSpan={5} className="p-8">
                             <EmptyState
                               title="No holidays added yet"
                               description="Configure company statutory holidays and paid festival leaves."
@@ -2064,6 +2081,7 @@ export default function HRPayrollPage() {
                             <td className="py-3 font-semibold text-foreground">{h.holidayName}</td>
                             <td className="py-3 text-muted">{h.date}</td>
                             <td className="py-3 text-muted">{h.day}</td>
+                            <td className="py-3 text-muted">{h.site ? (projects.find((p: { id?: string; name?: string }) => p.id === h.site)?.name || "One site") : "All sites"}</td>
                             <td className="py-3 text-right">
                               <button onClick={() => handleDeleteHoliday(h.id)} className="text-danger hover:text-danger text-[10px] font-bold">Delete</button>
                             </td>
@@ -2362,6 +2380,20 @@ export default function HRPayrollPage() {
                   onChange={(e) => setHolidayForm({ ...holidayForm, date: e.target.value })}
                   className="w-full bg-background border border-border-custom rounded-lg px-3 py-2 text-foreground text-xs focus:outline-none focus:border-primary"
                 />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] text-muted uppercase font-bold block">Applies to</label>
+                <select
+                  value={holidayForm.site}
+                  onChange={(e) => setHolidayForm({ ...holidayForm, site: e.target.value })}
+                  className="w-full bg-background border border-border-custom rounded-lg px-3 py-2 text-foreground text-xs focus:outline-none focus:border-primary"
+                >
+                  <option value="">All sites</option>
+                  {projects.filter((p: { id?: string }) => p.id).map((p: { id?: string; name?: string; project_name?: string }) => (
+                    <option key={p.id} value={p.id}>{p.name || p.project_name || "Untitled project"}</option>
+                  ))}
+                </select>
+                <p className="text-muted">Pick a site for a local holiday that only that site takes.</p>
               </div>
             </div>
             <div className="flex gap-3 mt-6">
