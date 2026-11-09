@@ -40,7 +40,7 @@ from app.models import (
     ProductionBatch, ProductionBatchMaterial,
     ProductionRecipeMaterial,
     CRMQuotation, CRMQuotationItem, CRMLead, CompanyTeam, User,
-    BOQItem, MaterialTransaction, GRNItem, GoodsReceiptNote,
+    BOQItem, BOQDocument, MaterialTransaction, GRNItem, GoodsReceiptNote,
     DebitNote, CreditNote, BankAccount, TransactionDeduction,
     Company, CompanyBranch, PdfTemplate,
     QualityChecklist, Equipment, EquipmentDeployment, FuelLog, MaintenanceSchedule,
@@ -1694,25 +1694,39 @@ def _rep_party_library(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
 
 
 def _rep_payroll_library(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
+    # Monthly figures for a full month, worked out by the payroll engine
+    # itself. Net used to be gross minus TDS only (no PF, ESI or PT), CTC
+    # left out the employer's PF and ESI, and Shift Hours was always 8.
     try:
+        from app.routers.hr import _compute_payslip
+        company = _get(db, Company, cid)
+        ceiling = getattr(company, "pf_wage_ceiling", None) if company else None
+        try:
+            from app.models import CompanyPayrollSettings as _CPS
+            cps = db.query(_CPS).filter(_CPS.company_id == cid).first()
+            if cps is not None and getattr(cps, "pf_wage_ceiling", None) is not None:
+                ceiling = cps.pf_wage_ceiling
+        except Exception:
+            pass
+        ceiling = float(ceiling) if ceiling is not None else 15000.0
         q = db.query(StaffEmployee).filter(StaffEmployee.company_id == cid)
         rows = []
         for emp in q.order_by(StaffEmployee.name.asc()).all():
-            basic = float(emp.basic_salary or 0)
-            hra = float(emp.hra or 0)
-            other = float(emp.other_allowances or 0)
-            tds = float(emp.tds_monthly or 0)
-            gross = basic + hra + other
-            net = max(0.0, gross - tds)
+            calc = _compute_payslip(emp, 30, 30, pf_wage_ceiling=ceiling,
+                                    pt_state=getattr(company, "pt_state", None) if company else None)
+            gross = float(calc["gross_salary"])
+            employer = float(calc["pf_employer"]) + float(calc["esi_employer"])
             rows.append({
                 "Name": emp.name,
                 "Designation": emp.designation or "",
-                "Payroll Type": emp.department or "Monthly",
-                "CTC": _clean(gross * 12),
-                "Gross Salary": _clean(gross),
-                "Net Salary": _clean(net),
-                "Shift Hours": 8,
-                "Salary Breakup": f"Basic: {basic}, HRA: {hra}, Allowances: {other}",
+                "Department": emp.department or "",
+                "Gross Salary": _clean(round(gross, 2)),
+                "Deductions": _clean(round(float(calc["total_deductions"]), 2)),
+                "Net Salary": _clean(round(float(calc["net_payable"]), 2)),
+                "Employer PF and ESI": _clean(round(employer, 2)),
+                "Monthly CTC": _clean(round(gross + employer, 2)),
+                "Yearly CTC": _clean(round((gross + employer) * 12, 2)),
+                "Salary Breakup": f"Basic {float(emp.basic_salary or 0):,.0f}, HRA {float(emp.hra or 0):,.0f}, Allowances {float(emp.other_allowances or 0):,.0f}",
                 "Created Date": _clean(emp.created_at),
             })
         return rows
@@ -1776,7 +1790,29 @@ def _rep_boq_bom(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
         return _REPORT_FAILED
 
 
+def _boq_done_pct(db: Session, item_ids) -> dict:
+    """Physical progress of each BOQ item: the average progress of the
+    tasks linked to it, the same rule the BOQ page uses."""
+    if not item_ids:
+        return {}
+    pcts: dict = {}
+    for bid, prog in db.query(Task.boq_item_id, Task.progress).filter(Task.boq_item_id.in_(list(item_ids))).all():
+        pcts.setdefault(bid, []).append(float(prog or 0))
+    return {k: min(max(sum(v) / len(v), 0.0), 100.0) for k, v in pcts.items()}
+
+
+def _boq_line_value(b) -> float:
+    """Work value of a BOQ line before tax (amount if entered, else qty x rate)."""
+    from app.routers.budgeting import _effective_unit_rate
+    if b.amount is not None:
+        return float(b.amount)
+    return float(b.quantity or 0) * _effective_unit_rate(b.rate, b.supply_rate, b.installation_rate)
+
+
 def _rep_boq_item(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
+    # Progress comes from the tasks linked to each line. Billed and unbilled
+    # quantity used to be printed as 0 and the full quantity: client bills do
+    # not record BOQ lines, so those columns had nothing behind them.
     try:
         proj_ids = _project_ids_for_company(db, cid)
         if not proj_ids:
@@ -1784,32 +1820,32 @@ def _rep_boq_item(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
         q = db.query(BOQItem).filter(BOQItem.project_id.in_(proj_ids))
         if pid:
             q = q.filter(BOQItem.project_id == pid)
+        items = q.all()
+        done = _boq_done_pct(db, [b.id for b in items])
         rows = []
-        for b in q.all():
+        for b in items:
             proj = _get(db, Project, b.project_id)
+            doc = _get(db, BOQDocument, b.boq_document_id) if b.boq_document_id else None
+            client = _get(db, LibraryParty, doc.client_party_id) if doc and doc.client_party_id else None
             qty = float(b.quantity or 0)
-            rate = float(b.rate or 0)
-            amt_wo_tax = qty * rate
-            total_amt = float(b.amount) if b.amount is not None else amt_wo_tax * 1.18
+            pct = done.get(b.id, 0.0)
+            value = _boq_line_value(b)
+            gst = float(b.supply_tax_pct) if b.supply_tax_pct is not None else 0.0
             rows.append({
                 "Project Name": proj.name if proj else "",
-                "BOQ Name": b.item_name or "",
-                "BOQ No.": "",
-                "Client Name": "",
-                "BOQ Date": _clean(b.created_at),
-                "Group": "",
+                "BOQ Name": doc.title if doc else "",
+                "Client Name": client.name if client else "",
+                "BOQ Date": _clean(doc.created_at if doc else b.created_at),
                 "Section": b.section_name or "",
                 "Item Name": b.item_name or "",
-                "Unit": b.unit or "Unit",
+                "Unit": b.unit or "",
                 "Quantity": _clean(qty),
-                "Progress Quantity": 0.0,
-                "Billed Qty": 0.0,
-                "Unbilled Qty": _clean(qty),
-                "Unit Cost Price": _clean(rate),
-                "Unit Sales Price": _clean(rate),
-                "GST %": _clean(b.supply_tax_pct or 18),
-                "Amount w/o Tax": _clean(amt_wo_tax),
-                "Total Amount": _clean(total_amt),
+                "% Done": _clean(round(pct, 2)),
+                "Done Quantity": _clean(round(qty * pct / 100.0, 4)),
+                "Unit Rate": _clean(round(value / qty, 2)) if qty else "",
+                "Amount w/o Tax": _clean(round(value, 2)),
+                "GST %": _clean(gst),
+                "Total Amount": _clean(round(value * (1 + gst / 100.0), 2)),
                 "Cost Code": b.cost_code or "",
             })
         return rows
@@ -1819,35 +1855,42 @@ def _rep_boq_item(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
 
 
 def _rep_boq_measurement_book(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
+    # One row per daily progress entry on a task linked to a BOQ line, with
+    # the running total before and after it. It used to print one row per
+    # BOQ line with every quantity as 0.
     try:
         proj_ids = _project_ids_for_company(db, cid)
         if not proj_ids:
             return []
-        q = db.query(BOQItem).filter(BOQItem.project_id.in_(proj_ids))
+        q = (
+            db.query(DailyProgressReport, Task, BOQItem)
+            .join(Task, Task.id == DailyProgressReport.task_id)
+            .join(BOQItem, BOQItem.id == Task.boq_item_id)
+            .filter(DailyProgressReport.project_id.in_(proj_ids))
+        )
         if pid:
-            q = q.filter(BOQItem.project_id == pid)
+            q = q.filter(DailyProgressReport.project_id == pid)
         rows = []
-        for b in q.all():
-            proj = _get(db, Project, b.project_id)
-            qty = float(b.quantity or 0)
+        running: dict = {}
+        for dpr, task, b in q.order_by(DailyProgressReport.dpr_date.asc(), DailyProgressReport.created_at.asc()).all():
+            proj = _get(db, Project, dpr.project_id)
+            opening = running.get(b.id, 0.0)
+            done = float(dpr.executed_qty or 0)
+            running[b.id] = opening + done
             rows.append({
                 "Project Name": proj.name if proj else "",
-                "Workorder No.": "",
-                "Group": "",
                 "Section": b.section_name or "",
                 "Item Name": b.item_name or "",
-                "Progress Date": _clean(b.created_at),
-                "Unit": b.unit or "Unit",
-                "Estimated Quantity": _clean(qty),
-                "Opening Quantity": 0,
-                "Number": 1,
-                "Length": 0,
-                "Width": 0,
-                "Height": 0,
-                "Progress Quantity": 0,
-                "Closing Quantity": 0,
-                "Progress Notes": "",
+                "Task Name": task.name,
+                "Progress Date": _clean(dpr.dpr_date),
+                "Unit": b.unit or "",
+                "Estimated Quantity": _clean(float(b.quantity or 0)),
+                "Opening Quantity": _clean(round(opening, 4)),
+                "Progress Quantity": _clean(round(done, 4)),
+                "Closing Quantity": _clean(round(opening + done, 4)),
+                "Progress Notes": dpr.notes or "",
             })
+        rows.reverse()  # newest first; running totals already carried forward
         return rows
     except Exception:
         logger.exception("Report 'boq-measurement-book' failed; returning fallback")
@@ -1855,6 +1898,9 @@ def _rep_boq_measurement_book(db: Session, cid: uuid.UUID, pid: Optional[uuid.UU
 
 
 def _rep_boq_workorder_summary(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
+    # Work done is each order line's value times the progress of its task
+    # (or BOQ line); billed is the subcontractor's bills against the order.
+    # All three used to print 0.
     try:
         proj_ids = _project_ids_for_company(db, cid)
         if not proj_ids:
@@ -1862,23 +1908,40 @@ def _rep_boq_workorder_summary(db: Session, cid: uuid.UUID, pid: Optional[uuid.U
         q = db.query(WorkOrder).filter(WorkOrder.project_id.in_(proj_ids))
         if pid:
             q = q.filter(WorkOrder.project_id == pid)
+        orders = q.order_by(WorkOrder.created_at.desc()).all()
+        wo_ids = [w.id for w in orders]
+        items = db.query(WorkOrderItem).filter(WorkOrderItem.wo_id.in_(wo_ids)).all() if wo_ids else []
+        task_prog = {}
+        task_ids = {i.task_id for i in items if i.task_id}
+        if task_ids:
+            task_prog = {t.id: float(t.progress or 0) for t in db.query(Task).filter(Task.id.in_(task_ids)).all()}
+        boq_prog = _boq_done_pct(db, {i.boq_item_id for i in items if i.boq_item_id and not i.task_id})
+        done_by_wo: dict = {}
+        for i in items:
+            value = float(i.amount) if i.amount is not None else float(i.quantity or 0) * float(i.rate or 0)
+            pct = task_prog.get(i.task_id, 0.0) if i.task_id else boq_prog.get(i.boq_item_id, 0.0)
+            done_by_wo[i.wo_id] = done_by_wo.get(i.wo_id, 0.0) + value * min(max(pct, 0.0), 100.0) / 100.0
+        billed_by_wo: dict = {}
+        if wo_ids:
+            for wid, sub in db.query(Bill.wo_id, Bill.subtotal).filter(Bill.wo_id.in_(wo_ids), Bill.status != "Cancelled").all():
+                billed_by_wo[wid] = billed_by_wo.get(wid, 0.0) + float(sub or 0)
         rows = []
-        for wo in q.order_by(WorkOrder.created_at.desc()).all():
+        for wo in orders:
             proj = _get(db, Project, wo.project_id)
             est_amt = float(wo.estimated_work_amount or 0)
+            work_done = round(done_by_wo.get(wo.id, 0.0), 2)
+            billed = round(billed_by_wo.get(wo.id, 0.0), 2)
             rows.append({
                 "Project Name": proj.name if proj else "",
-                "Workorder Name": f"Work Order {wo.wo_number}",
                 "Workorder No.": wo.wo_number or "",
-                "Client Name": "",
-                "Estimated Amount": _clean(est_amt),
-                "% Order Complete": 0,
-                "Work Done Amount": 0,
-                "Billed Amount": 0,
-                "Pending Billed": _clean(est_amt),
+                "Subcontractor": _team_user_name(db, wo.subcontractor_id) if wo.subcontractor_id else "",
+                "Order Amount": _clean(est_amt),
+                "% Work Done": _clean(round(work_done / est_amt * 100.0, 1)) if est_amt else "",
+                "Work Done Amount": _clean(work_done),
+                "Billed Amount": _clean(billed),
+                "Done but Not Billed": _clean(round(max(work_done - billed, 0.0), 2)),
+                "Left to Bill on Order": _clean(round(max(est_amt - billed, 0.0), 2)),
                 "Workorder Date": _clean(wo.wo_date or wo.created_at),
-                "Creator Name": "",
-                "Created Date": _clean(wo.created_at),
             })
         return rows
     except Exception:
@@ -1951,6 +2014,8 @@ def _rep_quotation_item(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
 
 
 def _rep_task_boq_billed_unbilled(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
+    # Quantities come from the BOQ line the task is linked to. Every task used
+    # to show 100 units, 0 billed and 100 unbilled whatever its real size.
     try:
         proj_ids = _project_ids_for_company(db, cid)
         if not proj_ids:
@@ -1961,19 +2026,24 @@ def _rep_task_boq_billed_unbilled(db: Session, cid: uuid.UUID, pid: Optional[uui
         rows = []
         for t in q.all():
             proj = _get(db, Project, t.project_id)
+            main, group = _task_ancestor_names(db, t)
+            boq = _get(db, BOQItem, t.boq_item_id) if t.boq_item_id else None
+            pct = min(max(float(t.progress or 0), 0.0), 100.0)
+            est = float(boq.quantity or 0) if boq else 0.0
+            value = _boq_line_value(boq) if boq else 0.0
             rows.append({
                 "Project Name": proj.name if proj else "",
-                "Main Task Name": "",
-                "Group Task Name": "",
+                "Main Task Name": main,
+                "Group Task Name": group,
                 "Task Name": t.name,
-                "Unit": "Unit",
-                "Estimated Qty": 100.0,
-                "Progress Qty": _clean(t.progress or 0),
-                "% Complete": _clean(t.progress or 0),
+                "Linked BOQ Item": boq.item_name if boq else "",
+                "Unit": boq.unit if boq else "",
+                "Estimated Qty": _clean(est) if boq else "",
+                "Done Qty": _clean(round(est * pct / 100.0, 4)) if boq else "",
+                "Remaining Qty": _clean(round(est * (100.0 - pct) / 100.0, 4)) if boq else "",
+                "% Complete": _clean(pct),
+                "Work Done Value": _clean(round(value * pct / 100.0, 2)) if boq else "",
                 "Task Status": t.status,
-                "Linked BOQ Detail": "",
-                "Billed Qty": 0.0,
-                "Unbilled Qty": 100.0,
             })
         return rows
     except Exception:

@@ -19,8 +19,8 @@ from app.routers.reports import _REPORT_HANDLERS
 # Exact metadata columns matching frontend REPORT_METADATA for all 16 unproven reports
 EXPECTED_COLUMNS = {
     "boq-bom": ['Project Name', 'BOQ Name', 'Item Name', 'Material Name', 'Unit', 'Unit Price', 'Quantity', 'Total Cost Price', 'Creation Date'],
-    "boq-item": ['Project Name', 'BOQ Name', 'BOQ No.', 'Client Name', 'BOQ Date', 'Group', 'Section', 'Item Name', 'Unit', 'Quantity', 'Progress Quantity', 'Billed Qty', 'Unbilled Qty', 'Unit Cost Price', 'Unit Sales Price', 'GST %', 'Amount w/o Tax', 'Total Amount', 'Cost Code'],
-    "boq-measurement-book": ['Project Name', 'Workorder No.', 'Group', 'Section', 'Item Name', 'Progress Date', 'Unit', 'Estimated Quantity', 'Opening Quantity', 'Number', 'Length', 'Width', 'Height', 'Progress Quantity', 'Closing Quantity', 'Progress Notes'],
+    "boq-item": ['Project Name', 'BOQ Name', 'Client Name', 'BOQ Date', 'Section', 'Item Name', 'Unit', 'Quantity', '% Done', 'Done Quantity', 'Unit Rate', 'Amount w/o Tax', 'GST %', 'Total Amount', 'Cost Code'],
+    "boq-measurement-book": ['Project Name', 'Section', 'Item Name', 'Task Name', 'Progress Date', 'Unit', 'Estimated Quantity', 'Opening Quantity', 'Progress Quantity', 'Closing Quantity', 'Progress Notes'],
     "budget-vs-actual-cost-code": ['Cost Code', 'Budget Amount (INR)', 'Actual Amount (INR)', 'Difference (INR)', 'Status'],
     "budget-vs-actual-material-cost": ['Project', 'Material', 'Unit', 'Budget Cost (INR)', 'Actual Cost (INR)', 'Difference (INR)'],
     "budget-vs-actual-material-qty": ['Project', 'Material', 'Unit', 'Budget Qty', 'Actual Qty', 'Difference Qty'],
@@ -86,6 +86,18 @@ def test_16_unproven_reports_with_seeded_data(db_session):
         cost_code="CC-STR-01",
     )
     db_session.add(boq)
+
+    # A task on that BOQ line with one day's progress, for the measurement book.
+    mb_task = Task(
+        id=uuid.uuid4(), project_id=pid, name="Rebar tying - raft", duration_days=10,
+        start_date=datetime.datetime(2026, 7, 1), end_date=datetime.datetime(2026, 7, 10),
+        boq_item_id=boq.id, progress=Decimal("25.0"),
+    )
+    db_session.add(mb_task)
+    db_session.add(DailyProgressReport(
+        id=uuid.uuid4(), project_id=pid, task_id=mb_task.id, reported_by="Site Engineer",
+        dpr_date=datetime.datetime(2026, 7, 2), executed_qty=Decimal("30.0"),
+    ))
 
     # 2. LibraryCostCode
     cc = LibraryCostCode(

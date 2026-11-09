@@ -136,7 +136,7 @@ const REPORT_METADATA: Record<string, ReportMeta> = {
     title: "Task BOQ Billed & Unbilled Qty Report",
     hasDownload: false,
     filters: [{ label: "Project Name", type: "select", options: ["All"] }, { label: "Main Task Name", type: "select", options: ["All"] }, { label: "Group Task Name", type: "select", options: ["All"] }, { label: "Task Name", type: "select", options: ["All"] }],
-    columns: ['Project Name', 'Main Task Name', 'Group Task Name', 'Task Name', 'Unit', 'Estimated Qty', 'Progress Qty', '% Complete', 'Task Status', 'Linked BOQ Detail', 'Billed Qty', 'Unbilled Qty']
+    columns: ['Project Name', 'Main Task Name', 'Group Task Name', 'Task Name', 'Linked BOQ Item', 'Unit', 'Estimated Qty', 'Done Qty', 'Remaining Qty', '% Complete', 'Work Done Value', 'Task Status']
   },
   "task-attendance": {
     title: "Task Attendance Report",
@@ -448,7 +448,7 @@ const REPORT_METADATA: Record<string, ReportMeta> = {
     title: "Payroll Library",
     hasDownload: false,
     filters: [{ label: "Name", type: "select", options: ["All"] }, { label: "Designation", type: "select", options: ["All"] }, { label: "Payroll Type", type: "select", options: ["All"] }],
-    columns: ['Name', 'Designation', 'Payroll Type', 'CTC', 'Gross Salary', 'Net Salary', 'Shift Hours', 'Salary Breakup', 'Created Date']
+    columns: ['Name', 'Designation', 'Department', 'Gross Salary', 'Deductions', 'Net Salary', 'Employer PF and ESI', 'Monthly CTC', 'Yearly CTC', 'Salary Breakup', 'Created Date']
   },
   "equipment-library": {
     title: "Equipment Library",
@@ -460,13 +460,13 @@ const REPORT_METADATA: Record<string, ReportMeta> = {
     title: "BOQ Workorder Summary Report",
     hasDownload: false,
     filters: [{ label: "Project Name", type: "select", options: ["All"] }, { label: "Client Name", type: "select", options: ["All"] }, { label: "Workorder Date", type: "date" }],
-    columns: ['Project Name', 'Workorder Name', 'Workorder No.', 'Client Name', 'Estimated Amount', '% Order Complete', 'Work Done Amount', 'Billed Amount', 'Pending Billed', 'Workorder Date', 'Creator Name', 'Created Date']
+    columns: ['Project Name', 'Workorder No.', 'Subcontractor', 'Order Amount', '% Work Done', 'Work Done Amount', 'Billed Amount', 'Done but Not Billed', 'Left to Bill on Order', 'Workorder Date']
   },
   "boq-item": {
     title: "BOQ Item Report",
     hasDownload: false,
     filters: [{ label: "Project Name", type: "select", options: ["All"] }, { label: "Workorder Name", type: "select", options: ["All"] }, { label: "Workorder No.", type: "select", options: ["All"] }, { label: "Client Name", type: "select", options: ["All"] }, { label: "BOQ Date", type: "date" }],
-    columns: ['Project Name', 'BOQ Name', 'BOQ No.', 'Client Name', 'BOQ Date', 'Group', 'Section', 'Item Name', 'Unit', 'Quantity', 'Progress Quantity', 'Billed Qty', 'Unbilled Qty', 'Unit Cost Price', 'Unit Sales Price', 'GST %', 'Amount w/o Tax', 'Total Amount', 'Cost Code']
+    columns: ['Project Name', 'BOQ Name', 'Client Name', 'BOQ Date', 'Section', 'Item Name', 'Unit', 'Quantity', '% Done', 'Done Quantity', 'Unit Rate', 'Amount w/o Tax', 'GST %', 'Total Amount', 'Cost Code']
   },
   "quotation": {
     title: "Quotation Report",
@@ -484,7 +484,7 @@ const REPORT_METADATA: Record<string, ReportMeta> = {
     title: "BOQ Measurement Book",
     hasDownload: false,
     filters: [{ label: "Project Name", type: "select", options: ["All"] }, { label: "Workorder Name", type: "select", options: ["All"] }, { label: "Workorder No.", type: "select", options: ["All"] }, { label: "Client Name", type: "select", options: ["All"] }, { label: "Progress Date", type: "date" }],
-    columns: ['Project Name', 'Workorder No.', 'Group', 'Section', 'Item Name', 'Progress Date', 'Unit', 'Estimated Quantity', 'Opening Quantity', 'Number', 'Length', 'Width', 'Height', 'Progress Quantity', 'Closing Quantity', 'Progress Notes']
+    columns: ['Project Name', 'Section', 'Item Name', 'Task Name', 'Progress Date', 'Unit', 'Estimated Quantity', 'Opening Quantity', 'Progress Quantity', 'Closing Quantity', 'Progress Notes']
   },
   "boq-bom": {
     title: "BOQ BOM Report",
