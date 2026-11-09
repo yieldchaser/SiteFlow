@@ -1,4 +1,5 @@
 "use client";
+import { PROJECT_CATEGORIES } from "@/lib/gstStates";
 import Badge, { type BadgeTone } from "@/components/ui/Badge";
 import { getApiHost, detailToMessage} from "@/lib/api";
 import { authHeaders, todayLocalISO } from "@/lib/siteflow";
@@ -1316,9 +1317,8 @@ export default function AttendancePage() {
                           onChange={(e) => setProjectSettings({ ...projectSettings, category: e.target.value })}
                           className="w-full bg-input border border-border-custom rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-primary text-xs"
                         >
-                          <option value="Residential">Residential</option>
-                          <option value="Commercial">Commercial</option>
-                          <option value="Infrastructure">Infrastructure</option>
+                          {PROJECT_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                          {projectSettings.category && !(PROJECT_CATEGORIES as readonly string[]).includes(projectSettings.category) && <option value={projectSettings.category}>{projectSettings.category}</option>}
                         </select>
                       </div>
                     </div>

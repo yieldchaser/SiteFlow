@@ -103,6 +103,8 @@ class Company(Base):
     assume_full_month_when_no_attendance = Column(Boolean, nullable=True, default=False, server_default="0")
     # CD-4 EPF wage ceiling: default 15000 per month basic. Nullable for boot sync.
     pf_wage_ceiling = Column(Numeric(14, 2), nullable=True, default=15000.0)
+    # State whose professional tax slabs payroll applies. None = no PT.
+    pt_state = Column(String(50), nullable=True)
     created_at = Column(DateTime(timezone=True), default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -801,6 +803,9 @@ class StaffEmployee(Base):
     salary_paid_by = Column(String(20), default="bank", server_default="bank", nullable=False)
     bank_account = Column(String(30), nullable=True)
     bank_ifsc = Column(String(11), nullable=True)
+    bank_name = Column(String(100), nullable=True)
+    # False for staff exempt from professional tax.
+    pt_applicable = Column(Boolean, default=True, server_default="1", nullable=False)
     status = Column(String(50), default="active", nullable=False)
     date_of_joining = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=func.now(), nullable=False)
@@ -965,6 +970,7 @@ class PayrollLineItem(Base):
     esi_employee = Column(Numeric(14, 2), default=0.0, nullable=False)
     esi_employer = Column(Numeric(14, 2), default=0.0, nullable=False)
     tds = Column(Numeric(14, 2), default=0.0, nullable=False)
+    professional_tax = Column(Numeric(14, 2), default=0.0, server_default="0", nullable=False)
     advance_recovery = Column(Numeric(14, 2), default=0.0, nullable=False)
     other_deductions = Column(Numeric(14, 2), default=0.0, nullable=False)
     total_deductions = Column(Numeric(14, 2), default=0.0, nullable=False)
@@ -1131,6 +1137,9 @@ class Equipment(Base):
     ownership_type = Column(String(50), nullable=False)     # Owned, Hired
     status = Column(String(50), default="available", nullable=False) # available, deployed, maintenance, inactive
     hourly_rate = Column(Numeric(12, 2), default=0.0, nullable=False)
+    # Company assets (laptops, phones, vehicles): who holds it and its serial.
+    serial_number = Column(String(100), nullable=True)
+    assigned_to = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False)
 

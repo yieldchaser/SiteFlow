@@ -34,6 +34,8 @@ class EquipmentCreate(BaseModel):
     category: str
     ownership_type: str = Field(..., pattern="^(Owned|Hired)$")
     hourly_rate: float = Field(0.0, ge=0)
+    serial_number: Optional[str] = Field(None, max_length=100)
+    assigned_to: Optional[str] = Field(None, max_length=255)
 
 
 class EquipmentUpdate(BaseModel):
@@ -43,6 +45,8 @@ class EquipmentUpdate(BaseModel):
     ownership_type: Optional[str] = Field(None, pattern="^(Owned|Hired)$")
     status: Optional[str] = None
     hourly_rate: Optional[float] = Field(None, ge=0)
+    serial_number: Optional[str] = Field(None, max_length=100)
+    assigned_to: Optional[str] = Field(None, max_length=255)
 
 
 class EquipmentResponse(BaseModel):
@@ -54,6 +58,8 @@ class EquipmentResponse(BaseModel):
     ownership_type: str
     status: str
     hourly_rate: float
+    serial_number: Optional[str] = None
+    assigned_to: Optional[str] = None
     created_at: datetime
 
     class Config:

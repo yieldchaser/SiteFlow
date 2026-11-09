@@ -6,6 +6,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field, field_validator, model_validator
+from app.professional_tax import PT_STATES
 from app.database import get_db
 from app.auth import get_current_user, verify_company_access, get_company_membership, require_permission, is_owner_equivalent, role_grants_full_access, invite_never_claimed, allowed_project_ids
 from app import models, supabase_storage
@@ -894,6 +895,9 @@ class PayrollSettingsResponse(BaseModel):
     is_esi_applicable: bool
     pf_wage_ceiling: Optional[float] = 15000.0
     assume_full_month_when_no_attendance: Optional[bool] = False
+    # State whose professional tax slabs apply. None = no PT deducted.
+    pt_state: Optional[str] = None
+    pt_states: List[str] = []
 
     class Config:
         from_attributes = True
@@ -908,7 +912,16 @@ class PayrollSettingsUpdate(BaseModel):
     is_esi_applicable: Optional[bool] = None
     pf_wage_ceiling: Optional[float] = Field(None, ge=0)
     assume_full_month_when_no_attendance: Optional[bool] = None
+    pt_state: Optional[str] = None
     confirm_changes: bool = False
+
+    @field_validator("pt_state", mode="before")
+    @classmethod
+    def _known_pt_state(cls, v):
+        v = (v or "").strip() or None
+        if v is not None and v not in PT_STATES:
+            raise ValueError("Pick a state from the list, or none for no professional tax")
+        return v
 
 
 def _get_or_create_payroll_settings(company_id: uuid.UUID, db: Session):
@@ -929,6 +942,8 @@ def get_payroll_settings(company_id: uuid.UUID, db: Session = Depends(get_db), _
     res.assume_full_month_when_no_attendance = bool(comp.assume_full_month_when_no_attendance) if comp else False
     if res.pf_wage_ceiling is None:
         res.pf_wage_ceiling = float(comp.pf_wage_ceiling) if comp and comp.pf_wage_ceiling else 15000.0
+    res.pt_state = comp.pt_state if comp else None
+    res.pt_states = PT_STATES
     return res
 
 
@@ -941,6 +956,11 @@ def update_payroll_settings(company_id: uuid.UUID, payload: PayrollSettingsUpdat
         raise HTTPException(status_code=400, detail="confirm_changes must be true to modify statutory payroll rates")
     row = _get_or_create_payroll_settings(company_id, db)
     assume_full = changes.pop("assume_full_month_when_no_attendance", None)
+    if "pt_state" in changes:
+        pt_state = changes.pop("pt_state")
+        comp = db.query(models.Company).filter(models.Company.id == company_id).first()
+        if comp:
+            comp.pt_state = pt_state
     if assume_full is not None:
         comp = db.query(models.Company).filter(models.Company.id == company_id).first()
         if comp:
@@ -958,6 +978,8 @@ def update_payroll_settings(company_id: uuid.UUID, payload: PayrollSettingsUpdat
     res.assume_full_month_when_no_attendance = bool(comp.assume_full_month_when_no_attendance) if comp else False
     if res.pf_wage_ceiling is None:
         res.pf_wage_ceiling = float(comp.pf_wage_ceiling) if comp and comp.pf_wage_ceiling else 15000.0
+    res.pt_state = comp.pt_state if comp else None
+    res.pt_states = PT_STATES
     return res
 
 

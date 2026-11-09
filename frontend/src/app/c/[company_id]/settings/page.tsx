@@ -98,6 +98,8 @@ interface PayrollSettings {
   is_esi_applicable: boolean;
   pf_wage_ceiling?: number;
   assume_full_month_when_no_attendance?: boolean;
+  pt_state?: string | null;
+  pt_states?: string[];
 }
 
 interface LeaveTemplate {
@@ -1020,6 +1022,7 @@ export default function CompanySettingsPage() {
     esi_employer_pct: 3.25, tds_monthly: 0, is_esi_applicable: true,
     pf_wage_ceiling: 15000,
     assume_full_month_when_no_attendance: false,
+    pt_state: "",
   });
   const [payrollStatus, setPayrollStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [payrollError, setPayrollError] = useState<string | null>(null);
@@ -1049,6 +1052,9 @@ export default function CompanySettingsPage() {
     if (Number(pDraft.pf_wage_ceiling) !== Number(payroll.pf_wage_ceiling ?? 15000)) {
       diffs.push(`PF Wage Ceiling: ₹${payroll.pf_wage_ceiling ?? 15000} → ₹${pDraft.pf_wage_ceiling}`);
     }
+    if ((pDraft.pt_state || "") !== (payroll.pt_state || "")) {
+      diffs.push(`Professional Tax State: ${payroll.pt_state || "None"} → ${pDraft.pt_state || "None"}`);
+    }
     if (Boolean(pDraft.assume_full_month_when_no_attendance) !== Boolean(payroll.assume_full_month_when_no_attendance ?? false)) {
       diffs.push(`Assume Full Month on Zero Attendance: ${payroll.assume_full_month_when_no_attendance ? "Enabled" : "Disabled"} → ${pDraft.assume_full_month_when_no_attendance ? "Enabled" : "Disabled"}`);
     }
@@ -1067,6 +1073,7 @@ export default function CompanySettingsPage() {
           tds_monthly: data.tds_monthly, is_esi_applicable: data.is_esi_applicable,
           pf_wage_ceiling: data.pf_wage_ceiling ?? 15000,
           assume_full_month_when_no_attendance: data.assume_full_month_when_no_attendance ?? false,
+          pt_state: data.pt_state || "",
         });
       })
       .catch(() => {});
@@ -1980,6 +1987,15 @@ export default function CompanySettingsPage() {
                           onChange={(e) => setPDraft({ ...pDraft, pf_wage_ceiling: Number(e.target.value) || 0 })}
                           className="w-full bg-elevated border border-border-custom focus:border-primary rounded-md px-4 py-2.5 text-xs text-foreground outline-none" />
                         <p className="text-[11px] text-muted mt-1">EPF statutory wage ceiling (defaults to ₹15,000). PF wage base is capped at this amount.</p>
+                      </Field>
+                      <Field label="Professional Tax State">
+                        <select value={pDraft.pt_state}
+                          onChange={(e) => setPDraft({ ...pDraft, pt_state: e.target.value })}
+                          className="w-full bg-elevated border border-border-custom focus:border-primary rounded-md px-4 py-2.5 text-xs text-foreground outline-none">
+                          <option value="">No professional tax</option>
+                          {(payroll?.pt_states || []).map((st) => <option key={st} value={st}>{st}</option>)}
+                        </select>
+                        <p className="text-[11px] text-muted mt-1">Payroll takes PT from each payslip using this state&apos;s slabs. Mark exempt staff on their record.</p>
                       </Field>
                       <div className="space-y-1.5">
                         <label className="text-[10px] uppercase tracking-wider text-muted font-bold">ESI Applicable</label>

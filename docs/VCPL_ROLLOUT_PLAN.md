@@ -57,3 +57,14 @@ To build before November payroll:
 - Full view-permission enforcement before anyone gets a restricted role.
 
 Not yet tried with real data: biometric machines, report screens, linking branches to projects.
+
+## Demo feedback (9 November 2026)
+
+From the VCPL executive during the demo:
+
+1. Professional tax (heard as "PTI") was missing from payroll. Built: pick the company's state under Settings > Payroll, PT comes off each payslip by that state's slab, staff can be marked exempt on their record.
+2. Adding an employee had no bank name. Built: a bank picker with the common Indian banks (SBI, HDFC, ICICI, Axis, Bank of Baroda and others), filled in from the IFSC when possible, with "Other bank" for anything else.
+3. Company assets such as laptops had no home. Built: a Company Assets tab in Equipment with serial number and who holds each one.
+4. More project categories. Built: piling, jetty and marine, ports, roads, bridges, metro, water, power, oil and gas, warehouse, and Head Office / Office.
+
+Also fixed: a person moved to another site after that month's payroll ran was paid again by the new site's run.

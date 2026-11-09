@@ -3424,7 +3424,8 @@ def _rep_staff_monthly_salary_slip(db: Session, cid: uuid.UUID, pid: Optional[uu
                 "Designation": emp.designation if emp else "",
                 "Department": emp.department if emp else "",
                 "UAN": emp.uan if emp and hasattr(emp, 'uan') and emp.uan else "",
-                "Bank Account No.": "",
+                "Bank Account No.": (emp.bank_account or "") if emp else "",
+                "Bank": (getattr(emp, "bank_name", None) or "") if emp else "",
                 "Days Present": _clean(item.days_present or 0),
                 "Basic Pay": _clean(item.basic or 0),
                 "HRA": _clean(item.hra or 0),
@@ -3433,6 +3434,7 @@ def _rep_staff_monthly_salary_slip(db: Session, cid: uuid.UUID, pid: Optional[uu
                 "PF Deduction": _clean(item.pf_employee or 0),
                 "ESI Deduction": _clean(item.esi_employee or 0),
                 "TDS": _clean(item.tds or 0),
+                "Professional Tax": _clean(getattr(item, "professional_tax", 0) or 0),
                 "Total Deductions": _clean(deductions),
                 "Net Pay (INR)": _clean(net),
             })

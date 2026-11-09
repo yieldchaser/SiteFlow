@@ -1105,7 +1105,11 @@ function ProjectSettingsModal({
                   <input value={form.stage} onChange={(e) => setForm({ ...form, stage: e.target.value })} className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground" />
                 </Field>
                 <Field label="Category">
-                  <input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground" />
+                  <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground">
+                    <option value="">Select category</option>
+                    {PROJECT_CATEGORIES.map((c) => (<option key={c} value={c}>{c}</option>))}
+                    {form.category && !(PROJECT_CATEGORIES as readonly string[]).includes(form.category) && <option value={form.category}>{form.category}</option>}
+                  </select>
                 </Field>
               </div>
               <Field label="Address">

@@ -13,6 +13,7 @@ import PageHeader from "@/components/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { CardSkeleton } from "@/components/ui/Skeleton";
 import FieldHint from "@/components/ui/FieldHint";
+import { BANKS, bankFromIfsc } from "@/lib/banks";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,10 +39,12 @@ interface Employee {
   paidBy: "bank" | "cash";
   bankAccount: string;
   ifsc: string;
+  bankName: string;
+  ptOn: boolean;
 }
 
 // Where someone works and how they are paid: shared by the add and edit forms.
-type SitePay = { site: string; pfOn: boolean; paidBy: "bank" | "cash"; bankAccount: string; ifsc: string };
+type SitePay = { site: string; pfOn: boolean; paidBy: "bank" | "cash"; bankAccount: string; ifsc: string; bankName: string; ptOn: boolean };
 
 function sitePayBody(v: SitePay) {
   return {
@@ -51,6 +54,8 @@ function sitePayBody(v: SitePay) {
     salary_paid_by: v.paidBy,
     bank_account: v.paidBy === "bank" ? v.bankAccount.trim() || null : null,
     bank_ifsc: v.paidBy === "bank" ? v.ifsc.trim() || null : null,
+    bank_name: v.paidBy === "bank" ? v.bankName.trim() || null : null,
+    pt_applicable: v.ptOn,
   };
 }
 
@@ -61,6 +66,10 @@ function SitePayFields({ value, onChange, projects }: {
 }) {
   const box = "w-full bg-background border border-border-custom rounded-lg px-3 py-2 text-foreground focus:outline-none focus:border-primary text-xs";
   const lab = "text-[10px] text-muted uppercase font-bold block mb-1";
+  // A bank not in the list is typed in by hand.
+  const [otherBank, setOtherBank] = useState(false);
+  const listed = BANKS.includes(value.bankName);
+  const typing = otherBank || (!!value.bankName && !listed);
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
       <div className="md:col-span-2">
@@ -81,6 +90,13 @@ function SitePayFields({ value, onChange, projects }: {
         </select>
       </div>
       <div>
+        <label className={lab}>Professional tax</label>
+        <select value={value.ptOn ? "yes" : "no"} onChange={(e) => onChange({ ...value, ptOn: e.target.value === "yes" })} className={box}>
+          <option value="yes">Yes, deduct PT</option>
+          <option value="no">Exempt from PT</option>
+        </select>
+      </div>
+      <div>
         <label className={lab}>Salary paid by</label>
         <select value={value.paidBy} onChange={(e) => onChange({ ...value, paidBy: e.target.value as "bank" | "cash" })} className={box}>
           <option value="bank">Bank transfer</option>
@@ -97,7 +113,27 @@ function SitePayFields({ value, onChange, projects }: {
           <div>
             <label className={lab}>IFSC</label>
             <input type="text" value={value.ifsc} placeholder="SBIN0001234" maxLength={11}
-              onChange={(e) => onChange({ ...value, ifsc: e.target.value.toUpperCase() })} className={box} />
+              onChange={(e) => {
+                const ifsc = e.target.value.toUpperCase();
+                const guess = bankFromIfsc(ifsc);
+                onChange({ ...value, ifsc, bankName: !value.bankName && guess ? guess : value.bankName });
+              }} className={box} />
+          </div>
+          <div className="md:col-span-2">
+            <label className={lab}>Bank</label>
+            <select value={typing ? "__other" : value.bankName}
+              onChange={(e) => {
+                if (e.target.value === "__other") { setOtherBank(true); onChange({ ...value, bankName: "" }); }
+                else { setOtherBank(false); onChange({ ...value, bankName: e.target.value }); }
+              }} className={box}>
+              <option value="">Pick a bank</option>
+              {BANKS.map((b) => <option key={b} value={b}>{b}</option>)}
+              <option value="__other">Other bank (type it)</option>
+            </select>
+            {typing && (
+              <input type="text" value={value.bankName} placeholder="Bank name" maxLength={100} autoFocus
+                onChange={(e) => onChange({ ...value, bankName: e.target.value })} className={`${box} mt-2`} />
+            )}
           </div>
         </>
       )}
@@ -144,6 +180,7 @@ interface PayslipLine {
   esiEmployee: number;
   esiEmployer: number;
   tds: number;
+  pt: number;
   totalDeductions: number;
   netPayable: number;
 }
@@ -205,7 +242,7 @@ export default function HRPayrollPage() {
   // here was silently not paid.
   const emptyDetails = { basic: "", hra: "", allowances: "", tds: "", designation: "", department: "", mobile: "", uan: "", joined: "", otRate: "" };
   const [detailsForm, setDetailsForm] = useState(emptyDetails);
-  const [detailsPay, setDetailsPay] = useState<SitePay>({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "" });
+  const [detailsPay, setDetailsPay] = useState<SitePay>({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "", bankName: "", ptOn: true });
 
   const openDetailsDrawer = (emp: Employee) => {
     setSelectedEmpDetail(emp);
@@ -227,6 +264,8 @@ export default function HRPayrollPage() {
       paidBy: emp.paidBy,
       bankAccount: emp.bankAccount,
       ifsc: emp.ifsc,
+      bankName: emp.bankName,
+      ptOn: emp.ptOn,
     });
     setShowDetailsDrawer(true);
     fetch(`${getApiHost()}/apis/v3/hr/payroll-profiles/${emp.id}`, { headers: authHeaders() })
@@ -403,7 +442,7 @@ export default function HRPayrollPage() {
     uan: "",
     joined: todayLocalISO()
   });
-  const [newPay, setNewPay] = useState<SitePay>({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "" });
+  const [newPay, setNewPay] = useState<SitePay>({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "", bankName: "", ptOn: true });
 
   const fetchEmployees = async () => {
     if (!companyId) return;
@@ -436,6 +475,8 @@ export default function HRPayrollPage() {
           paidBy: emp.salary_paid_by === "cash" ? "cash" : "bank",
           bankAccount: emp.bank_account || "",
           ifsc: emp.bank_ifsc || "",
+          bankName: emp.bank_name || "",
+          ptOn: emp.pt_applicable !== false,
         }));
         setEmployees(mapped);
       }
@@ -686,7 +727,7 @@ export default function HRPayrollPage() {
           uan: "",
           joined: todayLocalISO()
         });
-        setNewPay({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "" });
+        setNewPay({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "", bankName: "", ptOn: true });
       } else {
         const err = await readErrorDetail(res);
         alert(err || 'Action failed');
@@ -998,6 +1039,7 @@ export default function HRPayrollPage() {
     esiEmployee: p.esi_employee,
     esiEmployer: p.esi_employer,
     tds: p.tds,
+    pt: p.professional_tax || 0,
     totalDeductions: p.total_deductions,
     netPayable: p.net_payable
   });
@@ -1818,7 +1860,7 @@ export default function HRPayrollPage() {
                     <table className="w-full text-xs">
                       <thead className="bg-elevated border-b border-border-custom">
                         <tr>
-                          {["Employee", "Days", "Gross", "PF (Emp)", "PF (Er)", "ESI", "TDS", "Deductions", "Net Pay", ""].map(h => (
+                          {["Employee", "Days", "Gross", "PF (Emp)", "PF (Er)", "ESI", "TDS", "PT", "Deductions", "Net Pay", ""].map(h => (
                             <th key={h} className="text-left px-3 py-2.5 text-[10px] font-bold text-muted uppercase tracking-wider">{h}</th>
                           ))}
                         </tr>
@@ -1836,6 +1878,7 @@ export default function HRPayrollPage() {
                             <td className="px-3 py-3 text-muted">{fmt(p.pfEmployer)}</td>
                             <td className="px-3 py-3 text-muted">{p.esiEmployee > 0 ? fmt(p.esiEmployee) : <span className="text-muted">N/A</span>}</td>
                             <td className="px-3 py-3 text-muted">{p.tds > 0 ? fmt(p.tds) : "—"}</td>
+                            <td className="px-3 py-3 text-muted">{p.pt > 0 ? fmt(p.pt) : "—"}</td>
                             <td className="px-3 py-3 text-danger font-bold">{fmt(p.totalDeductions)}</td>
                             <td className="px-3 py-3 font-bold text-primary text-sm">{fmt(p.netPayable)}</td>
                             <td className="px-3 py-3">
@@ -2081,6 +2124,7 @@ export default function HRPayrollPage() {
                 ["PF (Employee 12%)", selectedPayslip.pfEmployee],
                 ["ESI (Employee 0.75%)", selectedPayslip.esiEmployee],
                 ["TDS", selectedPayslip.tds],
+                ["Professional Tax", selectedPayslip.pt],
               ].map(([label, val]) => (
                 <div key={label as string} className="flex justify-between text-xs">
                   <span className="text-muted">{label}</span>

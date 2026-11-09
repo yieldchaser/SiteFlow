@@ -33,6 +33,7 @@ from app.database import get_db
 from app.auth import get_current_user, verify_project_in_company, verify_company_access, verify_project_access, get_company_membership, require_permission, require_module_view, assert_cost_codes_known, scope_projects
 # R2-185/R2-407: the shared CSV formula guard (one helper, every export).
 from app.csv_export import csv_safe_cell as _csv_safe_cell, CSV_FORMULA_PREFIXES as _CSV_FORMULA_PREFIXES
+from app.professional_tax import professional_tax
 from app.models import (
     StaffEmployee, AttendanceLog, Timesheet,
     TimesheetEntry, PayrollRun, PayrollLineItem, Project, LeaveRequest,
@@ -127,6 +128,14 @@ class _SalaryPaymentFields(BaseModel):
     salary_paid_by: Optional[Literal["bank", "cash"]] = None
     bank_account: Optional[str] = None
     bank_ifsc: Optional[str] = None
+    bank_name: Optional[str] = Field(None, max_length=100)
+    # False for staff exempt from professional tax.
+    pt_applicable: Optional[bool] = None
+
+    @field_validator("bank_name", mode="before")
+    @classmethod
+    def _bank_name_trim(cls, v):
+        return str(v or "").strip() or None
 
     @field_validator("bank_account", mode="before")
     @classmethod
@@ -224,6 +233,8 @@ class EmployeeResponse(BaseModel):
     salary_paid_by: Optional[str] = None
     bank_account: Optional[str] = None
     bank_ifsc: Optional[str] = None
+    bank_name: Optional[str] = None
+    pt_applicable: Optional[bool] = True
     status: str
     date_of_joining: Optional[datetime]
     created_at: datetime
@@ -235,7 +246,7 @@ class EmployeeResponse(BaseModel):
 _PAY_FIELDS = (
     "uan", "basic_salary", "hra", "other_allowances", "pf_employee_pct", "pf_employer_pct",
     "esi_employee_pct", "esi_employer_pct", "tds_monthly", "is_esi_applicable",
-    "salary_paid_by", "bank_account", "bank_ifsc",
+    "salary_paid_by", "bank_account", "bank_ifsc", "bank_name", "pt_applicable",
 )
 
 
@@ -437,6 +448,7 @@ class PayslipResponse(BaseModel):
     esi_employee: float
     esi_employer: float
     tds: float
+    professional_tax: float = 0.0
     advance_recovery: float
     other_deductions: float
     total_deductions: float
@@ -506,8 +518,10 @@ def create_employee(payload: EmployeeCreate, db: Session = Depends(get_db), curr
     _check_employee_site(db, payload.company_id, data.get("project_id"))
     _check_employee_duplicate(db, payload.company_id, data)
     data["salary_paid_by"] = data.get("salary_paid_by") or "bank"
+    if data.get("pt_applicable") is None:
+        data["pt_applicable"] = True
     if data["salary_paid_by"] == "cash":
-        data["bank_account"] = data["bank_ifsc"] = None
+        data["bank_account"] = data["bank_ifsc"] = data["bank_name"] = None
     # ESI eligibility is derived from gross wages server-side; the caller's
     # value is never trusted.
     data["is_esi_applicable"] = _esi_applicable(data["basic_salary"], data["hra"], data["other_allowances"])
@@ -1001,7 +1015,7 @@ def _working_days_in_month(payroll_month: str, weekly_off_days, holidays=None) -
     )
 
 
-def _compute_payslip(emp: StaffEmployee, days_present: float, days_in_month: int, overtime_hours: float = 0.0, pf_wage_ceiling: float = 15000.0, overtime_rate: float = 0.0) -> dict:
+def _compute_payslip(emp: StaffEmployee, days_present: float, days_in_month: int, overtime_hours: float = 0.0, pf_wage_ceiling: float = 15000.0, overtime_rate: float = 0.0, pt_state: Optional[str] = None, pay_month: int = 0) -> dict:
     """
     Compute one employee's payslip.
 
@@ -1013,7 +1027,8 @@ def _compute_payslip(emp: StaffEmployee, days_present: float, days_in_month: int
     ESI employee = Gross * esi_employee_pct%  (only if is_esi_applicable)
     ESI employer = Gross * esi_employer_pct%
     TDS          = tds_monthly (fixed, not prorated)
-    Net          = Gross - PF_emp - ESI_emp - TDS
+    PT           = state slab on this month's gross (company pt_state)
+    Net          = Gross - PF_emp - ESI_emp - TDS - PT
     PF ceiling is applied in exactly one place here for employer PF (CD-4);
     employee PF is also capped to the same wage base for ledger consistency.
     """
@@ -1053,7 +1068,8 @@ def _compute_payslip(emp: StaffEmployee, days_present: float, days_in_month: int
         esi_emp = esi_er = 0.0
 
     tds = float(emp.tds_monthly)
-    total_ded = round(pf_emp + esi_emp + tds, 2)
+    pt = professional_tax(pt_state, gross, pay_month) if getattr(emp, "pt_applicable", True) is not False else 0.0
+    total_ded = round(pf_emp + esi_emp + tds + pt, 2)
     net = round(gross - total_ded, 2)
 
     return {
@@ -1069,6 +1085,7 @@ def _compute_payslip(emp: StaffEmployee, days_present: float, days_in_month: int
         "esi_employee": esi_emp,
         "esi_employer": esi_er,
         "tds": tds,
+        "professional_tax": pt,
         "advance_recovery": 0.0,
         "other_deductions": 0.0,
         "total_deductions": total_ded,
@@ -1150,6 +1167,26 @@ def run_payroll(payload: PayrollRunCreate, db: Session = Depends(get_db), curren
 
     if not employees:
         raise HTTPException(status_code=400, detail="No active employees found for the given company/project")
+
+    # Someone moved between sites mid-month is already on the payslips of the
+    # site whose run came first. Paying them again here would pay the month
+    # twice, so they are left out of this run.
+    already_paid = {
+        row[0] for row in db.query(PayrollLineItem.employee_id)
+        .join(PayrollRun, PayrollLineItem.payroll_run_id == PayrollRun.id)
+        .filter(
+            PayrollRun.company_id == payload.company_id,
+            PayrollRun.payroll_month == payload.payroll_month,
+            PayrollRun.status == "finalized",
+        ).all()
+    }
+    if already_paid:
+        employees = [e for e in employees if e.id not in already_paid]
+        if not employees:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Everyone here is already paid for {payload.payroll_month} in another site's payroll run.",
+            )
 
     run = PayrollRun(
         company_id=payload.company_id,
@@ -1260,6 +1297,7 @@ def run_payroll(payload: PayrollRunCreate, db: Session = Depends(get_db), curren
         calc = _compute_payslip(
             emp, days_present, effective_days_in_month, float(total_ot), pf_wage_ceiling=effective_ceiling,
             overtime_rate=float(profile.overtime_rate or 0) if profile else 0.0,
+            pt_state=getattr(company, "pt_state", None), pay_month=month,
         )
         calc["attendance_source"] = attendance_source
         # Separate string field before Decimal conversion so it stays verbatim.
@@ -1332,6 +1370,7 @@ def get_payslips(run_id: uuid.UUID, db: Session = Depends(get_db), current_user:
             "esi_employee": float(line.esi_employee),
             "esi_employer": float(line.esi_employer),
             "tds": float(line.tds),
+            "professional_tax": float(line.professional_tax or 0),
             "advance_recovery": float(line.advance_recovery),
             "total_deductions": float(line.total_deductions),
             "net_payable": float(line.net_payable),
@@ -1414,7 +1453,7 @@ def export_payslips_csv(run_id: uuid.UUID, db: Session = Depends(get_db), curren
         "Gross", "PF Employee", "PF Employer", "ESI Employee", "ESI Employer",
         "TDS", "Advance Recovery", "Other Deductions", "Total Deductions", "Net Pay",
         # R2-409: appended so index-based readers of the original columns keep working.
-        "Pay Period", "Payroll Run ID", "Company", "Project",
+        "Pay Period", "Payroll Run ID", "Company", "Project", "Professional Tax",
     ]
 
     buf = io.StringIO()
@@ -1443,6 +1482,7 @@ def export_payslips_csv(run_id: uuid.UUID, db: Session = Depends(get_db), curren
             str(run.id),
             _csv_safe_cell(company.name if company else ""),
             _csv_safe_cell(project.name if project else ""),
+            float(line.professional_tax or 0),
         ])
     csv_text = buf.getvalue()
     filename = f"payslips-{run.payroll_month}-{datetime.utcnow().strftime('%Y%m%d')}.csv"
@@ -1832,6 +1872,8 @@ def update_employee(employee_id: uuid.UUID, payload: EmployeeUpdate, db: Session
         _check_employee_site(db, emp.company_id, updates["project_id"])
     if updates.get("salary_paid_by") is None:
         updates.pop("salary_paid_by", None)
+    if "pt_applicable" in updates and updates["pt_applicable"] is None:
+        updates.pop("pt_applicable")
     if {"mobile", "uan", "employee_code"} & updates.keys():
         _check_employee_duplicate(db, emp.company_id, {
             f: updates.get(f, getattr(emp, f)) for f in ("mobile", "uan", "employee_code")
@@ -1839,7 +1881,7 @@ def update_employee(employee_id: uuid.UUID, payload: EmployeeUpdate, db: Session
     for k, v in updates.items():
         setattr(emp, k, v)
     if emp.salary_paid_by == "cash":
-        emp.bank_account = emp.bank_ifsc = None
+        emp.bank_account = emp.bank_ifsc = emp.bank_name = None
     if {"basic_salary", "hra", "other_allowances"} & updates.keys():
         # Pay changed: re-derive ESI eligibility from the new gross wages
         # instead of freezing the verdict captured at creation.

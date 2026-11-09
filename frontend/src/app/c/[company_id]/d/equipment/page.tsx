@@ -1,4 +1,6 @@
 "use client";
+import { EQUIPMENT_CATEGORIES, isCompanyAsset } from "@/lib/equipmentCategories";
+import CompanyAssets from "@/components/CompanyAssets";
 import Badge, { type BadgeTone } from "@/components/ui/Badge";
 import {  getApiHost , readErrorDetail, detailToMessage} from "@/lib/api";
 import { authHeaders, downloadWithAuth, formatDate, formatLabel, toLocalISODate } from "@/lib/siteflow";
@@ -69,35 +71,6 @@ interface EquipmentExpenseBill {
 }
 
 // Plant and machinery a piling, marine and roads contractor runs.
-const EQUIPMENT_CATEGORIES = [
-  "Excavator",
-  "Backhoe Loader (JCB)",
-  "Hydraulic Piling Rig",
-  "Tripod / Winch Piling Rig",
-  "Vibro Hammer",
-  "Crawler Crane",
-  "Mobile Crane",
-  "Tower Crane",
-  "Barge / Pontoon",
-  "Tug / Work Boat",
-  "Concrete Mixer",
-  "Transit Mixer",
-  "Batching Plant",
-  "Concrete Pump",
-  "Wheel Loader",
-  "Bulldozer",
-  "Motor Grader",
-  "Road Roller",
-  "Paver",
-  "Hot Mix Plant",
-  "Dumper / Tipper",
-  "Trailer",
-  "Air Compressor",
-  "Generator",
-  "Welding Machine",
-  "Survey Instrument",
-  "Other",
-];
 
 export default function EquipmentTrackingPage() {
   const params = useParams();
@@ -105,7 +78,7 @@ export default function EquipmentTrackingPage() {
   const { activeProjectId } = useProject();
   const projectId = activeProjectId;
 
-  const [activeTab, setActiveTab] = useState<"fleet" | "timeline" | "odologs" | "maintenance" | "expenses">("fleet");
+  const [activeTab, setActiveTab] = useState<"fleet" | "assets" | "timeline" | "odologs" | "maintenance" | "expenses">("fleet");
   
   // Data states
   const [fleet, setFleet] = useState<Equipment[]>([]);
@@ -157,7 +130,7 @@ export default function EquipmentTrackingPage() {
       const fleetRes = await fetch(`${getApiHost()}/apis/v3/equipment/${companyId}`, { headers: authHeaders() });
       if (fleetRes.ok) {
         const fleetData = await fleetRes.json();
-        setFleet(fleetData);
+        setFleet(fleetData.filter((e: Equipment) => !isCompanyAsset(e.category)));
         // Try fetching maintenance logs for all equipment
         try {
           const maintenancePromises = fleetData.map((eq: any) =>
@@ -420,6 +393,7 @@ export default function EquipmentTrackingPage() {
           <SegmentedTabs
             tabs={[
               { id: "fleet", icon: <Icon name="tractor" className="w-3.5 h-3.5" />, label: "Fleet Inventory" },
+              { id: "assets", icon: <Icon name="briefcase" className="w-3.5 h-3.5" />, label: "Company Assets" },
               { id: "timeline", icon: <Icon name="fuel_pump" className="w-3.5 h-3.5" />, label: "Usage & Refuel Timeline" },
               { id: "odologs", icon: <Icon name="bar_chart" className="w-3.5 h-3.5" />, label: "Odometer Run Logs" },
               { id: "maintenance", icon: <Icon name="wrench" className="w-3.5 h-3.5" />, label: "Maintenance Schedule" },
@@ -438,7 +412,9 @@ export default function EquipmentTrackingPage() {
                 {error}
               </div>
             )}
-            {!projectId ? (
+            {activeTab === "assets" ? (
+              <CompanyAssets companyId={companyId} />
+            ) : !projectId ? (
               <EmptyState
                 icon="building"
                 title="No project selected"
