@@ -3874,3 +3874,10 @@ html:has(.alexandria) { scroll-behavior: smooth; }
   .payslip-print, .payslip-print * { visibility: visible; }
   .payslip-print { position: absolute; left: 0; top: 0; width: 100%; max-width: none; border: none; }
 }
+
+/* Empty date fields read DD-MM-YYYY, not dd-mm-yyyy. */
+input[type="date"],
+input[type="datetime-local"],
+input[type="month"] {
+  text-transform: uppercase;
+}

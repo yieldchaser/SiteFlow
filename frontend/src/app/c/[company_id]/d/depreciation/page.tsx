@@ -10,6 +10,7 @@ import PageHeader from "@/components/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import SegmentedTabs from "@/components/ui/Tabs";
+import { isCompanyAsset, usefulLifeYears } from "@/lib/equipmentCategories";
 
 interface Schedule {
   id: string;
@@ -37,6 +38,8 @@ interface Asset {
   id: string;
   name: string;
   code: string;
+  category?: string;
+  assigned_to?: string | null;
 }
 
 export default function DepreciationPage() {
@@ -371,15 +374,40 @@ export default function DepreciationPage() {
             <form onSubmit={handleCreateSchedule} className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-muted mb-1">Asset</label>
-                <select required className="w-full bg-elevated border border-border-custom rounded-md px-4 py-2 text-foreground" value={schedForm.asset_id} onChange={(e) => setSchedForm({...schedForm, asset_id: e.target.value})}>
-                  <option value="">Select equipment</option>
-                  {assets.map((a) => (
-                    <option key={a.id} value={a.id}>{a.name} ({a.code})</option>
-                  ))}
+                <select
+                  required
+                  className="w-full bg-elevated border border-border-custom rounded-md px-4 py-2 text-foreground"
+                  value={schedForm.asset_id}
+                  onChange={(e) => {
+                    const a = assets.find((x) => x.id === e.target.value);
+                    const life = usefulLifeYears(a?.category || "");
+                    setSchedForm({
+                      ...schedForm,
+                      asset_id: e.target.value,
+                      useful_life_years: life,
+                      depreciation_pct: Math.round((100 / life) * 100) / 100,
+                    });
+                  }}
+                >
+                  <option value="">Select an asset</option>
+                  <optgroup label="Site machinery and vehicles">
+                    {assets.filter((a) => !isCompanyAsset(a.category || "")).map((a) => (
+                      <option key={a.id} value={a.id}>{a.name} ({a.code})</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Company assets (laptops, phones, cars, two-wheelers)">
+                    {assets.filter((a) => isCompanyAsset(a.category || "")).map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name} ({a.code}){a.assigned_to ? `, with ${a.assigned_to}` : ""}
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
-                {assets.length === 0 && (
-                  <p className="text-xs text-muted mt-1">Add the machine under Equipment first, then come back here.</p>
-                )}
+                {assets.length === 0 ? (
+                  <p className="text-xs text-muted mt-1">Add the machine under Equipment, or the laptop or vehicle under Company Assets, then come back here.</p>
+                ) : schedForm.asset_id ? (
+                  <p className="text-xs text-muted mt-1">Useful life filled in from the Companies Act for this kind of asset. Change it if your accountant uses another.</p>
+                ) : null}
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>

@@ -46,3 +46,23 @@ export const ASSET_CATEGORIES = [
 ];
 
 export const isCompanyAsset = (category: string) => ASSET_CATEGORIES.includes(category);
+
+// Useful life in years by the Companies Act 2013, Schedule II, used to fill
+// a new depreciation schedule. The accountant can change it.
+const LIFE_BY_CATEGORY: Record<string, number> = {
+  "Laptop": 3,
+  "Desktop Computer": 3,
+  "Mobile Phone": 3,
+  "Tablet": 3,
+  "Printer / Scanner": 5,
+  "Projector": 5,
+  "Camera / CCTV": 5,
+  "Office Furniture": 10,
+  "Air Conditioner": 5,
+  "Car / Jeep": 8,
+  "Two-wheeler": 10,
+  "Other Office Asset": 5,
+};
+
+export const usefulLifeYears = (category: string) =>
+  LIFE_BY_CATEGORY[category] ?? 12; // plant and machinery used on sites
