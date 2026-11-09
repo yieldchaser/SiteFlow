@@ -454,10 +454,45 @@ def get_current_active_company_user(
     }
 
 
+# Which permission module a router's reads belong to, by router module name.
+# A role without any access to that module gets a 403 on its GETs, so hiding
+# a module in the menu is no longer the only thing between a role and the data.
+# Shared master data (library, projects list, settings, HR roster, analytics
+# that feeds every dashboard) is deliberately not listed.
+_READ_MODULE_BY_ROUTER = {
+    "budgeting": "budgeting", "budget": "budgeting",
+    "planning": "planning", "towers": "planning", "team_schedule": "planning", "dpr": "planning",
+    "drawings": "drawings",
+    "procurement": "procurement", "rfq": "procurement", "vendor_performance": "procurement",
+    "three_way": "procurement",
+    "billing": "billing",
+    "finance": "finance", "tally": "finance",
+    "quality": "quality",
+    "safety": "safety",
+    "equipment": "equipment", "assets": "equipment",
+    "production": "production", "wastage": "production",
+    "crm": "crm",
+    "subcon_attendance": "subcontractor", "subcon_performance": "subcontractor",
+    "labour": "attendance", "biometric": "attendance", "face_recognition": "attendance",
+    "reports": "reports",
+}
+
+
+def _enforce_module_read(request: Optional[Request], db: Session, current_user, company_id) -> None:
+    if request is None or request.method != "GET":
+        return
+    endpoint = request.scope.get("endpoint")
+    router_name = (getattr(endpoint, "__module__", "") or "").rsplit(".", 1)[-1]
+    module = _READ_MODULE_BY_ROUTER.get(router_name)
+    if module:
+        require_module_view(db, current_user, company_id, module)
+
+
 def verify_company_access(
     company_id: uuid.UUID,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    request: Request = None,
 ) -> None:
     """Dependency for URL-routed endpoints: 403s unless the caller is a member
     of the company_id path/query param already declared on the endpoint."""
@@ -470,12 +505,14 @@ def verify_company_access(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to this company",
         )
+    _enforce_module_read(request, db, current_user, company_id)
 
 
 def verify_project_access(
     project_id: uuid.UUID,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    request: Request = None,
 ) -> None:
     """Dependency for URL-routed endpoints: 403s unless the caller belongs to
     the company that owns the project_id path/query param on the endpoint."""
@@ -491,6 +528,7 @@ def verify_project_access(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to this project",
         )
+    _enforce_module_read(request, db, current_user, project.company_id)
 
 
 def get_verified_company_user(
