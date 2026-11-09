@@ -436,7 +436,14 @@ export default function ProjectDashboardPage() {
   const daysLeft = hasSchedule ? Math.ceil((endMs - nowMs) / DAY) : 0;
   const progress = project.progress ?? 0;
   const lead = progress - elapsedPct;
-  const pace: { text: string; cls: string } = !hasSchedule
+  // A paused or stopped project is not "on track", whatever the dates say.
+  const statusKey = (project.status || "").toLowerCase().replace(/\s+/g, "");
+  // Empty text hides the pace badge; the status badge already says it.
+  const pace: { text: string; cls: string } = statusKey === "onhold" || statusKey === "cancelled"
+    ? { text: "", cls: "" }
+    : statusKey === "completed" && !project.actual_end_date
+      ? { text: "Completed", cls: "bg-success/10 text-success" }
+    : !hasSchedule
     ? { text: "No schedule set", cls: "bg-elevated text-muted" }
     : project.actual_end_date
       ? { text: "Completed", cls: "bg-success/10 text-success" }
@@ -562,10 +569,16 @@ export default function ProjectDashboardPage() {
           <ProgressRing value={progress} />
           <div className="flex-1 min-w-0 space-y-4">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-2.5 py-1 text-xs font-semibold">
+              <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
+                statusKey === "onhold" ? "bg-warning/10 text-warning"
+                : statusKey === "cancelled" ? "bg-danger/10 text-danger"
+                : statusKey === "completed" ? "bg-success/10 text-success"
+                : "bg-primary/10 text-primary"}`}>
                 {formatLabel(project.status)}
               </span>
-              <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${pace.cls}`}>{pace.text}</span>
+              {pace.text && (
+                <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${pace.cls}`}>{pace.text}</span>
+              )}
               <span className="inline-flex items-center gap-1 rounded-full bg-elevated text-muted px-2.5 py-1 text-xs font-medium">
                 <Icon name="task_alt" className="w-3.5 h-3.5" />
                 {project.todo_pending ?? 0} pending to-do{(project.todo_pending ?? 0) === 1 ? "" : "s"}
@@ -641,7 +654,7 @@ export default function ProjectDashboardPage() {
                 icon="inbox"
                 value={fmtINR(project.cash_in, currencyDecimalPlaces)}
                 tone="good"
-                sub={`${pct(saleExGst, boqValue)} of BOQ value · ${collectedPct.toFixed(0)}% collected`}
+                sub={`${boqValue > 0 ? `${pct(saleExGst, boqValue)} of BOQ value` : "No BOQ yet"} · ${collectedPct.toFixed(0)}% collected`}
                 onClick={() =>
                   setDrill({
                     title: "Billed In (Sales Invoices)",
