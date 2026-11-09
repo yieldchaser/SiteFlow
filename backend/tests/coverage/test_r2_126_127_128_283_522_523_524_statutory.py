@@ -313,11 +313,14 @@ def test_r2_523_pf_ecr_from_period_payslips_with_eps_split(client, db, make_tena
     assert full["pf_wages"] == 15000.0, full          # cap binds at the ceiling
     assert full["ee_pf_contribution"] == 1800.0, full
     assert full["er_pf_contribution"] == 1800.0, full
-    assert full["eps_contribution"] == 1249.5, full   # 8.33% pension split
-    assert full["epf_contribution"] == 550.5, full    # remainder to EPF
+    # 8.33% pension split, in whole rupees as the ECR takes them.
+    assert full["eps_contribution"] == 1250.0, full
+    assert full["epf_contribution"] == 550.0, full    # remainder to EPF
     part = lines["Part Month"]
     assert part["pf_wages"] == 6000.0, part           # earned wages, not master salary
-    assert part["eps_contribution"] == 499.8 and part["epf_contribution"] == 220.2, part
+    assert part["eps_contribution"] == 500.0 and part["epf_contribution"] == 220.0, part
+    # July PF is paid by 15 August, not 15 July.
+    assert body["due_date"] == "2026-08-15", body
     # R2-756: StaffEmployee stores real UAN, and ECR reflects it.
     assert full["uan"] == "100123456789", full
     assert body["total_pf_liability"] == 5040.0, body
@@ -422,6 +425,6 @@ def test_pf_ecr_files_the_pf_the_payslip_deducted(client, db, make_tenant, auth_
     assert line["pf_wages"] == 20000.0
     assert line["ee_pf_contribution"] == 2400.0
     assert line["er_pf_contribution"] == 2400.0
-    # Pension stays on the statutory Rs 15,000: 8.33% = 1,249.50.
-    assert line["eps_contribution"] == 1249.5
-    assert line["epf_contribution"] == 1150.5
+    # Pension stays on the statutory Rs 15,000: 8.33% = 1,249.50, filed as 1,250.
+    assert line["eps_contribution"] == 1250.0
+    assert line["epf_contribution"] == 1150.0

@@ -741,7 +741,7 @@ export default function StatutoryPage() {
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
                       <div>
                         <span className="text-muted block text-[10px] uppercase font-bold">Return Period</span>
-                        <span className="font-bold text-foreground">{gstr1Result.return_period}</span>
+                        <span className="font-bold text-foreground">{periodLabel(gstr1Result.return_period)}</span>
                       </div>
                       <div>
                         <span className="text-muted block text-[10px] uppercase font-bold">Total Invoices</span>
@@ -785,7 +785,7 @@ export default function StatutoryPage() {
                         {gstr1Result.records.map((r, i) => (
                           <tr key={i} className="hover:bg-elevated/20 transition-all">
                             <td className="px-4 py-2.5 font-bold text-foreground">{r.invoice_number}</td>
-                            <td className="px-4 py-2.5 text-muted">{r.invoice_date}</td>
+                            <td className="px-4 py-2.5 text-muted">{formatDate(r.invoice_date)}</td>
                             <td className="px-4 py-2.5 text-foreground">{r.party_name || "—"}</td>
                             <td className="px-4 py-2.5 text-muted font-mono text-[11px]">{r.party_gstin || "—"}</td>
                             <td className="px-4 py-2.5 text-right font-medium text-foreground">₹{r.taxable_value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
@@ -798,7 +798,7 @@ export default function StatutoryPage() {
                         {gstr1Result.records.length === 0 && (
                           <tr>
                             <td colSpan={9} className="px-4 py-6 text-center text-muted">
-                              No outward supply invoices found for period {gstr1Result.return_period}.
+                              No outward supply invoices found for period {periodLabel(gstr1Result.return_period)}.
                             </td>
                           </tr>
                         )}
@@ -815,7 +815,7 @@ export default function StatutoryPage() {
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
                       <div>
                         <span className="text-muted block text-[10px] uppercase font-bold">Return Period</span>
-                        <span className="font-bold text-foreground">{pfEcrResult.return_period}</span>
+                        <span className="font-bold text-foreground">{periodLabel(pfEcrResult.return_period)}</span>{pfEcrResult.due_date && <span className="block text-[10px] text-muted">Pay by {formatDate(pfEcrResult.due_date)}</span>}
                       </div>
                       <div>
                         <span className="text-muted block text-[10px] uppercase font-bold">Employees</span>
@@ -872,7 +872,7 @@ export default function StatutoryPage() {
                         {pfEcrResult.ecr_lines.length === 0 && (
                           <tr>
                             <td colSpan={8} className="px-4 py-6 text-center text-muted">
-                              No PF ECR lines found for period {pfEcrResult.return_period}.
+                              No PF ECR lines found for period {periodLabel(pfEcrResult.return_period)}.
                             </td>
                           </tr>
                         )}

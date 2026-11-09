@@ -9,7 +9,7 @@ from app.database import get_db
 from app.auth import get_current_user, verify_project_in_company, verify_company_access, require_permission, require_module_view
 from app.models import StatutoryReport, StaffEmployee, PayrollRun, PayrollLineItem, User, Bill, CompanyTeam, LibraryParty, TransactionDeduction
 from app.constants import REVENUE_INVOICE_TYPES
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 router = APIRouter(prefix="/statutory", tags=["Statutory Reports"], dependencies=[Depends(get_current_user)])
 
@@ -409,8 +409,11 @@ def export_pf_ecr(
         ee_pct = float(emp.pf_employee_pct or 12)
         pf_wages = round(ee_pf * 100 / ee_pct, 2) if ee_pct > 0 and ee_pf > 0 else min(float(li.basic or 0), 15000.0)
         # Pension (EPS) is 8.33% of wages up to the statutory Rs 15,000, never
-        # more than the employer's share; the rest of that share is EPF.
-        eps_pf = min(round(min(pf_wages, 15000.0) * 8.33 / 100, 2), er_pf)
+        # more than the employer's share; the rest of that share is EPF. The
+        # ECR takes whole rupees, so EPS rounds half up (Rs 1,249.50 is
+        # Rs 1,250) and EPF takes the remainder.
+        eps_raw = Decimal(str(min(pf_wages, 15000.0))) * Decimal("8.33") / Decimal("100")
+        eps_pf = min(float(eps_raw.quantize(Decimal("1"), rounding=ROUND_HALF_UP)), er_pf)
         epf_pf = round(er_pf - eps_pf, 2)
         ecr_lines.append({
             "uan": emp.uan,
@@ -430,7 +433,8 @@ def export_pf_ecr(
         "report": "PF-ECR",
         "company_id": str(company_id),
         "return_period": return_period,
-        "due_date": f"{year}-{month:02d}-15",
+        # PF for a month is paid by the 15th of the month after.
+        "due_date": f"{year + (month == 12)}-{month % 12 + 1:02d}-15",
         "total_employees": len(ecr_lines),
         "total_ee_pf": total_ee,
         "total_er_pf": total_er,
