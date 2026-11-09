@@ -18,6 +18,24 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { GST_STATES, PROJECT_STAGES, PROJECT_CATEGORIES } from "@/lib/gstStates";
 
+// "Onhold" is how older rows store it; show one spelling everywhere.
+function statusLabel(status?: string | null): string {
+  const s = (status || "").trim();
+  if (!s) return "";
+  if (s.toLowerCase().replace(/\s+/g, "") === "onhold") return "On Hold";
+  if (s === "Active") return "Ongoing";
+  return s;
+}
+
+function statusTone(status?: string | null): string {
+  switch (statusLabel(status)) {
+    case "Completed": return "bg-success/15 text-success";
+    case "Cancelled": return "bg-danger/15 text-danger";
+    case "On Hold": return "bg-warning/15 text-warning";
+    default: return "bg-info/15 text-info";
+  }
+}
+
 type Project = {
   id: string;
   name: string;
@@ -114,6 +132,7 @@ export default function ProjectsPage() {
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("All");
   const [categoryFilter, setCategoryFilter] = useState("All");
+  const [statusFilter, setStatusFilter] = useState("All");
   const [scopeFilter, setScopeFilter] = useState("All");
   const [createOpen, setCreateOpen] = useState(false);
   const [settingsProject, setSettingsProject] = useState<Project | null>(null);
@@ -153,6 +172,10 @@ export default function ProjectsPage() {
     () => ["All", ...Array.from(new Set(projects.map((p) => p.stage).filter(Boolean) as string[]))],
     [projects]
   );
+  const statuses = useMemo(
+    () => ["All", ...Array.from(new Set(projects.map((p) => statusLabel(p.status)).filter(Boolean)))],
+    [projects]
+  );
   const categories = useMemo(
     () => ["All", ...Array.from(new Set(projects.map((p) => p.category).filter(Boolean) as string[]))],
     [projects]
@@ -163,6 +186,7 @@ export default function ProjectsPage() {
       if (scopeFilter === "Pinned" && !p.is_pinned) return false;
       if (stageFilter !== "All" && p.stage !== stageFilter) return false;
       if (categoryFilter !== "All" && p.category !== categoryFilter) return false;
+      if (statusFilter !== "All" && statusLabel(p.status) !== statusFilter) return false;
       if (
         search &&
         !`${p.name} ${p.city || ""}`.toLowerCase().includes(search.toLowerCase())
@@ -170,7 +194,7 @@ export default function ProjectsPage() {
         return false;
       return true;
     });
-  }, [projects, scopeFilter, stageFilter, categoryFilter, search]);
+  }, [projects, scopeFilter, stageFilter, categoryFilter, statusFilter, search]);
 
   const togglePin = async (p: Project) => {
     try {
@@ -208,11 +232,12 @@ export default function ProjectsPage() {
   };
 
   const exportCsv = () => {
-    const headers = ["Name", "Code", "City", "Stage", "Category", "Progress %", "Billed In", "Billed Out", "To Do"];
+    const headers = ["Name", "Code", "City", "Status", "Stage", "Category", "Progress %", "Billed In", "Billed Out", "To Do"];
     const rows = filtered.map((p) => [
       p.name,
       p.code || "",
       p.city || "",
+      statusLabel(p.status),
       p.stage || "",
       p.category || "",
       String(p.progress ?? 0),
@@ -313,6 +338,16 @@ export default function ProjectsPage() {
           ))}
         </select>
 
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="rounded-md border border-border-custom bg-card px-3 py-2 text-sm text-foreground"
+        >
+          {statuses.map((s) => (
+            <option key={s} value={s}>{s === "All" ? "Status" : s}</option>
+          ))}
+        </select>
+
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -368,7 +403,13 @@ export default function ProjectsPage() {
                       </div>
                       <div>
                         <div className="font-medium text-foreground">{p.name}</div>
-                        <div className="text-xs text-muted">{p.city || "—"}</div>
+                        <div className="flex items-center gap-2 text-xs text-muted">
+                          <span>{p.city || "—"}</span>
+                          {/* Running sites need no badge; anything else is easy to miss without one. */}
+                          {statusLabel(p.status) && statusLabel(p.status) !== "Ongoing" && (
+                            <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${statusTone(p.status)}`}>{statusLabel(p.status)}</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </td>
