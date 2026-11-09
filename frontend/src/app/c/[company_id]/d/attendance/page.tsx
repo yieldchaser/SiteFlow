@@ -2,7 +2,7 @@
 import { PROJECT_CATEGORIES } from "@/lib/gstStates";
 import Badge, { type BadgeTone } from "@/components/ui/Badge";
 import { getApiHost, detailToMessage} from "@/lib/api";
-import { authHeaders, formatLabel, todayLocalISO } from "@/lib/siteflow";
+import { authHeaders, formatLabel, todayLocalISO, downloadWithAuth } from "@/lib/siteflow";
 
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
@@ -1130,7 +1130,13 @@ export default function AttendancePage() {
                              <td className="py-3 px-3 text-right font-sans text-danger">₹{emp.tds.toLocaleString("en-IN")}</td>
                              <td className="py-3 px-3 text-right font-bold font-sans text-success">₹{emp.net_payable.toLocaleString("en-IN")}</td>
                              <td className="py-3 pr-5 text-center">
-                               <button onClick={() => window.print()}
+                               <button
+                                 type="button"
+                                 disabled={!payrollRun.run_id}
+                                 onClick={() =>
+                                   downloadWithAuth(`/hr/payroll/${payrollRun.run_id}/payslips/${emp.id}/pdf`, "payslip.pdf")
+                                     .catch(() => alert("Could not download the payslip. Check your connection and try again."))
+                                 }
                                  className="inline-flex items-center gap-1 px-2.5 py-1 text-[9px] font-bold bg-primary/10 border border-primary/20 text-primary rounded-lg hover:bg-primary/20 transition-all">
                                  <Icon name="description" className="w-3.5 h-3.5" />Download
                                </button>

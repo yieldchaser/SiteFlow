@@ -1,7 +1,7 @@
 "use client";
 import Badge, { type BadgeTone } from "@/components/ui/Badge";
 import {  getApiHost , readErrorDetail, detailToMessage} from "@/lib/api";
-import { getApi, authHeaders, resolveCompanyId, formatDate, formatLabel, todayLocalISO, toLocalISODate } from "@/lib/siteflow";
+import { getApi, authHeaders, resolveCompanyId, formatDate, formatLabel, todayLocalISO, toLocalISODate, downloadWithAuth } from "@/lib/siteflow";
 
 import React, { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
@@ -191,6 +191,7 @@ interface Timesheet {
 }
 
 interface PayslipLine {
+  payslipId: string;
   employeeId: string;
   employeeName: string;
   designation: string;
@@ -1083,6 +1084,7 @@ export default function HRPayrollPage() {
   })();
 
   const mapPayslip = (p: any): PayslipLine => ({
+    payslipId: p.id,
     employeeId: p.employee_id,
     employeeName: p.employee_name,
     designation: p.designation || p.employee_designation || "",
@@ -2157,8 +2159,14 @@ export default function HRPayrollPage() {
                 <p className="text-xs text-muted">{selectedPayslip.designation} · {payrollRun?.month ?? payrollMonth}</p>
               </div>
               <div className="flex items-center gap-3 print:hidden">
-                <button onClick={() => window.print()} className="inline-flex items-center gap-1 px-3 py-1 bg-primary/20 hover:bg-primary/35 text-primary border border-border-custom rounded text-[10px] font-bold transition-all">
-                  <Icon name="printer" className="w-3.5 h-3.5" /> Print or save PDF
+                <button
+                  onClick={() => {
+                    if (!payrollRun || !selectedPayslip.payslipId) { window.print(); return; }
+                    downloadWithAuth(`/hr/payroll/${payrollRun.id}/payslips/${selectedPayslip.payslipId}/pdf`, "payslip.pdf")
+                      .catch(() => alert("Could not download the payslip. Check your connection and try again."));
+                  }}
+                  className="inline-flex items-center gap-1 px-3 py-1 bg-primary/20 hover:bg-primary/35 text-primary border border-border-custom rounded text-[10px] font-bold transition-all">
+                  <Icon name="description" className="w-3.5 h-3.5" /> Download PDF
                 </button>
                 <button onClick={() => setSelectedPayslip(null)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>
               </div>

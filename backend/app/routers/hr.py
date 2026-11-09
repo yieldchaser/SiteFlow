@@ -11,6 +11,7 @@ Endpoints:
   PATCH  /hr/timesheets/{ts_id}/approve — Approve timesheet
   POST   /hr/payroll/run            — Execute monthly payroll run
   GET    /hr/payroll/{run_id}/payslips — List payslips for a run
+  GET    /hr/payroll/{run_id}/payslips/{payslip_id}/pdf — One payslip as a PDF
 """
 
 import calendar
@@ -1424,6 +1425,121 @@ def get_payslips(run_id: uuid.UUID, db: Session = Depends(get_db), current_user:
             "attendance_source": getattr(line, "attendance_source", None) or ("assumed" if float(line.days_present or 0) == 0 and line.days_in_month else "recorded"),
         })
     return result
+
+
+@router.get("/payroll/{run_id}/payslips/{payslip_id}/pdf")
+def get_payslip_pdf(run_id: uuid.UUID, payslip_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """One employee's payslip as a printable PDF on the company letterhead.
+
+    The screens used to offer "Download" by printing the whole dashboard,
+    which gave a page of sidebar and every other employee's pay."""
+    run = db.query(PayrollRun).filter(PayrollRun.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Payroll run not found")
+    get_company_membership(db, current_user, run.company_id)
+    require_module_view(db, current_user, run.company_id, "payroll")
+    line = db.query(PayrollLineItem).filter(
+        PayrollLineItem.id == payslip_id, PayrollLineItem.payroll_run_id == run_id
+    ).first()
+    if not line:
+        raise HTTPException(status_code=404, detail="Payslip not found")
+    emp = db.query(StaffEmployee).filter(StaffEmployee.id == line.employee_id).first()
+
+    from app.models import Project
+    from app.routers.billing import _amount_in_words
+    from app.utils.document_pdf import (
+        load_branding_assets, pdf_filename, resolve_pdf_branding, resolve_supplier_tax_details,
+    )
+    from app.utils.pdf_generator import generate_document_pdf
+
+    project = db.query(Project).filter(Project.id == run.project_id).first() if run.project_id else None
+    company_name, custom_banner = resolve_pdf_branding(db, run.company_id, project)
+
+    try:
+        period = datetime.strptime(run.payroll_month, "%Y-%m").strftime("%B %Y")
+    except (TypeError, ValueError):
+        period = run.payroll_month or ""
+    days = float(line.days_present or 0)
+    days_text = f"{days:g} of {line.days_in_month}"
+
+    name = emp.name if emp else "Unknown"
+    details = [f"Employee: {name}"]
+    if emp and emp.employee_code:
+        details.append(f"Employee Code: {emp.employee_code}")
+    if emp and emp.designation:
+        details.append(f"Designation: {emp.designation}")
+    if emp and emp.department:
+        details.append(f"Department: {emp.department}")
+    details.append(f"Days Paid: {days_text}")
+    if emp and emp.uan:
+        details.append(f"UAN: {emp.uan}")
+    if emp and (emp.salary_paid_by or "bank") == "bank" and emp.bank_account:
+        # Last four digits only: a payslip gets forwarded and printed.
+        bank = f"XXXX{str(emp.bank_account)[-4:]}"
+        details.append(f"Bank Account: {bank}" + (f" ({emp.bank_name})" if emp.bank_name else ""))
+    elif emp and emp.salary_paid_by:
+        details.append(f"Paid By: {str(emp.salary_paid_by).title()}")
+
+    def amt(v) -> float:
+        return float(v or 0)
+
+    earnings = [("Basic", amt(line.basic)), ("HRA", amt(line.hra)), ("Other Allowances", amt(line.other_allowances))]
+    if amt(line.overtime_amount):
+        earnings.append(("Overtime", amt(line.overtime_amount)))
+    deductions = [("PF", amt(line.pf_employee)), ("ESI", amt(line.esi_employee))]
+    for label, value in (
+        ("Professional Tax", amt(line.professional_tax)),
+        ("TDS", amt(line.tds)),
+        ("Advance Recovery", amt(line.advance_recovery)),
+        ("Other Deductions", amt(line.other_deductions)),
+    ):
+        if value:
+            deductions.append((label, value))
+
+    # Earnings and deductions side by side, the way Indian payslips read.
+    rows = []
+    for i in range(max(len(earnings), len(deductions))):
+        e = earnings[i] if i < len(earnings) else ("", None)
+        d = deductions[i] if i < len(deductions) else ("", None)
+        rows.append([
+            e[0], "" if e[1] is None else f"{e[1]:.2f}",
+            d[0], "" if d[1] is None else f"{d[1]:.2f}",
+        ])
+
+    net = amt(line.net_payable)
+    totals = [
+        f"Gross Earnings: {amt(line.gross_salary):.2f}",
+        f"Total Deductions: {amt(line.total_deductions):.2f}",
+        f"Net Pay: {net:.2f}",
+        f"Net Pay in Words: {_amount_in_words(net)}",
+    ]
+    employer = [(lbl, v) for lbl, v in (("PF", amt(line.pf_employer)), ("ESI", amt(line.esi_employer))) if v]
+    if employer:
+        totals.append(
+            "Paid by the Company on Top: "
+            + ", ".join(f"{lbl} Rs {v:,.2f}" for lbl, v in employer)
+            + " (not deducted from your salary)"
+        )
+    totals.append("Note: This is a computer-generated payslip and needs no signature.")
+
+    pdf_bytes = generate_document_pdf(
+        title=f"Payslip for {period}",
+        party_lines=details,
+        table_headers=["Earnings", "Amount", "Deductions", "Amount"],
+        table_rows=rows,
+        col_widths=[30, 20, 30, 20],
+        totals_lines=totals,
+        company_name=company_name,
+        custom_banner=custom_banner,
+        supplier_lines=resolve_supplier_tax_details(db, run.company_id, project),
+        branding=load_branding_assets(db, run.company_id),
+    )
+    filename = pdf_filename("Payslip", name, run.payroll_month)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.delete("/payroll/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
