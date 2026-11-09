@@ -99,13 +99,19 @@ export default function ProjectDetailLayout({ children }: { children: React.Reac
     setMoreOpen(false);
   }, [pathname]);
 
+  // The switcher list already has the name; use it until the project loads.
+  const listed = projects.find((p) => p.id === projectId);
   const base = `/c/${companyId}/p/${projectId}`;
   const currentSlug =
     TABS.find((t) => pathname === `${base}/${t.slug}`)?.slug || "dashboard";
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (attempt = 0) => {
     try {
       const res = await fetch(getApi(`/projects/${projectId}`), { headers: authHeaders() });
+      if (res.status >= 500 && attempt < 2) {
+        setTimeout(() => load(attempt + 1), 2000);
+        return;
+      }
       setClosed(res.status === 403 ? await readErrorDetail(res) : null);
       if (res.ok) {
         const data = await res.json();
@@ -118,7 +124,8 @@ export default function ProjectDetailLayout({ children }: { children: React.Reac
         setStatus(data.status || "—");
       }
     } catch {
-      /* ignore */
+      // Network blip (a server restart): try again shortly.
+      if (attempt < 2) setTimeout(() => load(attempt + 1), 2000);
     }
   }, [projectId]);
 
@@ -163,8 +170,10 @@ export default function ProjectDetailLayout({ children }: { children: React.Reac
       <div className="flex flex-wrap items-center gap-3 px-6 py-3 border-b border-border-custom bg-card">
         <div className="min-w-0">
           <div className="text-base font-semibold text-foreground truncate">
-            {project?.name || "—"}
-            {project?.code ? <span className="ml-2 text-xs font-normal text-muted">({project.code})</span> : null}
+            {project?.name || listed?.project_name || listed?.name || "—"}
+            {(project?.code || listed?.project_code || listed?.code) ? (
+              <span className="ml-2 text-xs font-normal text-muted">({project?.code || listed?.project_code || listed?.code})</span>
+            ) : null}
           </div>
           <div className="text-[11px] uppercase tracking-wider text-muted">Project</div>
         </div>
@@ -188,7 +197,7 @@ export default function ProjectDetailLayout({ children }: { children: React.Reac
 
           <select
             value={status === "Onhold" ? "On Hold" : status}
-            disabled={savingStatus || !can("projects:edit")}
+            disabled={savingStatus || !project || !can("projects:edit")}
             onChange={(e) => onStatusChange(e.target.value)}
             className="rounded-md border border-border-custom bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary cursor-pointer disabled:opacity-50"
           >

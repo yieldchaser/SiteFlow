@@ -792,6 +792,8 @@ export default function ProjectDashboardPage() {
                 ))}
               </div>
 
+              {/* No budget means nothing to measure against; "₹0 of ₹0" said nothing. */}
+              {estimatedBudget > 0 && (
               <div className="mt-5">
                 <div className="flex items-center justify-between text-xs mb-1.5">
                   <span className="text-muted">Budget used</span>
@@ -806,6 +808,7 @@ export default function ProjectDashboardPage() {
                   color={estimatedBudget > 0 && budgetSpent > estimatedBudget ? "var(--danger)" : "var(--primary)"}
                 />
               </div>
+              )}
 
               {budgetRows.length > 0 && (
                 <div className="mt-5 space-y-3">
