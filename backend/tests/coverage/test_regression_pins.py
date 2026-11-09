@@ -77,8 +77,9 @@ def test_pin_R2_106_location_verified_derived_from_geofence():
 
 def test_pin_R2_031_task_status_derives_from_progress():
     src = _read("app/routers/planning.py")
+    # in_progress is what dpr.py moves tasks to and what reports count as active.
     assert 'task.status = "in_progress"' in src, "R2-031 in-progress derivation regressed"
-    assert 'task.status = "in_progress"' not in src, "R2-031 non-canonical in_progress reintroduced"
+    assert 'task.status = "ongoing"' not in src, "R2-031 non-canonical ongoing reintroduced"
 
 
 def test_pin_R2_044_billing_bucket_gates():
