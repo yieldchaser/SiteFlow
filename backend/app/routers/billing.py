@@ -219,6 +219,9 @@ class DebitNoteResponse(BaseModel):
     reference_number: Optional[str] = None
     approval_flag: str
     created_at: datetime
+    # Who the note is against, for display: suppliers as well as
+    # subcontractors (the page only knew subcontractor names).
+    party_name: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -243,6 +246,9 @@ class CreditNoteResponse(BaseModel):
     reference_number: Optional[str] = None
     approval_flag: str
     created_at: datetime
+    # Who the note is against, for display: suppliers as well as
+    # subcontractors (the page only knew subcontractor names).
+    party_name: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -1815,8 +1821,10 @@ def get_debit_notes(project_id: UUID, db: Session = Depends(get_db), _: None = D
     project = db.query(Project).filter(Project.id == project_id).first()
     require_module_view(db, current_user, project.company_id, "billing")
     notes = db.query(DebitNote).filter(DebitNote.project_id == project_id).all()
+    names = resolve_party_names_batch(db, [n.party_company_user_id for n in notes])
     return [
         DebitNoteResponse(
+            party_name=names.get(n.party_company_user_id),
             id=n.id,
             project_id=n.project_id,
             company_id=n.company_id,
@@ -1876,8 +1884,10 @@ def get_credit_notes(project_id: UUID, db: Session = Depends(get_db), _: None = 
     project = db.query(Project).filter(Project.id == project_id).first()
     require_module_view(db, current_user, project.company_id, "billing")
     notes = db.query(CreditNote).filter(CreditNote.project_id == project_id).all()
+    names = resolve_party_names_batch(db, [n.party_company_user_id for n in notes])
     return [
         CreditNoteResponse(
+            party_name=names.get(n.party_company_user_id),
             id=n.id,
             project_id=n.project_id,
             company_id=n.company_id,

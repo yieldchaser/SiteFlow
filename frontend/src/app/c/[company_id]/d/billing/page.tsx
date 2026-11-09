@@ -71,6 +71,7 @@ interface WorkOrder {
 interface DebitCreditNote {
   id: string;
   type: "debit" | "credit";
+  ref: string;
   subcontractor: string;
   amount: number;
   notes: string;
@@ -200,6 +201,15 @@ export default function SubcontractorBillingPage() {
     }
   };
 
+  // A cancelled note used to come back as "pending" on reload, with its
+  // Cancel button showing again.
+  const noteStatus = (flag?: string): DebitCreditNote["status"] => {
+    const f = String(flag || "").toLowerCase();
+    if (f === "cancelled" || f === "rejected") return "cancelled";
+    if (f === "approved" || f === "auto_approved") return "approved";
+    return "pending";
+  };
+
   const fetchNotes = async (nameMap: Record<string, string> = {}) => {
     try {
       const dnRes = await fetch(`${getApiHost()}/apis/v3/billing/debit-notes?project_id=${projectId}`, { headers: authHeaders() });
@@ -210,11 +220,12 @@ export default function SubcontractorBillingPage() {
         allNotes = allNotes.concat(dnData.map((n: any) => ({
           id: n.id,
           type: "debit",
-          subcontractor: nameMap[n.party_company_user_id] || "Unassigned",
+          ref: n.reference_number || "",
+          subcontractor: n.party_name || nameMap[n.party_company_user_id] || "Unassigned",
           amount: n.total_amount,
           notes: n.notes || "",
           date: n.created_at ? n.created_at.split("T")[0] : "",
-          status: n.approval_flag === "auto_approved" ? "approved" : "pending"
+          status: noteStatus(n.approval_flag)
         })));
       }
       if (cnRes.ok) {
@@ -222,11 +233,12 @@ export default function SubcontractorBillingPage() {
         allNotes = allNotes.concat(cnData.map((n: any) => ({
           id: n.id,
           type: "credit",
-          subcontractor: nameMap[n.party_company_user_id] || "Unassigned",
+          ref: n.reference_number || "",
+          subcontractor: n.party_name || nameMap[n.party_company_user_id] || "Unassigned",
           amount: n.total_amount,
           notes: n.notes || "",
           date: n.created_at ? n.created_at.split("T")[0] : "",
-          status: n.approval_flag === "approved" ? "approved" : "pending"
+          status: noteStatus(n.approval_flag)
         })));
       }
       setNotes(allNotes);
@@ -1012,8 +1024,8 @@ export default function SubcontractorBillingPage() {
                   <table className="w-full text-xs text-left">
                     <thead>
                       <tr className="border-b border-border-custom text-muted">
-                        <th className="px-5 py-3 font-bold">Note ID</th>
-                        <th className="px-5 py-3 font-bold">Subcontractor</th>
+                        <th className="px-5 py-3 font-bold">Note No.</th>
+                        <th className="px-5 py-3 font-bold">Party</th>
                         <th className="px-5 py-3 font-bold">Amount Adjustment</th>
                         <th className="px-5 py-3 font-bold">Description Notes</th>
                         <th className="px-5 py-3 font-bold">Movement Type</th>
@@ -1025,7 +1037,7 @@ export default function SubcontractorBillingPage() {
                     <tbody>
                       {notes.map((note) => (
                         <tr key={note.id} className="border-b border-border-custom hover:bg-elevated transition-all">
-                          <td className="px-5 py-3.5 font-sans text-muted">{note.id}</td>
+                          <td className="px-5 py-3.5 font-sans text-muted">{note.ref || `${note.type === "debit" ? "DN" : "CN"}-${note.id.slice(0, 6).toUpperCase()}`}</td>
                           <td className="px-5 py-3.5 text-foreground font-semibold">{note.subcontractor}</td>
                           <td className={`px-5 py-3.5 font-sans font-bold ${note.type === "credit" ? "text-success" : "text-danger"}`}>
                             {note.type === "credit" ? "+" : "-"}{fmtAmount(note.amount)}
@@ -1037,7 +1049,7 @@ export default function SubcontractorBillingPage() {
                             </Badge>
                           </td>
                           <td className="px-5 py-3.5 text-muted font-semibold">{note.status.toUpperCase()}</td>
-                          <td className="px-5 py-3.5 text-muted">{note.date}</td>
+                          <td className="px-5 py-3.5 text-muted">{note.date ? formatDate(note.date) : "—"}</td>
                           <td className="px-5 py-3.5 text-center">
                             {note.status !== "cancelled" && (
                               <button
