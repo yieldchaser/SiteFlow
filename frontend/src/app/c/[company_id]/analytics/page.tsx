@@ -27,7 +27,7 @@ interface ProjectSummary {
   budget: number;
   spend: number;
   variance: number;
-  completion_pct: number;
+  completion_pct: number | null;
   task_count: number;
   completed_tasks: number;
 }
@@ -37,7 +37,7 @@ interface SubcontractorScore {
   subcontractor_name: string;
   project_names: string[];
   bill_count: number;
-  on_time_rate: number;
+  on_time_rate: number | null;
   ncr_count: number;
   late_bills: number;
 }
@@ -323,13 +323,14 @@ export default function CompanyAnalyticsPage() {
                 label: "Budget Variance",
                 value: data ? formatCurrency(data.budget_variance) : "—",
                 hint: data ? `Spend ${formatCurrency(data.total_spend)} vs budget ${formatCurrency(data.total_budget)}` : "Loading",
-                tone: "text-foreground",
+                tone: data && data.budget_variance < 0 ? "text-danger" : "text-foreground",
               },
               {
                 label: "Burn Rate",
                 value: data ? (data.burn_rate_pct == null ? "—" : `${data.burn_rate_pct}%`) : "—",
-                hint: data && data.burn_rate_pct == null ? "No budget set: not tracked" : "Company-wide budget consumption",
-                tone: "text-success",
+                hint: data && data.burn_rate_pct == null ? "No budget set: not tracked" : "Share of total budget already spent",
+                tone: data && data.burn_rate_pct != null && data.burn_rate_pct > 100 ? "text-danger"
+                  : data && data.burn_rate_pct != null && data.burn_rate_pct > 85 ? "text-warning" : "text-success",
               },
               {
                 label: "Labour Productivity",
@@ -340,7 +341,7 @@ export default function CompanyAnalyticsPage() {
               {
                 label: "Material Wastage",
                 value: data ? (data.material_wastage.wastage_pct == null ? "—" : `${data.material_wastage.wastage_pct}%`) : "—",
-                hint: "Ordered vs consumed from procurement",
+                hint: "Recorded wastage as a share of material ordered",
                 tone: "text-warning",
               },
             ].map((card) => (
@@ -489,7 +490,7 @@ export default function CompanyAnalyticsPage() {
                         <td className={`px-4 py-3 text-right font-semibold ${project.variance >= 0 ? "text-success" : "text-danger"}`}>
                           {formatCurrency(project.variance)}
                         </td>
-                        <td className="px-4 py-3 text-right text-foreground">{project.completion_pct}%</td>
+                        <td className="px-4 py-3 text-right text-foreground">{project.completion_pct == null ? "-" : `${project.completion_pct}%`}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -515,29 +516,29 @@ export default function CompanyAnalyticsPage() {
               <div className="bg-card border border-border-custom rounded-lg p-5">
                 <div className="text-[10px] uppercase tracking-[0.24em] text-muted">Material Leakage</div>
                 <div className="mt-4 space-y-3">
-                  <div>
-                    <div className="flex items-center justify-between text-xs text-muted">
-                      <span>Ordered</span>
-                      <span>{data?.material_wastage.ordered_qty ?? "—"}</span>
-                    </div>
-                    <div className="mt-2 h-2 rounded-full bg-elevated">
-                      <div className="h-2 rounded-full bg-secondary" style={{ width: "100%" }} />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between text-xs text-muted">
-                      <span>Consumed</span>
-                      <span>{data?.material_wastage.consumed_qty ?? "—"}</span>
-                    </div>
-                    <div className="mt-2 h-2 rounded-full bg-elevated">
-                      <div
-                        className="h-2 rounded-full bg-success"
-                        style={{
-                          width: data ? `${Math.min((data.material_wastage.consumed_qty / Math.max(data.material_wastage.ordered_qty, 1)) * 100, 100)}%` : "0%",
-                        }}
-                      />
-                    </div>
-                  </div>
+                  {/* One row per material in its own unit. Adding bags of cement to
+                      kilos of steel gave a total that meant nothing. */}
+                  {(data?.material_reconciliation ?? []).length === 0 ? (
+                    <div className="text-xs text-muted">No material ordered or issued yet.</div>
+                  ) : (
+                    [...(data?.material_reconciliation ?? [])].sort((x, y) => Number(y.over_consumed) - Number(x.over_consumed)).slice(0, 6).map((row) => (
+                      <div key={`${row.material_name}-${row.unit}`}>
+                        <div className="flex items-center justify-between gap-2 text-xs">
+                          <span className="truncate text-foreground">{row.material_name}</span>
+                          <span className={row.over_consumed ? "text-danger font-semibold" : "text-muted"}>
+                            {row.consumed_qty.toLocaleString("en-IN")} / {row.ordered_qty.toLocaleString("en-IN")} {row.unit}
+                          </span>
+                        </div>
+                        <div className="mt-1.5 h-1.5 rounded-full bg-elevated">
+                          <div className={`h-1.5 rounded-full ${row.over_consumed ? "bg-danger" : "bg-success"}`}
+                            style={{ width: `${Math.min((row.consumed_qty / Math.max(row.ordered_qty, 1)) * 100, 100)}%` }} />
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  {(data?.material_reconciliation ?? []).length > 6 && (
+                    <div className="text-[11px] text-muted">Showing 6 of {data?.material_reconciliation.length} materials, used / ordered.</div>
+                  )}
                   <div className="text-xs text-muted">
                     Wastage: <span className="font-semibold text-warning">{data?.material_wastage.wastage_pct == null ? "—" : `${data.material_wastage.wastage_pct}%`}</span>
                   </div>
@@ -555,7 +556,7 @@ export default function CompanyAnalyticsPage() {
             <div className="flex items-end justify-between gap-4">
               <div>
                 <div className="text-[10px] uppercase tracking-[0.24em] text-muted">Subcontractor Scorecard</div>
-                <div className="mt-1 text-sm text-muted">On-time bill rate and NCR burden by subcontractor</div>
+                <div className="mt-1 text-sm text-muted">Bills paid by their due date, and NCRs raised against each subcontractor</div>
               </div>
             </div>
             <div className="mt-4 overflow-hidden rounded-lg border border-border-custom">
@@ -565,7 +566,7 @@ export default function CompanyAnalyticsPage() {
                     <th className="px-4 py-3 text-left">Subcontractor</th>
                     <th className="px-4 py-3 text-left">Projects</th>
                     <th className="px-4 py-3 text-right">Bills</th>
-                    <th className="px-4 py-3 text-right">On-time</th>
+                    <th className="px-4 py-3 text-right">Paid on time</th>
                     <th className="px-4 py-3 text-right">NCRs</th>
                   </tr>
                 </thead>
@@ -577,8 +578,11 @@ export default function CompanyAnalyticsPage() {
                         {row.project_names.length > 0 ? row.project_names.join(", ") : "No linked projects"}
                       </td>
                       <td className="px-4 py-3 text-right text-muted">{row.bill_count}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-success">{row.on_time_rate}%</td>
-                      <td className="px-4 py-3 text-right text-danger">{row.ncr_count}</td>
+                      <td className={`px-4 py-3 text-right font-semibold ${row.on_time_rate == null ? "text-muted" : row.on_time_rate >= 80 ? "text-success" : row.on_time_rate >= 50 ? "text-warning" : "text-danger"}`}
+                        title={row.on_time_rate == null ? "No paid bill with a due date yet" : undefined}>
+                        {row.on_time_rate == null ? "-" : `${row.on_time_rate}%`}
+                      </td>
+                      <td className={`px-4 py-3 text-right ${row.ncr_count > 0 ? "text-danger" : "text-muted"}`}>{row.ncr_count}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -269,7 +269,11 @@ def get_company_analytics(company_id: uuid.UUID, db: Session = Depends(get_db), 
             for task in tasks_by_project.get(project.id, [])
             if _task_is_completed(task)
         )
-        completion_pct = round((completed_tasks / total_tasks) * 100, 1) if total_tasks else 0.0
+        # No plan means completion is unknown, and the head office has none.
+        completion_pct = (
+            round((completed_tasks / total_tasks) * 100, 1)
+            if total_tasks and not is_office_project(project) else None
+        )
 
         total_budget += project_budget_total
         total_spend += project_spend
@@ -485,7 +489,9 @@ def get_company_analytics(company_id: uuid.UUID, db: Session = Depends(get_db), 
             if bill.updated_at is not None and _to_date(bill.updated_at) and _to_date(bill.due_date) and _to_date(bill.updated_at) <= _to_date(bill.due_date)
         )
         linked_projects = projects_by_subcontractor.get(subcontractor_id, set())
-        ncr_count = sum(1 for ncr in ncrs if ncr.project_id in linked_projects)
+        # Only NCRs raised against this subcontractor. Counting every NCR on
+        # their projects charged one firm's defects to every firm on site.
+        ncr_count = sum(1 for ncr in ncrs if ncr.vendor_id == subcontractor_id)
         subcontractor_scorecard.append(
             {
                 "subcontractor_id": str(subcontractor_id),
@@ -496,13 +502,14 @@ def get_company_analytics(company_id: uuid.UUID, db: Session = Depends(get_db), 
                     if project.id in linked_projects
                 ],
                 "bill_count": len(bills_for_subcontractor),
-                "on_time_rate": round((on_time_bills / len(in_scope_bills)) * 100, 1) if in_scope_bills else 0.0,
+                # None when no paid bill had a due date: nothing to judge yet.
+                "on_time_rate": round((on_time_bills / len(in_scope_bills)) * 100, 1) if in_scope_bills else None,
                 "ncr_count": ncr_count,
                 "late_bills": max(len(in_scope_bills) - on_time_bills, 0),
             }
         )
 
-    subcontractor_scorecard.sort(key=lambda row: (-row["on_time_rate"], row["ncr_count"], row["subcontractor_name"]))
+    subcontractor_scorecard.sort(key=lambda row: (-(row["on_time_rate"] if row["on_time_rate"] is not None else -1), row["ncr_count"], row["subcontractor_name"]))
 
     return {
         "company_id": str(company.id),

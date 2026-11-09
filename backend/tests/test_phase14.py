@@ -360,6 +360,7 @@ def seed_db(company_obj, project_a_obj, project_b_obj):
             project_id=project_a.id,
             inspection_id=None,
             ncr_number="NCR-2026-001",
+            vendor_id=subcontractor_team.id,
             title="Shuttering misalignment",
             description="Found at floor 3 grid C-D",
             severity="Major",
