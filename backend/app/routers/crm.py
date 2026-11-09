@@ -385,11 +385,18 @@ def update_lead(lead_id: uuid.UUID, req: LeadUpdateRequest, db: Session = Depend
         lead.priority = req.priority
     if req.budget is not None:
         lead.budget = req.budget
-    if req.next_follow_up is not None:
+    # Optional fields the caller sent apply even when blank, so a follow-up
+    # date or a note can be cleared, not only changed.
+    sent = req.model_fields_set
+    if "next_follow_up" in sent:
         lead.next_follow_up = req.next_follow_up
-    if req.expected_closure is not None:
+    if "expected_closure" in sent:
         lead.expected_closure = req.expected_closure
-    if req.assignee_id is not None:
+    if "last_contacted" in sent:
+        lead.last_contacted = req.last_contacted
+    if "description" in sent:
+        lead.description = (req.description or "").strip() or None
+    if "assignee_id" in sent:
         lead.assignee_id = uuid.UUID(str(req.assignee_id)) if req.assignee_id else None
     if req.lead_type is not None:
         lead.lead_type = req.lead_type
@@ -399,23 +406,21 @@ def update_lead(lead_id: uuid.UUID, req: LeadUpdateRequest, db: Session = Depend
         lead.phone_no = req.phone_no
     if req.country_code is not None:
         lead.country_code = req.country_code
-    if req.email is not None:
-        lead.email = req.email
-    if req.client_company_name is not None:
-        lead.client_company_name = req.client_company_name
+    if "email" in sent:
+        lead.email = req.email or None
+    if "client_company_name" in sent:
+        lead.client_company_name = req.client_company_name or None
     if req.party_id is not None:
         _verify_party_in_company(db, req.party_id, lead.company_id)
         lead.party_id = req.party_id
-    if req.address is not None:
-        lead.address = req.address
+    if "address" in sent:
+        lead.address = req.address or None
     if req.source is not None:
         lead.source = new_source
     if req.category is not None:
         lead.category = new_category
-    if req.lead_name is not None:
-        lead.lead_name = req.lead_name
-    if req.last_contacted is not None:
-        lead.last_contacted = req.last_contacted
+    if "lead_name" in sent:
+        lead.lead_name = req.lead_name or None
 
     ensure_lead_party(db, lead)
 

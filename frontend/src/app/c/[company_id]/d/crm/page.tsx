@@ -256,6 +256,8 @@ const fromDateInput = (s: string): string | null =>
   s ? (s.includes("T") ? s : `${s}T00:00:00Z`) : null;
 const fmtDate = (s: string | null): string => formatDate(s);
 const todayISO = () => todayLocalISO();
+// No follow-up is owed on a lead that is already decided.
+const CLOSED_STATUSES = ["won", "lost", "converted", "irrelevant lead"];
 
 const PRIORITY_OPTS = ["High", "Medium", "Low"];
 const COUNTRY_CODES = ["+91", "+1", "+44", "+971", "+65", "+61"];
@@ -367,10 +369,12 @@ export default function CRMPage() {
     lead_name: "",
     description: "",
     last_contacted: "",
+    next_follow_up: "",
     expected_closure: "",
-    date: todayISO(),
   };
   const [form, setForm] = useState({ ...emptyForm });
+  // Set while an existing lead is open in the drawer.
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
 
@@ -551,8 +555,58 @@ export default function CRMPage() {
 
   const openNew = () => {
     setForm({ ...emptyForm });
+    setEditingId(null);
     setFormError("");
     setDrawerOpen(true);
+  };
+
+  // Open a lead to move it along: status, next follow-up, notes.
+  const openEdit = (l: Lead) => {
+    const idOf = (list: Lookup[], name: string | null) => list.find((x) => x.name === name)?.id || "";
+    setForm({
+      ...emptyForm,
+      assignee_id: l.assignee_id || "",
+      lead_type: l.lead_type || "",
+      contact_name: l.contact_name || "",
+      country_code: l.country_code || "+91",
+      phone_no: l.phone_no || "",
+      email: l.email || "",
+      client_company_name: l.client_company_name || "",
+      address: l.address || "",
+      source_id: idOf(sources, l.source),
+      source_name: l.source || "",
+      category_id: idOf(categories, l.category),
+      category_name: l.category || "",
+      status_id: idOf(statuses, l.status),
+      status_name: l.status || "",
+      priority: l.priority ? l.priority.charAt(0).toUpperCase() + l.priority.slice(1).toLowerCase() : "Medium",
+      budget: l.budget ? String(l.budget) : "",
+      lead_name: l.lead_name || "",
+      description: l.description || "",
+      last_contacted: toDateInput(l.last_contacted),
+      next_follow_up: toDateInput(l.next_follow_up),
+      expected_closure: toDateInput(l.expected_closure),
+    });
+    setEditingId(l.id);
+    setFormError("");
+    setDrawerOpen(true);
+  };
+
+  const removeLead = async () => {
+    if (!editingId) return;
+    if (!window.confirm(`Delete the lead for ${form.contact_name}? It is recorded in Delete Logs.`)) return;
+    setSaving(true);
+    try {
+      const r = await fetch(getApi(`/crm/leads/${editingId}`), { method: "DELETE", headers: authHeaders() || {} });
+      if (!r.ok) throw new Error((await r.text()) || "Could not delete the lead");
+      setDrawerOpen(false);
+      setEditingId(null);
+      await loadAll();
+    } catch (e: any) {
+      setFormError(e.message || "Could not delete the lead");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const createLookup = async (kind: "source" | "category" | "status", name: string) => {
@@ -588,16 +642,23 @@ export default function CRMPage() {
         address: form.address.trim() || null,
         source: form.source_name || null,
         category: form.category_name || null,
-        status: form.status_name || "—",
+        status: form.status_name || "New Lead",
         priority: form.priority,
         budget: parseFloat(form.budget || "0") || 0,
         lead_name: form.lead_name.trim() || null,
         description: form.description.trim() || null,
         last_contacted: fromDateInput(form.last_contacted),
+        next_follow_up: fromDateInput(form.next_follow_up),
         expected_closure: fromDateInput(form.expected_closure),
       };
-      await jpost("/crm/leads", body);
+      if (editingId) {
+        const { company_id: _c, ...changes } = body;
+        await jput(`/crm/leads/${editingId}`, changes);
+      } else {
+        await jpost("/crm/leads", body);
+      }
       setDrawerOpen(false);
+      setEditingId(null);
       await loadAll();
     } catch (e: any) {
       setFormError(e.message || "Failed to save lead");
@@ -737,8 +798,14 @@ export default function CRMPage() {
         return fmtINR(l.budget, currencyDecimalPlaces);
       case "created_at":
         return fmtDate(l.created_at);
-      case "next_follow_up":
+      case "next_follow_up": {
+        if (!l.next_follow_up) return "—";
+        const due = toDateInput(l.next_follow_up);
+        if (due < todayISO() && !CLOSED_STATUSES.includes((l.status || "").toLowerCase())) {
+          return <span className="font-semibold text-danger">{fmtDate(l.next_follow_up)} (overdue)</span>;
+        }
         return fmtDate(l.next_follow_up);
+      }
       case "expected_closure":
         return fmtDate(l.expected_closure);
       case "last_contacted":
@@ -891,7 +958,7 @@ export default function CRMPage() {
                   </tr>
                 )}
                 {filtered.map((l, i) => (
-                  <tr key={l.id} className="border-t border-border-custom hover:bg-elevated">
+                  <tr key={l.id} className="border-t border-border-custom hover:bg-elevated cursor-pointer" onClick={() => openEdit(l)} title="Open lead">
                     {ALL_COLS.filter((c) => visible[c.key]).map((c) => (
                       <td key={c.key} className="whitespace-nowrap px-3 py-2 text-foreground">
                         {c.key === "sno" ? i + 1 : renderCell(l, c.key)}
@@ -905,7 +972,7 @@ export default function CRMPage() {
 
           {/* New Lead Drawer */}
           {drawerOpen && (
-            <Drawer title="New Lead" onClose={() => setDrawerOpen(false)} width="max-w-lg">
+            <Drawer title={editingId ? "Edit Lead" : "New Lead"} onClose={() => { setDrawerOpen(false); setEditingId(null); }} width="max-w-lg">
               <CreatableSelect
                 label="Lead Assignee"
                 items={team.map((t) => ({ id: t.id, company_id: companyId, name: t.name }))}
@@ -914,14 +981,6 @@ export default function CRMPage() {
                 onCreate={async () => {}}
                 placeholder="Select assignee"
               />
-              <Field label="Date">
-                <input
-                  type="date"
-                  className={inputCls}
-                  value={form.date}
-                  onChange={(e) => setF({ date: e.target.value })}
-                />
-              </Field>
               <Field label="Lead Type *">
                 <input
                   className={inputCls}
@@ -1026,6 +1085,14 @@ export default function CRMPage() {
                   onChange={(e) => setF({ last_contacted: e.target.value })}
                 />
               </Field>
+              <Field label="Next Follow Up">
+                <input
+                  type="date"
+                  className={inputCls}
+                  value={form.next_follow_up}
+                  onChange={(e) => setF({ next_follow_up: e.target.value })}
+                />
+              </Field>
               <Field label="Expected Closure Date">
                 <input
                   type="date"
@@ -1053,7 +1120,12 @@ export default function CRMPage() {
 
               {formError && <div className="mb-3 rounded bg-danger/10 px-3 py-2 text-sm text-danger">{formError}</div>}
               <div className="flex justify-end gap-2">
-                <button className={btnGhost} onClick={() => setDrawerOpen(false)}>
+                {editingId && (
+                  <button className={`${btnGhost} mr-auto text-danger`} onClick={removeLead} disabled={saving}>
+                    Delete
+                  </button>
+                )}
+                <button className={btnGhost} onClick={() => { setDrawerOpen(false); setEditingId(null); }}>
                   Cancel
                 </button>
                 <button className={btnPrimary} onClick={submit} disabled={saving}>
