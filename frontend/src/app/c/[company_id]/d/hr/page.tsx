@@ -2000,7 +2000,7 @@ export default function HRPayrollPage() {
                 <div className="bg-card border border-border-custom rounded-md overflow-hidden">
                   <div className="px-4 py-3 border-b border-border-custom flex items-center justify-between">
                     <span className="text-xs font-bold text-foreground">Per-Employee Leave Balances</span>
-                    <span className="text-[10px] text-muted">Leave year {leaveBalInfo.leave_year} · as of {leaveBalInfo.as_of}</span>
+                    <span className="text-[10px] text-muted">Leave year {leaveBalInfo.leave_year} · as of {formatDate(leaveBalInfo.as_of)}</span>
                   </div>
                   <table className="w-full text-xs text-left">
                     <thead className="bg-elevated border-b border-border-custom text-muted font-bold uppercase tracking-wider text-[10px]">
@@ -2127,7 +2127,7 @@ export default function HRPayrollPage() {
                         holidays.map((h) => (
                           <tr key={h.id} className="hover:bg-elevated transition-all">
                             <td className="py-3 font-semibold text-foreground">{h.holidayName}</td>
-                            <td className="py-3 text-muted">{h.date}</td>
+                            <td className="py-3 text-muted">{formatDate(h.date)}</td>
                             <td className="py-3 text-muted">{h.day}</td>
                             <td className="py-3 text-muted">{h.site ? (projects.find((p: { id?: string; name?: string }) => p.id === h.site)?.name || "One site") : "All sites"}</td>
                             <td className="py-3 text-right">
