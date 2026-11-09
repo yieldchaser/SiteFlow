@@ -253,10 +253,23 @@ export default function AttendancePage() {
   const fetchSubcontractors = useCallback(async () => {
     if (!companyId) return;
     try {
-      const res = await fetch(`${getApiHost()}/apis/v3/billing/subcontractors?company_id=${companyId}`, { headers: authHeaders() });
+      const [res, partiesRes] = await Promise.all([
+        fetch(`${getApiHost()}/apis/v3/billing/subcontractors?company_id=${companyId}`, { headers: authHeaders() }),
+        fetch(`${getApiHost()}/apis/v3/projects/${projectId}/parties`, { headers: authHeaders() }).catch(() => null),
+      ]);
       if (res.ok) {
         const data = await res.json();
-        setSubcontractors(Array.isArray(data) ? data : []);
+        const all = Array.isArray(data) ? data : [];
+        // Only the crews working on this project. Every subcontractor in the
+        // company was listed, so a crew could be logged on a site it never
+        // worked. If the project's party list cannot be read, show all.
+        if (partiesRes && partiesRes.ok) {
+          const parties = await partiesRes.json();
+          const onProject = new Set((Array.isArray(parties) ? parties : []).map((p: { party_id: string }) => String(p.party_id)));
+          setSubcontractors(all.filter((s: { library_party_id?: string }) => onProject.has(String(s.library_party_id))));
+        } else {
+          setSubcontractors(all);
+        }
       } else {
         setSubcontractors([]);
       }
@@ -264,7 +277,7 @@ export default function AttendancePage() {
       console.error("Failed to load subcontractors", e);
       setSubcontractors([]);
     }
-  }, [companyId]);
+  }, [companyId, projectId]);
 
   const fetchPayrollCompilation = useCallback(async () => {
     if (!companyId) return;
@@ -861,8 +874,8 @@ export default function AttendancePage() {
                     {subcontractors.length === 0 ? (
                       <div className="md:col-span-3">
                         <EmptyState
-                          title="No subcontractors found"
-                          description="Register subcontractors to log daily labour crew attendance and track worker headcounts."
+                          title="No subcontractors on this project"
+                          description="Add a subcontractor to this project (Party tab) or give them a work order here, then log their daily crew."
                           action={{
                             label: "Manage Subcontractors",
                             href: `/c/${companyId}/d/subcon`,

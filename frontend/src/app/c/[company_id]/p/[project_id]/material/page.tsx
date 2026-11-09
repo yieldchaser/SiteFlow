@@ -74,22 +74,25 @@ export default function MaterialTab() {
     load();
   }, [load]);
 
-  // Offer the Material Library's own categories (stock received by GRN takes
-  // its category from there) alongside the generic defaults.
+  // Categories come from the company's own lists: the Material Category
+  // Library and the categories on library materials (stock received by GRN
+  // takes its category from there). The generic defaults are only a fallback
+  // for a company with neither; mixing them in offered "Steel" beside
+  // "Steel & Reinforcement" and split one material group in two.
   const [libraryCategories, setLibraryCategories] = useState<string[]>([]);
   useEffect(() => {
-    fetch(getApi(`/library/materials/${companyId}`), { headers: authHeaders() })
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data) => {
-        const list = Array.isArray(data) ? data : [];
-        setLibraryCategories(list.map((m: { category?: string | null }) => (m.category || "").trim()).filter(Boolean));
-      })
-      .catch(() => setLibraryCategories([]));
+    const names = (data: unknown, key: string) =>
+      (Array.isArray(data) ? data : []).map((m: Record<string, unknown>) => String(m[key] || "").trim()).filter(Boolean);
+    Promise.all([
+      fetch(getApi(`/library/material-categories/${companyId}`), { headers: authHeaders() }).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      fetch(getApi(`/library/materials/${companyId}`), { headers: authHeaders() }).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+    ]).then(([cats, mats]) => setLibraryCategories([...names(cats, "name"), ...names(mats, "category")]));
   }, [companyId]);
-  const categories = useMemo(
-    () => Array.from(new Set([...libraryCategories, ...CATEGORIES.filter((c) => c !== "Uncategorized"), "Uncategorized"])),
-    [libraryCategories]
-  );
+  const categories = useMemo(() => {
+    const own = libraryCategories.filter((c) => c !== "Uncategorized");
+    const base = own.length > 0 ? own : CATEGORIES.filter((c) => c !== "Uncategorized");
+    return Array.from(new Set([...base, "Uncategorized"]));
+  }, [libraryCategories]);
 
   const grouped = useMemo(() => {
     const m = new Map<string, StockRow[]>();
