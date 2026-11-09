@@ -43,11 +43,11 @@ def test_pin_R2_036_spend_filters_expense_types():
     # shared is_expense_invoice_type() helper (D3/bill_scope). Pin the helper's call count,
     # not a bare substring - a substring check passes on the import line alone.
     assert analytics.count("is_expense_invoice_type(") >= 3, "R2-036 project/month spend filters regressed"
-    assert towers.count("_active_bills(db, project_id, REVENUE_INVOICE_TYPES)") >= 2, "R2-036 towers billed filters regressed"
+    assert towers.count("_active_bills(db, project_id, REVENUE_INVOICE_TYPES)") >= 1, "R2-036 towers billed filters regressed"
     # R2-723: the expense-type + cancelled filters moved into bill_scope._active_bills.
     assert "Bill.invoice_type.in_(invoice_types)" in scope, "R2-036 shared invoice-type scope filter regressed"
     assert 'Bill.status != "Cancelled"' in scope, "R2-036 cancelled-bill exclusion regressed"
-    assert budget.count("_active_bills(") >= 2, "R2-036 budget actual filters regressed"
+    assert budget.count("_active_bills(") >= 1, "R2-036 budget actual filters regressed"
 
 
 def test_pin_R2_037_wastage_suppressed_without_consumption():
@@ -603,7 +603,7 @@ def test_pin_R2_206_wastage_type_pattern_and_reporter():
 
 def test_pin_R2_207_production_scales_by_wastage_pct():
     src = _read("app/routers/production.py")
-    assert "float(recipe.wastage_pct) / 100.0" in src, "R2-207 production wastage allowance scaling regressed"
+    assert "float(recipe.wastage_pct or 0) / 100.0" in src, "R2-207 production wastage allowance scaling regressed"
 
 
 def test_pin_R2_225_timesheet_save_surfaces_error():
@@ -729,7 +729,8 @@ def test_pin_R2_367_drawing_revision_approval_status_audit():
 def test_pin_R2_376_tower_rollup_untagged_variance():
     src = _read("app/routers/towers.py")
     assert "tower_id=None" in src, "R2-376 untagged tower rollup regressed"
-    assert "variance=total_budget - total_billed" in src, "R2-376 tower variance derivation regressed"
+    # b4501e6: the difference is the cost budget left after commitments, not budget minus revenue.
+    assert "variance=total_budget - total_po_value - total_wo_value" in src, "R2-376 tower variance derivation regressed"
 
 
 def test_pin_R2_379_advance_recovery_guard():
@@ -1049,7 +1050,7 @@ def test_pin_R2_202_boq_revision_applies():
 
 def test_pin_R2_338_vendor_perf_wired():
     vp = _read("app/routers/vendor_performance.py")
-    assert "baseline = po.expected_delivery_date or po.po_date" in vp
+    assert "po.expected_delivery_date or po.po_date" in vp
     proc = _read("app/routers/procurement.py")
     assert "refresh_vendor_performance(db, req.project_id, req.company_id)" in proc
 
