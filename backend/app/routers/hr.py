@@ -710,13 +710,17 @@ def mark_attendance_manually(
         raise HTTPException(status_code=400, detail="attendance_date cannot be in the future")
 
     day_start, day_end = _ist_day_bounds(target.date())
+    # One muster entry per person per day, whichever site marks it. On the
+    # day someone moves, both sites used to mark them and the day was paid
+    # twice; the later marking now moves the entry to that site.
     log = db.query(AttendanceLog).filter(
         AttendanceLog.employee_id == payload.employee_id,
-        AttendanceLog.project_id == payload.project_id,
         AttendanceLog.attendance_date >= day_start,
         AttendanceLog.attendance_date < day_end,
-    ).first()
+    ).order_by(AttendanceLog.project_id != payload.project_id).first()
 
+    if log is not None:
+        log.project_id = payload.project_id
     if log is None:
         log = AttendanceLog(
             employee_id=payload.employee_id,
@@ -1264,11 +1268,16 @@ def run_payroll(payload: PayrollRunCreate, db: Session = Depends(get_db), curren
 
         # A muster "Paid Leave" on a day an approved leave request already
         # covers is the same day, so it is not paid twice.
-        att_count = 0.0
+        # A day is paid once even if two sites both have an entry for it
+        # (a punch at the old site and the muster at the new one on the day
+        # someone moves); the better of the two counts.
+        day_weight: dict = {}
         for att_date, att_status in att_rows:
-            if att_status == "Paid Leave" and _ist_date(att_date) in leave_dates:
+            day = _ist_date(att_date)
+            if att_status == "Paid Leave" and day in leave_dates:
                 continue
-            att_count += _PAID_DAY_WEIGHT[att_status]
+            day_weight[day] = max(day_weight.get(day, 0.0), _PAID_DAY_WEIGHT[att_status])
+        att_count = sum(day_weight.values())
 
         # D2 + R2-431: zero-attendance payroll POLICY.
         # Company setting assume_full_month_when_no_attendance defaults OFF (no punch = zero pay).

@@ -117,3 +117,36 @@ def test_company_asset_keeps_serial_and_holder(client, db, make_tenant, auth_hea
     assert r.json()["serial_number"] == "5CD123" and r.json()["assigned_to"] == "Site Engineer Ravi"
     r = client.put(f"/apis/v3/equipment/{r.json()['id']}", headers=hdr, json={"assigned_to": "Accounts Meena"})
     assert r.json()["assigned_to"] == "Accounts Meena"
+
+
+def test_move_day_marked_at_both_sites_is_paid_once(client, db, make_tenant, auth_headers):
+    """On the day someone moves, the old and new site supervisors both mark
+    them Present. That is one day's pay, not two."""
+    comp, user, _ = make_tenant(company_name=f"Day Co {_SFX}", user_name="Day",
+                                email=f"day-{_SFX}@example.com")
+    hdr = auth_headers(user, comp)
+    a = models.Project(id=uuid.uuid4(), company_id=comp.id, name="Old Site", status="Ongoing")
+    b = models.Project(id=uuid.uuid4(), company_id=comp.id, name="New Site", status="Ongoing")
+    db.add_all([a, b])
+    db.commit()
+    emp = client.post("/apis/v3/hr/employees", headers=hdr, json={
+        "company_id": str(comp.id), "project_id": str(b.id), "name": "Shifter",
+        "basic_salary": 26000, "pf_employee_pct": 0, "pf_employer_pct": 0}).json()
+    for site in (a, b):
+        r = client.post("/apis/v3/hr/attendance/manual", headers=hdr, json={
+            "employee_id": emp["id"], "project_id": str(site.id),
+            "attendance_date": "2026-10-15", "status": "Present"})
+        assert r.status_code == 200, r.text
+    logs = db.query(models.AttendanceLog).filter(models.AttendanceLog.employee_id == uuid.UUID(emp["id"])).all()
+    assert len(logs) == 1 and logs[0].project_id == b.id
+
+    # Even an older pair of entries for one day (e.g. a punch plus a muster)
+    # is paid once.
+    db.add(models.AttendanceLog(employee_id=uuid.UUID(emp["id"]), project_id=a.id,
+                                attendance_date=datetime.datetime(2026, 10, 15, 6, 0, tzinfo=datetime.timezone.utc),
+                                status="Present"))
+    db.commit()
+    run = client.post("/apis/v3/hr/payroll/run", headers=hdr, json={
+        "company_id": str(comp.id), "project_id": str(b.id), "payroll_month": "2026-10"})
+    assert run.status_code == 201, run.text
+    assert run.json()["payslips"][0]["days_present"] == 1.0
