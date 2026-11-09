@@ -1,6 +1,6 @@
 "use client";
 import {  getApiHost , readErrorDetail } from "@/lib/api";
-import { authHeaders, formatDate } from "@/lib/siteflow";
+import { authHeaders, formatDate, downloadWithAuth } from "@/lib/siteflow";
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
@@ -225,13 +225,19 @@ export default function ClientReportsPage() {
                       </button>
                     )}
                     {selectedReport.pdf_url && selectedReport.pdf_url !== "#" && (
-                      <a
-                        href={`${getApiHost()}/apis/v3/reports/${selectedReport.id}/download`}
-                        download
-                        className="rounded-md bg-elevated hover:bg-sidebar text-foreground border border-border-custom px-4 py-2 text-xs font-bold transition-all text-center"
+                      // Fetched with the login token; a plain link could not send
+                      // it and opened "Could not validate credentials".
+                      <button
+                        type="button"
+                        onClick={() =>
+                          downloadWithAuth(`/reports/${selectedReport.id}/download`, "report.pdf").catch(() =>
+                            alert("Could not download the report. Check your connection and try again.")
+                          )
+                        }
+                        className="rounded-md bg-elevated hover:bg-sidebar text-foreground border border-border-custom px-4 py-2 text-xs font-bold transition-all text-center cursor-pointer"
                       >
                         Download PDF
-                      </a>
+                      </button>
                     )}
                   </div>
                 </div>

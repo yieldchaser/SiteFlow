@@ -11,7 +11,6 @@ import Icon, { type IconName } from "@/components/marketing/Icon";
 
 import PageShell from "@/components/layout/PageShell";
 import PageHeader from "@/components/PageHeader";
-import SegmentedTabs from "@/components/ui/Tabs";
 import { EmptyState } from "@/components/ui/EmptyState";
 import AuthImage from "@/components/ui/AuthImage";
 
@@ -73,7 +72,7 @@ export default function DrawingsPage() {
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
   const drawingsLoading = loadedFor !== projectId;
 
-  const [tab, setTab] = useState<"drawings" | "files">("drawings");
+  const tab = "drawings" as const;
   const [drawings, setDrawings] = useState<Drawing[]>([]);
   const [activeDrawingId, setActiveDrawingId] = useState<string>("");
   const [activeRevId, setActiveRevId] = useState<string>("");
@@ -84,6 +83,7 @@ export default function DrawingsPage() {
 
   const [backingUpId, setBackingUpId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState("");
+  const [toastIsError, setToastIsError] = useState(false);
 
   // Add pin modal
   const [showPinModal, setShowPinModal] = useState(false);
@@ -274,24 +274,36 @@ export default function DrawingsPage() {
     }
   };
 
-  const handleBackupFileToDrive = async (fileId: string, fileType: "project" | "company" = "project") => {
-    if (!companyId || !fileId) return;
-    setBackingUpId(fileId);
+  const fileIdOf = (url: string) => (url.match(/\/files\/file\/([0-9a-fA-F-]{36})/) || [])[1] || "";
+  const handleBackupFileToDrive = async (fileId: string, busyKey: string, fileType: "project" | "company" = "project") => {
+    if (!companyId) return;
+    if (!fileId) {
+      setToastIsError(true);
+      setToastMessage("This revision has no stored sheet to back up.");
+      setTimeout(() => setToastMessage(""), 4000);
+      return;
+    }
+    setBackingUpId(busyKey);
     try {
       const res = await fetch(`${getApiHost()}/apis/v3/integrations/google-drive/companies/${companyId}/backup-file/${fileId}?file_type=${fileType}`, {
         method: "POST",
         headers: authHeaders(),
       });
       if (res.ok) {
-        setToastMessage("File successfully backed up to Google Drive!");
+        setToastIsError(false);
+        setToastMessage("Backed up to Google Drive.");
         setTimeout(() => setToastMessage(""), 3500);
       } else {
         const err = await readErrorDetail(res);
-        alert(err || "Failed to backup file to Google Drive. Check if Google Drive is connected.");
+        setToastIsError(true);
+        setToastMessage(err || "Could not back up to Google Drive. Check that Google Drive is connected in Settings.");
+        setTimeout(() => setToastMessage(""), 5000);
       }
     } catch (e) {
       console.error("Backup to Google Drive error", e);
-      alert("Failed to backup file to Google Drive. Please check your connection.");
+      setToastIsError(true);
+      setToastMessage("Could not back up to Google Drive. Check your connection.");
+      setTimeout(() => setToastMessage(""), 5000);
     } finally {
       setBackingUpId(null);
     }
@@ -432,9 +444,21 @@ export default function DrawingsPage() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <PageHeader
-        title={tab === "drawings" ? "Blueprint & RFI System" : "Project Files Directory"}
-        subtitle={tab === "drawings" ? "Versioned drawings · Revision locking · RFI pin overlay" : "Document storage"}
+        title="Blueprint & RFI System"
+        subtitle="Versioned drawings · Revision locking · RFI pin overlay"
       >
+        {/* The project's documents live in its Files tab. This page used to
+            carry its own "Project Files" tab that always said no files were
+            found, whatever had been uploaded. */}
+        {projectId && (
+          <Link
+            href={`/c/${companyId}/p/${projectId}/files`}
+            className="px-3.5 py-1.5 bg-elevated text-muted text-xs font-bold rounded-lg border border-border-custom hover:text-foreground transition-all inline-flex items-center gap-1.5"
+          >
+            <Icon name="folder" className="w-3.5 h-3.5" />
+            Project files
+          </Link>
+        )}
         {tab === "drawings" && (
           <button onClick={() => { setNewRevCode(getNextRevCode()); setNewRevComment(""); setNewRevFile(null); setShowRevModal(true); }}
             className="px-3.5 py-1.5 bg-primary text-white text-xs font-bold rounded-lg hover:opacity-90 transition-all cursor-pointer inline-flex items-center gap-1.5">
@@ -444,19 +468,8 @@ export default function DrawingsPage() {
         )}
       </PageHeader>
 
-      <div className="px-6 py-2 border-b border-border-custom bg-card shrink-0 overflow-x-auto">
-        <SegmentedTabs
-          tabs={[
-            { id: "drawings", label: "Blueprints & RFI" },
-            { id: "files", label: "Project Files" },
-          ]}
-          activeTab={tab}
-          onChange={(t) => setTab(t as any)}
-        />
-      </div>
-
       {toastMessage && (
-        <div className="mx-6 mt-4 p-3 bg-success/10 border border-success/20 text-success text-xs rounded-lg font-semibold flex items-center justify-between">
+        <div className={`mx-6 mt-4 p-3 border text-xs rounded-lg font-semibold flex items-center justify-between ${toastIsError ? "bg-danger/10 border-danger/20 text-danger" : "bg-success/10 border-success/20 text-success"}`}>
           <span>{toastMessage}</span>
           <button onClick={() => setToastMessage("")}><Icon name="close" className="w-4 h-4" /></button>
         </div>
@@ -498,12 +511,12 @@ export default function DrawingsPage() {
                     )}
                     <div className="text-[10px] text-muted mt-0.5">{activeDrawing.category} · Active: {registerActiveRev?.version ?? "—"} · {registerActiveRev?.date ? formatDate(registerActiveRev.date) : "—"} · {registerActiveRev?.approvalStatus === "approved" ? "Approved" : registerActiveRev?.approvalStatus === "rejected" ? "Rejected" : "Pending"}</div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center justify-end gap-2">
                     {openCount > 0 && (
-                      <Badge tone="warning" className="font-bold">{openCount} Open {openCount === 1 ? "Item" : "Items"}</Badge>
+                      <Badge tone="warning" className="font-bold whitespace-nowrap">{openCount} Open {openCount === 1 ? "Item" : "Items"}</Badge>
                     )}
                     {/* Filter pills */}
-                    <div className="flex gap-1">
+                    <div className="flex flex-wrap gap-1">
                       {["All", "RFI", "Clash", "Observation", "Approval"].map(cat => (
                         <button key={cat} onClick={() => setFilterCat(cat)}
                           className={`px-2 py-0.5 text-[9px] font-bold rounded transition-all ${filterCat === cat ? "bg-primary text-white" : "bg-white/5 text-muted hover:text-foreground"}`}>
@@ -625,7 +638,7 @@ export default function DrawingsPage() {
                             <div className="text-[9px] text-muted mt-1">{formatDate(rev.date)} · {rev.approvalStatus === "approved" ? "Approved" : rev.approvalStatus === "rejected" ? "Rejected" : "Pending"}</div>
                             {rev.pins.length > 0 && (
                               <div className="flex items-center gap-2 mt-1 text-[9px]">
-                                <span className="text-muted">{rev.pins.length} pins</span>
+                                <span className="text-muted">{rev.pins.length} {rev.pins.length === 1 ? "pin" : "pins"}</span>
                                 {revOpenPins > 0 && <span className="text-warning font-bold">{revOpenPins} open</span>}
                               </div>
                             )}
@@ -645,7 +658,10 @@ export default function DrawingsPage() {
                           {/* Backup to Google Drive */}
                           <button
                             type="button"
-                            onClick={() => handleBackupFileToDrive(rev.id)}
+                            // The backup copies the stored sheet, so it needs the
+                            // file's id; it used to send the revision id, which
+                            // the backup could never find.
+                            onClick={() => handleBackupFileToDrive(fileIdOf(rev.fileUrl), rev.id)}
                             disabled={backingUpId === rev.id}
                             className="mt-1.5 w-full text-[9px] font-bold px-2 py-1 rounded border border-border-custom bg-elevated/30 hover:bg-card text-foreground transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                             title="Backup drawing revision to company Google Drive"
@@ -697,17 +713,6 @@ export default function DrawingsPage() {
             </div>
           )}
 
-          {/* ── FILES TAB ── */}
-          {tab === "files" && (
-            <div className="h-full overflow-y-auto p-5">
-              <div className="flex-1 flex items-center justify-center p-8">
-                <EmptyState
-                  title="No project files found"
-                  description="Files and site photos will appear here once uploaded."
-                />
-              </div>
-            </div>
-          )}
         </div>
         </PageShell>
       </div>
