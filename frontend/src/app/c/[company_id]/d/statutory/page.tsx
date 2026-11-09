@@ -521,10 +521,31 @@ export default function StatutoryPage() {
     pf: "Provident Fund",
     esi: "ESI",
     bocw: "BOCW Cess",
-    tds: "TDS",
+    tds: "TDS on Salary",
     pt: "Professional Tax",
     it: "Income Tax",
   };
+
+  // A return carries only its own tax; the other columns stay blank.
+  const carries: Record<string, string[]> = {
+    pf: ["pf"], esi: ["esi"], bocw: ["bocw"], tds: ["tds"], it: ["tds"], pt: ["pt"],
+  };
+  const shows = (type: string, col: string) => (carries[type] || [col]).includes(col);
+  const rs = (v: number | string | null | undefined) =>
+    `₹${Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+  // "2026-09" reads "Sep 2026"; "2026-Q2" reads "Q2 FY 2026-27 (Jul to Sep)".
+  const periodLabel = (p: string) => {
+    const m = /^(\d{4})-(\d{2})$/.exec(p || "");
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, 1).toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+    const q = /^(\d{4})-Q([1-4])$/i.exec(p || "");
+    if (q) {
+      const y = Number(q[1]);
+      const months = ["Apr to Jun", "Jul to Sep", "Oct to Dec", "Jan to Mar"][Number(q[2]) - 1];
+      return `Q${q[2]} FY ${y}-${String((y + 1) % 100).padStart(2, "0")} (${months})`;
+    }
+    return p;
+  };
+  const dash = <span className="text-muted/50">—</span>;
 
   const statusTones: Record<string, BadgeTone> = {
     draft: "neutral",
@@ -999,25 +1020,25 @@ export default function StatutoryPage() {
                           <td className="px-4 py-3 font-bold text-foreground">
                             {typeLabels[r.report_type] || r.report_type.toUpperCase()}
                           </td>
-                          <td className="px-4 py-3 text-muted">{r.return_period}</td>
+                          <td className="px-4 py-3 text-muted">{periodLabel(r.return_period)}</td>
                           <td className="px-4 py-3 text-foreground">{r.total_employees}</td>
                           <td className="px-4 py-3 text-right font-medium text-foreground">
-                            ₹{Number(r.total_wages).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                            {rs(r.total_wages)}
                           </td>
                           <td className="px-4 py-3 text-right text-muted">
-                            ₹{Number(r.pf_employee_contribution).toLocaleString("en-IN", { maximumFractionDigits: 2 })} / ₹{Number(r.pf_employer_contribution).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                            {shows(r.report_type, "pf") ? `${rs(r.pf_employee_contribution)} / ${rs(r.pf_employer_contribution)}` : dash}
                           </td>
                           <td className="px-4 py-3 text-right text-muted">
-                            ₹{Number(r.esi_employee_contribution).toLocaleString("en-IN", { maximumFractionDigits: 2 })} / ₹{Number(r.esi_employer_contribution).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                            {shows(r.report_type, "esi") ? `${rs(r.esi_employee_contribution)} / ${rs(r.esi_employer_contribution)}` : dash}
                           </td>
                           <td className="px-4 py-3 text-right font-medium text-foreground">
-                            ₹{Number(r.bocw_cess).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                            {shows(r.report_type, "bocw") ? rs(r.bocw_cess) : dash}
                           </td>
                           <td className="px-4 py-3 text-right font-medium text-foreground">
-                            ₹{Number(r.tds_deducted).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                            {shows(r.report_type, "tds") ? rs(r.tds_deducted) : dash}
                           </td>
                           <td className="px-4 py-3 text-right font-medium text-foreground">
-                            ₹{Number(r.professional_tax || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                            {shows(r.report_type, "pt") ? rs(r.professional_tax) : dash}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-1.5">
