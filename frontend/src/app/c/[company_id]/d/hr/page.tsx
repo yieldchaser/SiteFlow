@@ -31,6 +31,7 @@ interface Employee {
   pfPct: number;
   pfEmployerPct: number;
   esiApplicable: boolean;
+  esiEmployerPct: number;
   tdsMonthly: number;
   uan: string;
   status: "active" | "inactive";
@@ -236,6 +237,17 @@ interface LeaveBalanceRow {
 }
 
 const fmt = (n: number) => "₹" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Salary structure figures are whole rupees; paise only add noise there.
+const fmtR = (n: number) => "₹" + Math.round(Number(n || 0)).toLocaleString("en-IN");
+// ESI covers staff whose regular monthly gross is at or under this.
+const ESI_GROSS_LIMIT = 21000;
+// "2026-09" reads as "September 2026".
+const runMonthName = (ym: string) => {
+  const [y, m] = String(ym || "").split("-").map(Number);
+  if (!y || !m) return ym;
+  return new Date(y, m - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+};
+const esiCovered = (e: { esiApplicable: boolean; grossMonthly: number }) => e.esiApplicable && e.grossMonthly <= ESI_GROSS_LIMIT;
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -249,6 +261,21 @@ export default function HRPayrollPage() {
 
   const [tab, setTab] = useState<"employees" | "attendance" | "timesheets" | "payroll" | "leaves" | "holidays">("employees");
   const [employees, setEmployees] = useState<Employee[]>([]);
+  // Payroll caps employer PF at this basic (company payroll settings).
+  const [pfCeiling, setPfCeiling] = useState(15000);
+  useEffect(() => {
+    if (!companyId) return;
+    fetch(`${getApiHost()}/apis/v3/settings/payroll/${companyId}`, { headers: authHeaders() })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d && Number(d.pf_wage_ceiling) > 0) setPfCeiling(Number(d.pf_wage_ceiling)); })
+      .catch(() => {});
+  }, [companyId]);
+  // Cost to company for a full month, worked out the way payroll does.
+  const monthlyCtc = (e: Employee) =>
+    e.grossMonthly
+    + Math.round(Math.min(e.basic, pfCeiling) * (e.pfEmployerPct ?? 12)) / 100
+    + (esiCovered(e) ? Math.ceil(e.grossMonthly * (e.esiEmployerPct ?? 3.25) / 100) : 0);
+  const activeEmployees = employees.filter((e) => e.status === "active");
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   
   // Holidays & Calendar states
@@ -446,6 +473,7 @@ export default function HRPayrollPage() {
   const [daysOverride, setDaysOverride] = useState<number | null>(null);
   const [weeklyOff, setWeeklyOff] = useState<string[]>([]);
   const [payrollRun, setPayrollRun] = useState<PayrollRun | null>(null);
+  const [payrollLoading, setPayrollLoading] = useState(false);
   const [showAddEmp, setShowAddEmp] = useState(false);
   const [selectedPayslip, setSelectedPayslip] = useState<PayslipLine | null>(null);
   const [loading, setLoading] = useState(false);
@@ -493,6 +521,7 @@ export default function HRPayrollPage() {
           pfPct: emp.pf_employee_pct,
           pfEmployerPct: emp.pf_employer_pct,
           esiApplicable: emp.is_esi_applicable,
+          esiEmployerPct: emp.esi_employer_pct ?? 3.25,
           tdsMonthly: emp.tds_monthly,
           uan: emp.uan || "",
           status: emp.status === "active" ? "active" : "inactive",
@@ -1075,6 +1104,7 @@ export default function HRPayrollPage() {
 
   // After a refresh the last run is still there to check, export or undo.
   const loadLatestRun = async () => {
+    setPayrollLoading(true);
     try {
       const res = await fetch(`${getApiHost()}/apis/v3/hr/payroll/latest/${companyId}`, { headers: authHeaders() });
       if (!res.ok) return;
@@ -1095,6 +1125,8 @@ export default function HRPayrollPage() {
       });
     } catch (e) {
       console.error("Failed to load the last payroll run", e);
+    } finally {
+      setPayrollLoading(false);
     }
   };
 
@@ -1105,7 +1137,7 @@ export default function HRPayrollPage() {
   const handleUndoPayroll = async () => {
     if (!payrollRun) return;
     const ok = window.confirm(
-      `Undo the ${payrollRun.month} payroll? The payslips are removed and you can run the month again after fixing attendance. This is recorded in Delete Logs.`
+      `Undo the ${runMonthName(payrollRun.month)} payroll? The payslips are removed and you can run the month again after fixing attendance. This is recorded in Delete Logs.`
     );
     if (!ok) return;
     const res = await fetch(`${getApiHost()}/apis/v3/hr/payroll/${payrollRun.id}`, { method: "DELETE", headers: authHeaders() });
@@ -1253,14 +1285,14 @@ export default function HRPayrollPage() {
       <main className="flex-1 flex flex-col overflow-hidden">
         <PageHeader
           title={
-            (tab === "employees" && "Staff Directory") ||
+            (tab === "employees" && "Staff") ||
             (tab === "attendance" && `Daily Attendance: ${formatDate(selectedDate)}`) ||
             (tab === "timesheets" && "Weekly Timesheets") ||
-            (tab === "payroll" && "Payroll Engine") ||
+            (tab === "payroll" && "Payroll") ||
             (tab === "leaves" && "Leave Management") ||
             (tab === "holidays" && "Holiday Calendar") || "HR Management"
           }
-          subtitle="Staff Directory, Attendance & Payroll Engine"
+          subtitle="Staff, attendance, timesheets, payroll and leave"
         >
           <div className="flex items-center gap-2">
             {tab === "employees" && (
@@ -1326,10 +1358,10 @@ export default function HRPayrollPage() {
               {/* Summary cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 {[
-                  { label: "Total Active", val: employees.filter(e => e.status === "active").length, color: "text-success" },
-                  { label: "Total Monthly CTC", val: fmt(employees.reduce((a, e) => a + e.grossMonthly + e.basic * (e.pfEmployerPct ?? 12) / 100, 0)), color: "text-primary" },
-                  { label: "Departments", val: new Set(employees.map(e => e.department)).size, color: "text-secondary" },
-                  { label: "PF Enrolled", val: employees.length, color: "text-info" },
+                  { label: "Active Staff", val: activeEmployees.length, color: "text-success" },
+                  { label: "Monthly Cost to Company", val: fmtR(activeEmployees.reduce((a, e) => a + monthlyCtc(e), 0)), color: "text-primary" },
+                  { label: "Departments", val: new Set(activeEmployees.map(e => e.department).filter(Boolean)).size, color: "text-secondary" },
+                  { label: "In PF", val: activeEmployees.filter(e => Number(e.pfPct) > 0).length, color: "text-info" },
                 ].map(({ label, val, color }) => (
                   <div key={label} className="bg-card border border-border-custom rounded-md p-4">
                     <p className="text-[10px] text-muted uppercase font-bold tracking-wider mb-1">{label}</p>
@@ -1364,23 +1396,23 @@ export default function HRPayrollPage() {
                         </td>
                       </tr>
                     ) : (
-                      employees.map(emp => (
+                      [...employees].sort((a, b) => (a.status === b.status ? 0 : a.status === "active" ? -1 : 1) || a.code.localeCompare(b.code, undefined, { numeric: true }) || a.name.localeCompare(b.name)).map(emp => (
                       <tr key={emp.id} className="hover:bg-elevated transition-colors cursor-pointer" onClick={() => openDetailsDrawer(emp)}>
                         <td className="px-3 py-2.5 font-sans text-muted">{emp.code}</td>
                         <td className="px-3 py-2.5 font-semibold text-foreground">{emp.name}</td>
                         <td className="px-3 py-2.5 text-muted">{emp.designation}</td>
                         <td className="px-3 py-2.5 text-muted">{emp.department}</td>
-                        <td className="px-3 py-2.5 text-muted">{fmt(emp.basic)}</td>
-                        <td className="px-3 py-2.5 text-muted">{fmt(emp.hra)}</td>
-                        <td className="px-3 py-2.5 text-muted">{fmt(emp.allowances)}</td>
-                        <td className="px-3 py-2.5 font-bold text-success">{fmt(emp.grossMonthly)}</td>
+                        <td className="px-3 py-2.5 text-muted">{fmtR(emp.basic)}</td>
+                        <td className="px-3 py-2.5 text-muted">{fmtR(emp.hra)}</td>
+                        <td className="px-3 py-2.5 text-muted">{fmtR(emp.allowances)}</td>
+                        <td className="px-3 py-2.5 font-bold text-success">{fmtR(emp.grossMonthly)}</td>
                         <td className="px-3 py-2.5 text-muted">{emp.pfPct}%</td>
                         <td className="px-3 py-2.5">
-                          <span className={emp.esiApplicable ? "text-success" : "text-muted"}>
-                            {emp.esiApplicable ? "Yes" : "N/A"}
+                          <span className={esiCovered(emp) ? "text-success" : "text-muted"} title={emp.esiApplicable && !esiCovered(emp) ? "Gross is above ₹21,000, so ESI does not apply" : undefined}>
+                            {esiCovered(emp) ? "Yes" : "No"}
                           </span>
                         </td>
-                        <td className="px-3 py-2.5 text-muted">{emp.tdsMonthly > 0 ? fmt(emp.tdsMonthly) : "—"}</td>
+                        <td className="px-3 py-2.5 text-muted">{emp.tdsMonthly > 0 ? fmtR(emp.tdsMonthly) : "—"}</td>
                         <td className="px-3 py-2.5">
                           <span className={statusBadge(emp.status)}>{formatLabel(emp.status)}</span>
                         </td>
@@ -1851,7 +1883,7 @@ export default function HRPayrollPage() {
                       <div key={label} className="bg-card border border-border-custom rounded-md p-5">
                         <p className="text-[10px] text-muted font-bold uppercase tracking-wider mb-1">{label}</p>
                         <p className={`text-2xl font-bold ${color}`}>{val}</p>
-                        <p className="text-[10px] text-muted mt-1">{payrollRun.month} payroll</p>
+                        <p className="text-[10px] text-muted mt-1">{runMonthName(payrollRun.month)} payroll</p>
                       </div>
                     ))}
                   </div>
@@ -1859,7 +1891,7 @@ export default function HRPayrollPage() {
                   {/* Payslips table */}
                   <div className="bg-card border border-border-custom rounded-md overflow-hidden">
                     <div className="px-4 py-3 border-b border-border-custom flex items-center justify-between">
-                      <span className="text-xs font-bold text-foreground">Employee Payslips: {payrollRun.month}</span>
+                      <span className="text-xs font-bold text-foreground">Payslips for {runMonthName(payrollRun.month)}</span>
                       <div className="flex items-center gap-2">
                         {gsConnected ? (
                           <button
@@ -1926,7 +1958,10 @@ export default function HRPayrollPage() {
                 </>
               )}
 
-              {!payrollRun && (
+              {!payrollRun && payrollLoading && (
+                <p className="text-xs text-muted py-6 text-center">Loading the last payroll run...</p>
+              )}
+              {!payrollRun && !payrollLoading && (
                 <EmptyState
                   title="No payroll run yet"
                   description="Pick the month, check the working days, then click Run Payroll. Pay is worked out from the attendance marked for that month."

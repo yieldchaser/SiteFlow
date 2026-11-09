@@ -1394,9 +1394,12 @@ def get_payslips(run_id: uuid.UUID, db: Session = Depends(get_db), current_user:
     get_company_membership(db, current_user, run.company_id)
     require_module_view(db, current_user, run.company_id, "payroll")
     lines = db.query(PayrollLineItem).filter(PayrollLineItem.payroll_run_id == run_id).all()
+    # One query for every employee on the run, not one per payslip.
+    emp_ids = {line.employee_id for line in lines if line.employee_id}
+    emps = {e.id: e for e in db.query(StaffEmployee).filter(StaffEmployee.id.in_(emp_ids)).all()} if emp_ids else {}
     result = []
-    for line in lines:
-        emp = db.query(StaffEmployee).filter(StaffEmployee.id == line.employee_id).first()
+    for line in sorted(lines, key=lambda ln: ((emps.get(ln.employee_id).name if emps.get(ln.employee_id) else "") or "").lower()):
+        emp = emps.get(line.employee_id)
         result.append({
             "id": str(line.id),
             "employee_id": str(line.employee_id),
