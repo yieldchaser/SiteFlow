@@ -1596,7 +1596,7 @@ def get_po_pdf(po_id: UUID, db: Session = Depends(get_db), current_user=Depends(
     party_lines = [
         f"Vendor: {vendor_name}",
         f"PO Number: {po.po_number}",
-        f"PO Date: {po.po_date.strftime('%Y-%m-%d') if po.po_date else ''}",
+        f"PO Date: {po.po_date.strftime('%d %b %Y') if po.po_date else ''}",
         f"Status: {(po.status or '').replace('_', ' ').title()}",
     ]
 
@@ -1618,7 +1618,7 @@ def get_po_pdf(po_id: UUID, db: Session = Depends(get_db), current_user=Depends(
             str(it.rate),
             str(it.tax_pct),
             f"{amt:.2f}",
-            f"{received_by_po_item.get(it.id, 0.0):.4f}",
+            f"{received_by_po_item.get(it.id, 0.0):.3f}",
         ])
     if not table_rows:
         table_rows.append(["(No line items)", "", "", "", "", "", ""])
@@ -1642,7 +1642,8 @@ def get_po_pdf(po_id: UUID, db: Session = Depends(get_db), current_user=Depends(
         supplier_lines=supplier_lines,
         branding=branding,
     )
-    filename = f"{po.po_number or 'po'}.pdf"
+    from app.utils.document_pdf import pdf_filename
+    filename = pdf_filename(po.po_number or "po")
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

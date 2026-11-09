@@ -136,3 +136,13 @@ def resolve_supplier_tax_details(db, company_id, project=None):
     if _flat(address):
         lines.append(f"Address: {_flat(address)}")
     return lines
+
+
+def pdf_filename(*parts) -> str:
+    """A download name without slashes or quotes: "SIC/26-27/INV-007" saves
+    as "SIC-26-27-INV-007.pdf" instead of being mangled by the browser."""
+    import re as _re
+    text = "-".join(str(p) for p in parts if p not in (None, ""))
+    text = _re.sub(r"[^A-Za-z0-9._ -]+", "-", text)
+    text = _re.sub(r"[ -]{2,}", "-", text).strip(" -.")
+    return (text[:100] or "document") + ".pdf"

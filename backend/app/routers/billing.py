@@ -1043,7 +1043,8 @@ def _amount_in_words(value) -> str:
     tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
 
     def two(n: int) -> str:
-        return ones[n] if n < 20 else f"{tens[n // 10]} {ones[n % 10]}".strip()
+        # 20 is "Twenty", not "Twenty Zero".
+        return ones[n] if n < 20 else f"{tens[n // 10]} {ones[n % 10] if n % 10 else ''}".strip()
 
     def indian(n: int) -> str:
         if n < 100:
@@ -1065,7 +1066,8 @@ def _amount_in_words(value) -> str:
     except (TypeError, ValueError):
         return ""
     negative = value < 0
-    whole, paise = divmod(int(round(abs(value), 2) * 100), 100)
+    # round(), not int(): 0.29 * 100 is 28.999... and used to lose a paisa.
+    whole, paise = divmod(int(round(abs(value) * 100)), 100)
     words = f"{indian(whole)} Rupees"
     if paise:
         words += f" and {indian(paise)} Paise"
@@ -1152,8 +1154,7 @@ def get_bill_pdf(bill_id: UUID, db: Session = Depends(get_db), current_user=Depe
     party_lines = [
         f"Party: {party_name}",
         f"Invoice No: {bill.invoice_number}",
-        f"Invoice Date: {bill.invoice_date.strftime('%Y-%m-%d') if bill.invoice_date else ''}",
-        f"Type: {type_label}",
+        f"Invoice Date: {bill.invoice_date.strftime('%d %b %Y') if bill.invoice_date else ''}",
         f"Status: {bill.status}",
     ]
     if party_gstin:
@@ -1162,9 +1163,11 @@ def get_bill_pdf(bill_id: UUID, db: Session = Depends(get_db), current_user=Depe
     if party_address:
         party_lines.append(f"Recipient Address: {party_address}")
     if place_of_supply:
-        party_lines.append(f"Place of Supply: {place_of_supply}")
+        from app.gst_utils import state_name_for_code
+        _pos_name = state_name_for_code(place_of_supply)
+        party_lines.append(f"Place of Supply: {place_of_supply}" + (f" ({_pos_name})" if _pos_name else ""))
     if bill.due_date:
-        party_lines.append(f"Due Date: {bill.due_date.strftime('%Y-%m-%d')}")
+        party_lines.append(f"Due Date: {bill.due_date.strftime('%d %b %Y')}")
 
     table_headers = ["Description", "HSN/SAC", "Qty", "Rate", "Amount"]
     col_widths = [44, 12, 10, 15, 15]
@@ -1184,12 +1187,9 @@ def get_bill_pdf(bill_id: UUID, db: Session = Depends(get_db), current_user=Depe
     if not table_rows:
         table_rows.append(["(No line items)", "", "", "", ""])
 
-    totals_lines = [
-        f"Subtotal: {bill.subtotal}",
-        f"GST Amount: {bill.gst_amount}",
-        f"Total Payable: {bill.total_payable}",
-        f"Paid Amount: {bill.paid_amount}",
-    ]
+    # Read top to bottom the way an invoice adds up: taxable value, each
+    # tax, total, then what is paid and what is still due.
+    totals_lines = [f"Subtotal: {float(bill.subtotal or 0):.2f}"]
     gst_total = float(bill.gst_amount or 0)
     if gst_total > 0:
         if inter_state:
@@ -1198,6 +1198,12 @@ def get_bill_pdf(bill_id: UUID, db: Session = Depends(get_db), current_user=Depe
             cgst = round(gst_total / 2, 2)
             totals_lines.append(f"CGST: {cgst:.2f}")
             totals_lines.append(f"SGST: {(gst_total - cgst):.2f}")
+    totals_lines.append(f"GST Amount: {gst_total:.2f}")
+    totals_lines.append(f"Total Payable: {float(bill.total_payable or 0):.2f}")
+    paid = float(bill.paid_amount or 0)
+    if paid > 0:
+        totals_lines.append(f"Paid Amount: {paid:.2f}")
+        totals_lines.append(f"Balance Due: {max(float(bill.total_payable or 0) - paid, 0):.2f}")
 
     # R2-399: the remaining Rule 46 elements - the invoice amount in words,
     # the reverse-charge declaration, and a signature block (rendered above
@@ -1220,7 +1226,8 @@ def get_bill_pdf(bill_id: UUID, db: Session = Depends(get_db), current_user=Depe
         supplier_lines=supplier_lines,
         branding=branding,
     )
-    filename = f"{bill.invoice_number or 'bill'}.pdf"
+    from app.utils.document_pdf import pdf_filename
+    filename = pdf_filename(bill.invoice_number or "bill")
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

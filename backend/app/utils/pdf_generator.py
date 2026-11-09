@@ -534,6 +534,104 @@ def _wrap_text(text: str, width: int):
     return lines
 
 
+
+# ── Text measurement and number formatting for document PDFs ────────────────
+# Standard Helvetica / Helvetica-Bold advance widths (1/1000 em), ASCII 32-126.
+_HELV = [278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584]
+_HELV_B = [278,333,474,556,556,889,722,238,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,333,333,584,584,584,611,975,722,722,722,722,667,611,778,722,278,556,722,611,833,722,778,667,778,722,667,611,722,667,944,667,667,611,333,278,333,584,556,333,556,611,556,611,556,333,611,611,278,278,556,278,889,611,611,611,611,389,556,333,611,556,778,556,556,500,389,280,389,584]
+
+
+def _text_width(value: str, font: str, size: float) -> float:
+    table = _HELV_B if font == "F2" else _HELV
+    total = 0
+    for ch in str(value):
+        o = ord(ch)
+        total += table[o - 32] if 32 <= o <= 126 else 556
+    return total * size / 1000.0
+
+
+def _wrap_width(value, font: str, size: float, max_w: float):
+    """Word-wrap to a width in points; breaks over-long words too."""
+    value = str(value or "")
+    if not value:
+        return []
+    lines, cur = [], ""
+    for word in value.split(" "):
+        trial = word if not cur else cur + " " + word
+        if _text_width(trial, font, size) <= max_w:
+            cur = trial
+            continue
+        if cur:
+            lines.append(cur)
+        while _text_width(word, font, size) > max_w and len(word) > 1:
+            cut = len(word)
+            while cut > 1 and _text_width(word[:cut], font, size) > max_w:
+                cut -= 1
+            lines.append(word[:cut])
+            word = word[cut:]
+        cur = word
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+def _is_number(value) -> bool:
+    try:
+        float(str(value).replace(",", "").strip())
+        return str(value).strip() != ""
+    except (TypeError, ValueError):
+        return False
+
+
+def _is_count_label(key: str) -> bool:
+    k = key.lower()
+    return any(w in k for w in ("items", "count", "milestone", "%", "pct", "percent", "no.", "number"))
+
+
+def _indian(n: float, places: int = 2) -> str:
+    """12,34,567.50: Indian digit grouping."""
+    neg = n < 0
+    text = f"{abs(n):.{places}f}"
+    whole, _, frac = text.partition(".")
+    if len(whole) > 3:
+        head, tail = whole[:-3], whole[-3:]
+        groups = []
+        while len(head) > 2:
+            groups.insert(0, head[-2:])
+            head = head[:-2]
+        if head:
+            groups.insert(0, head)
+        whole = ",".join(groups + [tail])
+    out = whole + ("." + frac if frac else "")
+    return ("-" if neg else "") + out
+
+
+def _column_kind(header: str) -> str:
+    h = str(header).lower()
+    if any(w in h for w in ("rate", "amount", "value", "total", "price", "cost")):
+        return "money"
+    if any(w in h for w in ("qty", "quantity", "received", "tax%", "%", "nos")):
+        return "qty"
+    return "text"
+
+
+def _format_cell(cell, kind: str) -> str:
+    raw = "" if cell is None else str(cell)
+    if kind == "text" or not _is_number(raw):
+        return raw
+    n = float(raw.replace(",", ""))
+    if kind == "money":
+        return _indian(n, 2)
+    shown = _indian(n, 3)
+    if "." in shown:
+        shown = shown.rstrip("0").rstrip(".")
+    return shown
+
+
+def _ist_now():
+    from datetime import timedelta, timezone as _tz
+    return datetime.now(_tz(timedelta(hours=5, minutes=30)))
+
 def generate_document_pdf(
     title: str,
     party_lines=None,
@@ -591,63 +689,216 @@ def generate_document_pdf(
     signature = _place_asset(assets, "signature", 170, 70)
     stamp = _place_asset(assets, "stamp", 170, 90)
 
-    # Build a flat list of (font_key, font_size, text, dy_after) segments.
-    # F2 = Helvetica-Bold, F1 = Helvetica (match the report generator).
-    segs = []
+    # Layout: everything is placed at absolute positions measured with the
+    # real Helvetica widths. The old writer padded columns with spaces in a
+    # proportional font, so tables never lined up and long text ran off the
+    # page. Each "Key: Value" pair stays one text run.
+    PAGE_W, PAGE_H = 595, 842
+    LEFT, RIGHT = 40, 555
+    WIDTH = RIGHT - LEFT
+    TOP = 802
+    BOTTOM = 175 if (signature or stamp) else 60
 
-    def add(font_key, size, text, dy):
-        segs.append((font_key, size, text, dy))
+    pages = []          # list of op lists
+    state = {"ops": None, "y": TOP}
 
+    def new_page():
+        ops = []
+        if watermark:
+            ops += _image_draw_ops(watermark[0], watermark[1], wm_x, wm_y, wm_w, wm_h, faded=True)
+        pages.append(ops)
+        state["ops"] = ops
+        state["y"] = TOP
+
+    def text(x, y, value, font="F1", size=9, gray=0.0, align="left"):
+        value = str(value)
+        if align == "right":
+            x = x - _text_width(value, font, size)
+        elif align == "center":
+            x = x - _text_width(value, font, size) / 2
+        state["ops"].append(
+            (f"BT /{font} {size} Tf {gray:.2f} g 1 0 0 1 {x:.2f} {y:.2f} Tm (".encode("latin1", "replace")
+             + _esc(value).encode("latin1", "replace") + b") Tj ET")
+        )
+
+    def hline(y, x1=LEFT, x2=RIGHT, gray=0.75, width=0.6):
+        state["ops"].append(f"{gray:.2f} G {width} w {x1:.2f} {y:.2f} m {x2:.2f} {y:.2f} l S".encode("ascii"))
+
+    def rect(x, y, w, h, fill_gray=None, stroke_gray=None):
+        if fill_gray is not None:
+            state["ops"].append(f"{fill_gray:.2f} g {x:.2f} {y:.2f} {w:.2f} {h:.2f} re f".encode("ascii"))
+        if stroke_gray is not None:
+            state["ops"].append(f"{stroke_gray:.2f} G 0.6 w {x:.2f} {y:.2f} {w:.2f} {h:.2f} re S".encode("ascii"))
+
+    def need(h):
+        """Start a new page when h points do not fit above the bottom band."""
+        if state["y"] - h < BOTTOM:
+            new_page()
+            return True
+        return False
+
+    new_page()
+
+    # ── Masthead ──
+    y = TOP
     if company_name:
-        add("F2", 11, company_name, 18)
+        text(LEFT, y, company_name, "F2", 14)
+        y -= 15
     for line in supplier_lines:
-        add("F1", 9, line, 12)
+        for part in _wrap_width(line, "F1", 8.5, WIDTH - (logo[2] + 10 if logo else 0)):
+            text(LEFT, y, part, "F1", 8.5, gray=0.3)
+            y -= 11
     if custom_banner:
-        flat = " ".join(custom_banner.split())[:180]
-        add("F1", 9, flat, 18)
+        for part in _wrap_width(" ".join(custom_banner.split())[:300], "F1", 8.5, WIDTH):
+            text(LEFT, y, part, "F1", 8.5, gray=0.3)
+            y -= 11
+    if logo:
+        y = min(y, logo_y - 4)
+    y -= 6
+    hline(y, gray=0.2, width=1.2)
+    y -= 24
+    text(LEFT, y, title, "F2", 17)
+    y -= 22
 
-    add("F2", 20, title, 30)
-    add("F1", 10, f"Generated on: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}", 30)
+    # ── Party and document details, in two columns ──
+    LEFT_KEYS = ("party", "recipient", "place of supply", "vendor", "client", "supplier", "bill to", "ship to")
+    left_lines = [ln for ln in party_lines if ln.split(":")[0].strip().lower().startswith(LEFT_KEYS)]
+    right_lines = [ln for ln in party_lines if ln not in left_lines]
+    if not left_lines:
+        left_lines, right_lines = right_lines, []
+    col_w = WIDTH / 2 - 10
+    ly = ry = y
+    for ln in left_lines:
+        for i, part in enumerate(_wrap_width(ln, "F1", 9.5, col_w)):
+            text(LEFT + (10 if i else 0), ly, part, "F1", 9.5)
+            ly -= 13
+    for ln in right_lines:
+        for i, part in enumerate(_wrap_width(ln, "F1", 9.5, col_w)):
+            text(LEFT + WIDTH / 2 + 10 + (10 if i else 0), ry, part, "F1", 9.5)
+            ry -= 13
+    y = min(ly, ry) - 8
+    state["y"] = y
 
-    for line in party_lines:
-        add("F1", 10, line, 14)
-    if party_lines:
-        add("F1", 10, "", 8)  # spacer
-
+    # ── Line items ──
     if table_headers and col_widths:
-        add("F2", 12, _fmt_row(table_headers, col_widths), 16)
+        total_units = float(sum(col_widths)) or 1.0
+        widths = [WIDTH * w / total_units for w in col_widths]
+        xs = [LEFT]
+        for w in widths[:-1]:
+            xs.append(xs[-1] + w)
+        kinds = [_column_kind(h) for h in table_headers]
+        PAD = 4
+        HEAD_H = 18
+        LINE_H = 11
+
+        def draw_header():
+            yy = state["y"]
+            rect(LEFT, yy - HEAD_H, WIDTH, HEAD_H, fill_gray=0.90)
+            for i, h in enumerate(table_headers):
+                if kinds[i] == "text":
+                    text(xs[i] + PAD, yy - 12.5, h, "F2", 8.5)
+                else:
+                    text(xs[i] + widths[i] - PAD, yy - 12.5, h, "F2", 8.5, align="right")
+            hline(yy, gray=0.6)
+            hline(yy - HEAD_H, gray=0.6)
+            state["y"] = yy - HEAD_H
+
+        draw_header()
         for row in table_rows:
-            add("F1", 9, _fmt_row(row, col_widths), 12)
-        add("F1", 9, "", 10)  # spacer
+            cells = []
+            for i, cell in enumerate(row):
+                shown = _format_cell(cell, kinds[i] if i < len(kinds) else "text")
+                if i < len(kinds) and kinds[i] == "text":
+                    cells.append(_wrap_width(shown, "F1", 8.5, widths[i] - 2 * PAD) or [""])
+                else:
+                    cells.append([shown])
+            row_h = max(len(c) for c in cells) * LINE_H + 6
+            if need(row_h):
+                draw_header()
+            yy = state["y"]
+            for i, lines in enumerate(cells):
+                if i >= len(xs):
+                    break
+                for j, part in enumerate(lines):
+                    ty = yy - 10.5 - j * LINE_H
+                    if kinds[i] == "text":
+                        text(xs[i] + PAD, ty, part, "F1", 8.5)
+                    else:
+                        text(xs[i] + widths[i] - PAD, ty, part, "F1", 8.5, align="right")
+            state["y"] = yy - row_h
+            hline(state["y"], gray=0.85, width=0.4)
+        state["y"] -= 12
 
+    # ── Totals ──
+    sign_lines = []
     if totals_lines:
-        add("F2", 12, "SUMMARY / TOTALS", 16)
-        for line in totals_lines:
-            add("F1", 10, line, 14)
-        add("F1", 10, "", 10)  # spacer
+        figures, notes = [], []
+        for ln in totals_lines:
+            key, sep, val = ln.partition(": ")
+            if not sep:
+                sign_lines.append(ln)
+            elif _is_number(val) and not _is_count_label(key):
+                figures.append((key, _indian(float(val.replace(",", "")), 2)))
+            elif _is_number(val):
+                figures.append((key, val.strip()))
+            else:
+                notes.append(ln)
+        if figures:
+            need(len(figures) * 15 + 10)
+            yy = state["y"]
+            box_w = 250
+            rect(RIGHT - box_w, yy - len(figures) * 15 - 6, box_w, len(figures) * 15 + 6, stroke_gray=0.75)
+            yy -= 14
+            for key, val in figures:
+                strong = key.lower().startswith(("total", "grand total", "net", "boq value", "amount payable"))
+                text(RIGHT - 8, yy, f"{key}: {val}", "F2" if strong else "F1", 9.5, align="right")
+                yy -= 15
+            state["y"] = yy - 8
+        for ln in notes:
+            parts = _wrap_width(ln, "F1", 9, WIDTH)
+            need(len(parts) * 12 + 4)
+            for part in parts:
+                text(LEFT, state["y"], part, "F1", 9)
+                state["y"] -= 12
+            state["y"] -= 2
+        state["y"] -= 6
 
+    # ── Terms ──
     if terms and terms.strip():
-        add("F2", 12, "TERMS & CONDITIONS", 16)
-        for line in _wrap_text(terms, 100):
-            add("F1", 9, line, 12)
+        need(30)
+        text(LEFT, state["y"], "Terms & Conditions", "F2", 10)
+        state["y"] -= 14
+        for para in str(terms).split("\n"):
+            for part in _wrap_width(para, "F1", 8.5, WIDTH) or [""]:
+                need(11)
+                text(LEFT, state["y"], part, "F1", 8.5, gray=0.2)
+                state["y"] -= 11
 
-    # Paginate: page usable band y in (BOTTOM, TOP]. Top anchor at TOP.
-    # R2-404: when a signature/stamp is present the footer band is reserved so
-    # document text never runs underneath the seals.
-    TOP = 800
-    BOTTOM = 175 if (signature or stamp) else 50
-    pages = []
-    cur_y = TOP
-    page_segs = []
-    for font_key, size, text, dy in segs:
-        if cur_y - dy < BOTTOM and page_segs:
-            pages.append(page_segs)
-            page_segs = []
-            cur_y = TOP
-        page_segs.append((font_key, size, text, dy))
-        cur_y -= dy
-    if page_segs:
-        pages.append(page_segs)
+    # ── Signature block, after the terms as on a printed invoice ──
+    if sign_lines:
+        need(len(sign_lines) * 14 + 40)
+        state["y"] -= 34
+        for ln in sign_lines:
+            text(RIGHT, state["y"], ln, "F2" if ln.lower().startswith("for ") else "F1", 9.5, align="right")
+            state["y"] -= 14
+
+    # ── Footer on every page, branding on first and last ──
+    generated = _ist_now().strftime("%d %b %Y, %I:%M %p IST")
+    total_pages = len(pages)
+    for p_index, ops in enumerate(pages):
+        state["ops"] = ops
+        hline(42, gray=0.8, width=0.4)
+        text(LEFT, 30, f"Generated {generated}", "F1", 7.5, gray=0.45)
+        text(RIGHT, 30, f"Page {p_index + 1} of {total_pages}", "F1", 7.5, gray=0.45, align="right")
+        if p_index == 0 and logo:
+            ops += _image_draw_ops(logo[0], logo[1], logo_x, logo_y, logo[2], logo[3])
+        if p_index == total_pages - 1:
+            for placed in (signature, stamp):
+                if not placed:
+                    continue
+                name, spec, w, h = placed
+                x = RIGHT - w if placed is stamp else LEFT + 20
+                ops += _image_draw_ops(name, spec, x, 58, w, h)
 
     pdf = bytearray(b"%PDF-1.4\n")
     objects = []
@@ -662,36 +913,9 @@ def generate_document_pdf(
         objects.append(body + b"endobj\n")
         return obj_id
 
-    # Content streams (one per page).
     content_ids = []
-    last_page_index = len(pages) - 1
-    for p_index, p_segs in enumerate(pages):
-        stream_lines = []
-        if watermark:
-            stream_lines += _image_draw_ops(
-                watermark[0], watermark[1], wm_x, wm_y, wm_w, wm_h, faded=True
-            )
-        stream_lines.append(b"BT")
-        first = True
-        for font_key, size, text, dy in p_segs:
-            if first:
-                stream_lines.append(b"50 800 Td")
-                first = False
-            else:
-                stream_lines.append(f"0 -{dy} Td".encode("ascii"))
-            stream_lines.append(f"/{font_key} {size} Tf".encode("ascii"))
-            stream_lines.append(f"({_esc(text)}) Tj".encode("latin1", "replace"))
-        stream_lines.append(b"ET")
-        if p_index == 0 and logo:
-            stream_lines += _image_draw_ops(logo[0], logo[1], logo_x, logo_y, logo[2], logo[3])
-        if p_index == last_page_index:
-            for placed in (signature, stamp):
-                if not placed:
-                    continue
-                name, spec, w, h = placed
-                x = 595 - 50 - w if placed is stamp else 60
-                stream_lines += _image_draw_ops(name, spec, x, 58, w, h)
-        stream_data = b"\n".join(stream_lines)
+    for ops in pages:
+        stream_data = b"\n".join(ops)
         cid = add_object(
             f"<< /Length {len(stream_data)} >>\nstream\n".encode("ascii")
             + stream_data

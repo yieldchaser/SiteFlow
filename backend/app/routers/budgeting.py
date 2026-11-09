@@ -776,7 +776,8 @@ def get_boq_document_pdf(doc_id: UUID, db: Session = Depends(get_db), current_us
         supplier_lines=supplier_lines,
         branding=branding,
     )
-    filename = f"boq-{doc.title or doc.id}.pdf"
+    from app.utils.document_pdf import pdf_filename
+    filename = pdf_filename("BOQ", doc.title or str(doc.id))
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

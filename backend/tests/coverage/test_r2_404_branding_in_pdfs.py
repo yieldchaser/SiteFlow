@@ -117,7 +117,7 @@ def test_multipage_watermarks_every_page_but_signs_once():
         },
     )
     _validate_pdf(pdf)
-    pages = pdf.count(b"\nET")
+    pages = pdf.count(b"/MediaBox")  # one per page object
     assert pages >= 2, "expected pagination for this row count"
     assert pdf.count(b"/WATERMARK Do") == pages   # every page
     assert pdf.count(b"/SIGNATURE Do") == 1       # last page only

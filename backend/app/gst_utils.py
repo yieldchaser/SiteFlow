@@ -100,6 +100,15 @@ _ABBREV_MAP = {
 }
 
 
+def state_name_for_code(code: Optional[str]) -> str:
+    """'27' reads 'Maharashtra' on a document; unknown codes give ''."""
+    code = str(code or "").strip().zfill(2)
+    for name, c in _GST_STATE_CODE_MAP.items():
+        if c == code and "new" not in name and name not in ("orissa", "puduchery"):
+            return name.title().replace(" And ", " and ")
+    return ""
+
+
 def project_state_code(state: Optional[str]) -> Optional[str]:
     """
     Normalize Project.state (free-form) to a 2-digit GST state code.

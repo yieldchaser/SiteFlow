@@ -71,7 +71,7 @@ def test_r2_399_tax_invoice_carries_rule_46_elements(client, db, make_tenant, au
     assert b"Place of Supply: 29" in body
     # Per-line HSN/SAC and the intra-state CGST/SGST split.
     assert b"HSN/SAC" in body and b"7214" in body
-    assert b"CGST: 9000.00" in body and b"SGST: 9000.00" in body
+    assert b"CGST: 9,000.00" in body and b"SGST: 9,000.00" in body  # Indian digit grouping
     # The previously-missing statutory elements.
     assert b"Amount in Words: One Lakh Eighteen Thousand Rupees Only" in body
     assert b"Tax Payable Under Reverse Charge: No" in body
