@@ -64,10 +64,14 @@ export default function LabourPage() {
   const [showMusterModal, setShowMusterModal] = useState(false);
   const [musterDate, setMusterDate] = useState(todayLocalISO());
   const [musterRole, setMusterRole] = useState("Mason");
-  const [musterPresent, setMusterPresent] = useState(20);
-  const [musterAbsent, setMusterAbsent] = useState(2);
-  const [musterHours, setMusterHours] = useState(8);
-  const [musterOT, setMusterOT] = useState(0);
+  // Blank by default: a figure left blank is worked out from that day's
+  // attendance punches and crew counts. The form used to arrive filled with
+  // 20 present / 2 absent / 8 hours, which were saved as fact unless edited.
+  const [musterPresent, setMusterPresent] = useState("");
+  const [musterAbsent, setMusterAbsent] = useState("");
+  const [musterHours, setMusterHours] = useState("");
+  const [musterOT, setMusterOT] = useState("");
+  const numOrNull = (v: string) => (v.trim() === "" ? null : Number(v));
   const [musterNotes, setMusterNotes] = useState("");
 
   const [showBocwModal, setShowBocwModal] = useState(false);
@@ -102,6 +106,12 @@ export default function LabourPage() {
     }
   }, [projectId]);
 
+  // "2026-08" reads as "Aug 2026".
+  const fmtMonth = (ym: string) => {
+    const [y, m] = (ym || "").split("-").map(Number);
+    return y && m ? new Date(y, m - 1, 1).toLocaleDateString("en-IN", { month: "short", year: "numeric" }) : ym;
+  };
+
   const handleMusterSubmit = async () => {
     try {
       const res = await fetch(`${getApiHost()}/apis/v3/labour/muster-roll`, {
@@ -112,14 +122,18 @@ export default function LabourPage() {
           project_id: projectId,
           date: new Date(musterDate).toISOString(),
           labor_role: musterRole,
-          workers_present: musterPresent,
-          workers_absent: musterAbsent,
-          hours_worked: musterHours,
-          overtime_hours: musterOT,
+          workers_present: numOrNull(musterPresent),
+          workers_absent: numOrNull(musterAbsent),
+          hours_worked: numOrNull(musterHours),
+          overtime_hours: numOrNull(musterOT),
           notes: musterNotes || null,
         }),
       });
-      if (res.ok) { fetchData(); setShowMusterModal(false); } else {
+      if (res.ok) {
+        fetchData();
+        setShowMusterModal(false);
+        setMusterPresent(""); setMusterAbsent(""); setMusterHours(""); setMusterOT("");
+      } else {
         const err = await readErrorDetail(res);
         alert(err || 'Action failed');
       }
@@ -163,18 +177,6 @@ export default function LabourPage() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden font-sans">
-      <div className="px-6 py-2 border-b border-border-custom bg-card shrink-0 overflow-x-auto">
-        <SegmentedTabs
-          tabs={[
-            { id: "reliability", label: "Reliability Scores" },
-            { id: "bocw", label: "BOCW Records" },
-            { id: "muster", label: "Muster Roll" },
-          ]}
-          activeTab={activeTab}
-          onChange={(t) => setActiveTab(t as any)}
-        />
-      </div>
-
       <div className="flex-1 flex flex-col overflow-hidden relative font-sans">
         <PageHeader
           title="Labour Management"
@@ -187,6 +189,18 @@ export default function LabourPage() {
           </div>
         </PageHeader>
 
+        <div className="px-6 py-2 border-b border-border-custom bg-card shrink-0 overflow-x-auto">
+          <SegmentedTabs
+            tabs={[
+              { id: "reliability", label: "Reliability Scores" },
+              { id: "bocw", label: "BOCW Records" },
+              { id: "muster", label: "Muster Roll" },
+            ]}
+            activeTab={activeTab}
+            onChange={(t) => setActiveTab(t as "reliability" | "bocw" | "muster")}
+          />
+        </div>
+
         <div className="flex-1 overflow-y-auto z-10">
           <PageShell width="wide">
             {loading && <TableSkeleton rows={4} cols={5} />}
@@ -195,7 +209,23 @@ export default function LabourPage() {
             <div className="space-y-4">
               {reliability.map((r) => {
                 const reliabilityScore = ((r.on_time_pct + r.billing_accuracy_pct + r.quality_score) / 3).toFixed(1);
-                const scoreColor = Number(reliabilityScore) >= 80 ? "text-success" : Number(reliabilityScore) >= 60 ? "text-warning" : "text-danger";
+                // Colour by the value itself: 33% on time used to show green.
+                const tone = (v: number) => (v >= 80 ? "text-success" : v >= 60 ? "text-warning" : "text-danger");
+                const scoreColor = tone(Number(reliabilityScore));
+                // A period with no completed work and nothing billed scores zero on
+                // every measure; that is "no data", not a failing contractor.
+                const empty = r.tasks_completed === 0 && r.total_billed === 0;
+                if (empty) {
+                  return (
+                    <div key={r.id} className="bg-card border border-border-custom rounded-lg p-5 flex items-start justify-between">
+                      <div>
+                        <h3 className="text-sm font-bold text-foreground">{r.contractor_name}</h3>
+                        <p className="text-[10px] text-muted">{formatDate(r.period_start)} – {formatDate(r.period_end)}</p>
+                      </div>
+                      <p className="text-xs text-muted text-right">No work or bills in this period,<br />so there is nothing to score yet.</p>
+                    </div>
+                  );
+                }
                 return (
                   <div key={r.id} className="bg-card border border-border-custom rounded-lg p-5 rounded-lg border border-border-custom">
                     <div className="flex items-start justify-between">
@@ -210,20 +240,20 @@ export default function LabourPage() {
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
                       <div className="bg-elevated rounded-md p-3 text-center">
-                        <span className="text-[10px] text-muted block">On-Time</span>
-                        <span className="text-sm font-bold text-success">{r.on_time_pct.toFixed(1)}%</span>
+                        <span className="text-[10px] text-muted block" title="Share of this firm's bills in the period that are paid in full or in part">Bills Settled</span>
+                        <span className={`text-sm font-bold ${tone(r.on_time_pct)}`}>{r.on_time_pct.toFixed(1)}%</span>
                       </div>
                       <div className="bg-elevated rounded-md p-3 text-center">
                         <span className="text-[10px] text-muted block">Billing Accuracy</span>
-                        <span className="text-sm font-bold text-info">{r.billing_accuracy_pct.toFixed(1)}%</span>
+                        <span className={`text-sm font-bold ${tone(r.billing_accuracy_pct)}`}>{r.billing_accuracy_pct.toFixed(1)}%</span>
                       </div>
                       <div className="bg-elevated rounded-md p-3 text-center">
                         <span className="text-[10px] text-muted block">Quality</span>
-                        <span className="text-sm font-bold text-secondary">{r.quality_score.toFixed(1)}%</span>
+                        <span className={`text-sm font-bold ${tone(r.quality_score)}`}>{r.quality_score.toFixed(1)}%</span>
                       </div>
                       <div className="bg-elevated rounded-md p-3 text-center">
                         <span className="text-[10px] text-muted block">Disputes</span>
-                        <span className="text-sm font-bold text-warning">{r.disputes_count}</span>
+                        <span className={`text-sm font-bold ${r.disputes_count > 0 ? "text-warning" : "text-foreground"}`}>{r.disputes_count}</span>
                       </div>
                     </div>
                   </div>
@@ -251,7 +281,7 @@ export default function LabourPage() {
                     {bocw.map((r) => (
                       <tr key={r.id} className="border-b border-border-custom hover:bg-elevated transition-all">
                         <td className="px-5 py-3.5 text-foreground font-semibold">{r.contractor_name}</td>
-                        <td className="px-5 py-3.5 text-muted">{r.month_year}</td>
+                        <td className="px-5 py-3.5 text-muted">{fmtMonth(r.month_year)}</td>
                         <td className="px-5 py-3.5 text-right font-sans">{r.workers_count}</td>
                         <td className="px-5 py-3.5 text-right font-sans">₹{r.wages_paid.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
                         <td className="px-5 py-3.5 text-right font-sans">₹{r.contribution_amount.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
@@ -285,11 +315,11 @@ export default function LabourPage() {
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs text-left">
-                  <thead><tr className="border-b border-border-custom text-muted"><th className="px-5 py-3 font-bold">Date</th><th className="px-5 py-3 font-bold">Role</th><th className="px-5 py-3 font-bold text-right">Present</th><th className="px-5 py-3 font-bold text-right">Absent</th><th className="px-5 py-3 font-bold text-right">Hours</th><th className="px-5 py-3 font-bold text-right">OT</th><th className="px-5 py-3 font-bold">Notes</th></tr></thead>
+                  <thead><tr className="border-b border-border-custom text-muted"><th className="px-5 py-3 font-bold">Date</th><th className="px-5 py-3 font-bold">Role</th><th className="px-5 py-3 font-bold text-right">Present</th><th className="px-5 py-3 font-bold text-right">Absent</th><th className="px-5 py-3 font-bold text-right">Man-hours</th><th className="px-5 py-3 font-bold text-right">OT Man-hours</th><th className="px-5 py-3 font-bold">Notes</th></tr></thead>
                   <tbody>
-                    {muster.map((m) => (
+                    {[...muster].sort((a, b) => (b.date || "").localeCompare(a.date || "")).map((m) => (
                       <tr key={m.id} className="border-b border-border-custom hover:bg-elevated transition-all">
-                        <td className="px-5 py-3.5 text-muted">{m.date}</td>
+                        <td className="px-5 py-3.5 text-muted">{formatDate(m.date)}</td>
                         <td className="px-5 py-3.5 text-foreground font-semibold">{m.labor_role}</td>
                         <td className="px-5 py-3.5 text-right font-sans text-success">{m.workers_present}</td>
                         <td className="px-5 py-3.5 text-right font-sans text-danger">{m.workers_absent}</td>
@@ -339,21 +369,21 @@ export default function LabourPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] uppercase font-bold text-muted block mb-1">Present</label>
-                  <input type="number" value={musterPresent} onChange={(e) => setMusterPresent(parseInt(e.target.value) || 0)} className="w-full bg-card border border-border-custom rounded-md px-3 py-2 text-xs text-foreground outline-none" />
+                  <input type="number" min={0} placeholder="From attendance" value={musterPresent} onChange={(e) => setMusterPresent(e.target.value)} className="w-full bg-card border border-border-custom rounded-md px-3 py-2 text-xs text-foreground outline-none" />
                 </div>
                 <div>
                   <label className="text-[10px] uppercase font-bold text-muted block mb-1">Absent</label>
-                  <input type="number" value={musterAbsent} onChange={(e) => setMusterAbsent(parseInt(e.target.value) || 0)} className="w-full bg-card border border-border-custom rounded-md px-3 py-2 text-xs text-foreground outline-none" />
+                  <input type="number" min={0} placeholder="From attendance" value={musterAbsent} onChange={(e) => setMusterAbsent(e.target.value)} className="w-full bg-card border border-border-custom rounded-md px-3 py-2 text-xs text-foreground outline-none" />
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] uppercase font-bold text-muted block mb-1">Hours Worked</label>
-                  <input type="number" step="0.5" value={musterHours} onChange={(e) => setMusterHours(parseFloat(e.target.value) || 0)} className="w-full bg-card border border-border-custom rounded-md px-3 py-2 text-xs text-foreground outline-none" />
+                  <label className="text-[10px] uppercase font-bold text-muted block mb-1">Total Man-hours</label>
+                  <input type="number" step="0.5" min={0} placeholder="From attendance" value={musterHours} onChange={(e) => setMusterHours(e.target.value)} className="w-full bg-card border border-border-custom rounded-md px-3 py-2 text-xs text-foreground outline-none" />
                 </div>
                 <div>
-                  <label className="text-[10px] uppercase font-bold text-muted block mb-1">Overtime</label>
-                  <input type="number" step="0.5" value={musterOT} onChange={(e) => setMusterOT(parseFloat(e.target.value) || 0)} className="w-full bg-card border border-border-custom rounded-md px-3 py-2 text-xs text-foreground outline-none" />
+                  <label className="text-[10px] uppercase font-bold text-muted block mb-1">Overtime Man-hours</label>
+                  <input type="number" step="0.5" min={0} placeholder="From attendance" value={musterOT} onChange={(e) => setMusterOT(e.target.value)} className="w-full bg-card border border-border-custom rounded-md px-3 py-2 text-xs text-foreground outline-none" />
                 </div>
               </div>
               <div>
