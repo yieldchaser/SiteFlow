@@ -409,7 +409,7 @@ export function startHereCategory(companyId: string): HelpCategory {
             <Steps>
               <li>Site raises a request with + Material Indent. It is approved from the Indent tab or the Project Hub.</li>
               <li>
-                To compare prices first, use Compare RFQs. Then press + Purchase Order, choose the vendor and
+                To compare prices first, use Compare Quotes. Then press + Purchase Order, choose the vendor and
                 items, and approve it.
               </li>
               <li>

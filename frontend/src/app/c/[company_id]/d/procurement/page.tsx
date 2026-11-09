@@ -897,11 +897,11 @@ export default function ProcurementPage() {
         )}
         <PageHeader
           title="Site Material Procurement"
-          subtitle="SiteFlow purchase orders, indents and inventory workflows"
+          subtitle="Material requests, purchase orders, deliveries and site stock"
         >
           <div className="flex items-center gap-2">
             <button onClick={() => { setSelectedRFQItem(""); setShowRFQDrawer(true); }} className="px-3.5 py-1.5 border border-primary/20 hover:bg-primary/10 rounded-md text-xs font-bold text-primary transition-all inline-flex items-center gap-1.5 cursor-pointer">
-              <Icon name="bolt" className="w-3.5 h-3.5" />Compare RFQs
+              <Icon name="bolt" className="w-3.5 h-3.5" />Compare Quotes
             </button>
             <button onClick={() => setShowIndentModal(true)} className="px-3.5 py-1.5 border border-border-custom hover:bg-elevated rounded-md text-xs font-bold text-foreground transition-all cursor-pointer">
               + Material Indent
@@ -1802,8 +1802,8 @@ export default function ProcurementPage() {
           <div className="bg-background border-l border-border-custom w-full max-w-xl h-full shadow-2xl flex flex-col overflow-hidden text-xs">
             <div className="px-6 py-4 border-b border-border-custom flex items-center justify-between bg-background">
               <div>
-                <span className="text-[9px] uppercase tracking-wider font-extrabold text-primary">RFQ Analysis Center</span>
-                <h2 className="text-base font-extrabold text-foreground mt-1">Vendor Quote Comparisons</h2>
+                <span className="text-[9px] uppercase tracking-wider font-extrabold text-primary">Supplier Quotes</span>
+                <h2 className="text-base font-extrabold text-foreground mt-1">Compare Supplier Prices</h2>
               </div>
               <button onClick={() => setShowRFQDrawer(false)} className="text-muted hover:text-foreground cursor-pointer inline-flex items-center gap-1"><Icon name="close" className="w-4 h-4" /> Close</button>
             </div>
@@ -1811,9 +1811,9 @@ export default function ProcurementPage() {
             <div className="flex-1 p-6 overflow-y-auto space-y-6">
               <EmptyState
                 title="No vendor quotes yet"
-                description="Quote comparisons will appear here once supplier bids are received for RFQs."
+                description="Once suppliers send prices for a quote request, you can compare them here side by side."
                 action={{
-                  label: "Go to RFQ Management",
+                  label: "Go to Quote Requests",
                   href: `/c/${companyId}/d/procurement/rfq`,
                 }}
               />
