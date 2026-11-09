@@ -766,7 +766,7 @@ export default function ProductionPage() {
                   <input type="text" value={productName} onChange={(e) => setProductName(e.target.value)} required placeholder="e.g. Concrete M25" className="w-full bg-elevated border border-border-custom rounded px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary" />
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="text-[10px] uppercase tracking-[0.2em] text-muted block mb-1">Mix Type</label>
                   <select value={mixType} onChange={(e) => setMixType(e.target.value)} className="w-full bg-elevated border border-border-custom rounded px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary">
@@ -780,20 +780,33 @@ export default function ProductionPage() {
                   <UnitInput type="text" autoComplete="off" value={recipeUnit} onChange={(e) => setRecipeUnit(e.target.value)} required className="w-full bg-elevated border border-border-custom rounded px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary" />
                 </div>
                 <div>
+                  <label className="text-[10px] uppercase tracking-[0.2em] text-muted block mb-1">Quantities Are For</label>
+                  <div className="flex items-center gap-2">
+                    <input type="number" min="0.0001" step="any" value={targetOutputQty} onChange={(e) => setTargetOutputQty(e.target.value)} required className="w-full bg-elevated border border-border-custom rounded px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary" />
+                    <span className="text-xs text-muted whitespace-nowrap">{recipeUnit}</span>
+                  </div>
+                </div>
+                <div>
                   <label className="text-[10px] uppercase tracking-[0.2em] text-muted block mb-1">Wastage %</label>
                   <input type="number" step="0.1" value={wastagePct} onChange={(e) => setWastagePct(e.target.value)} required className="w-full bg-elevated border border-border-custom rounded px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary" />
                 </div>
               </div>
               <div>
-                <label className="text-[10px] uppercase tracking-[0.2em] text-muted block mb-1 block mb-1">Materials (Planned Ingredients)</label>
+                <label className="text-[10px] uppercase tracking-[0.2em] text-muted block mb-1">Materials for {targetOutputQty || "1"} {recipeUnit}</label>
+                <p className="mb-2 text-[11px] text-muted">Pick names from the project store so a batch takes stock from the right line.</p>
+                <datalist id="production-stock-names">
+                  {(data?.inventory_alerts || []).map((ia) => <option key={ia.id} value={ia.material_name} />)}
+                </datalist>
                 <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
                   {recipeMaterials.map((mat, idx) => (
                     <div key={idx} className="flex gap-2 items-center">
                       <input type="text" value={mat.material_name} onChange={(e) => {
                         const newMats = [...recipeMaterials];
                         newMats[idx].material_name = e.target.value;
+                        const stock = (data?.inventory_alerts || []).find((ia) => ia.material_name === e.target.value);
+                        if (stock?.unit) newMats[idx].unit = stock.unit;
                         setRecipeMaterials(newMats);
-                      }} placeholder="Material name" required className="flex-1 bg-elevated border border-border-custom rounded px-2.5 py-1.5 text-xs text-foreground" />
+                      }} list="production-stock-names" placeholder="Material name" required className="flex-1 bg-elevated border border-border-custom rounded px-2.5 py-1.5 text-xs text-foreground" />
                       <input type="number" value={mat.planned_qty} onChange={(e) => {
                         const newMats = [...recipeMaterials];
                         newMats[idx].planned_qty = e.target.value;
