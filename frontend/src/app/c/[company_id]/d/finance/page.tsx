@@ -304,6 +304,8 @@ export default function FinancePage() {
 
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState("");
+  // The dashboard follows the selected project; "All projects" widens it.
+  const [txnAllProjects, setTxnAllProjects] = useState(false);
 
   // Party sub-tab states
   const [partySearchQuery, setPartySearchQuery] = useState("");
@@ -1363,8 +1365,8 @@ export default function FinancePage() {
       {/* ── Main content area ── */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <PageHeader
-          title={tab === "ledger" ? "Dashboard" : tab === "general_ledger" ? "Project General Ledger" : tab === "party" ? "Party-wise Ledgers" : tab === "payment_requests" ? "Payment Requests Ledger" : tab === "accounts" ? "Company Cash & Bank Accounts" : tab === "cashbook" ? "Cash Book (Bank Ledger)" : tab === "pl" ? "Project P&L" : tab === "tally" ? "Tally Sync Gateway" : "Cost Variance Report"}
-          subtitle="Real-time sequential approval tracking & running balance ledger"
+          title={tab === "ledger" ? "Finance" : tab === "general_ledger" ? "Project General Ledger" : tab === "party" ? "Party-wise Ledgers" : tab === "payment_requests" ? "Payment Requests Ledger" : tab === "accounts" ? "Company Cash & Bank Accounts" : tab === "cashbook" ? "Cash Book (Bank Ledger)" : tab === "pl" ? "Project P&L" : tab === "tally" ? "Tally Sync Gateway" : "Cost Variance Report"}
+          subtitle="Bills, payments and money in the bank"
         >
           <div className="flex items-center gap-4 relative">
             {/* Unbilled Materials Badge */}
@@ -1452,7 +1454,31 @@ export default function FinancePage() {
           {/* ── TRANSACTION LEDGER TAB ── */}
           {/* ── TRANSACTION SUB-TAB (COMPANY-WIDE) ── */}
           {tab === "ledger" && (() => {
-            const txns = txnSummary.transactions || [];
+            const allTxns = txnSummary.transactions || [];
+            const scoped = !!projectId && !txnAllProjects;
+            const txns = scoped ? allTxns.filter((t: any) => String(t.project_id || "") === String(projectId)) : allTxns;
+            const scopeName = (allTxns.find((t: any) => String(t.project_id || "") === String(projectId))?.project_name) || "This project";
+            // Totals from the same rows the list shows, so a project view
+            // never pairs one project's list with company-wide totals.
+            const REVENUE_TYPES = ["Sales Invoice", "Material Sales"];
+            const EXPENSE_TYPES = ["Material Purchase", "Subcon Bill", "Other Expense", "Equipment Expense"];
+            const bills = txns.filter((t: any) => t.kind === "bill");
+            const sum = (rows: any[], key: string) => rows.reduce((acc: number, t: any) => acc + Number(t[key] || 0), 0);
+            const revenueRows = bills.filter((t: any) => REVENUE_TYPES.includes(t.type));
+            const expenseRows = bills.filter((t: any) => EXPENSE_TYPES.includes(t.type));
+            const view = {
+              total_invoice: sum(revenueRows, "amount"),
+              unpaid_invoice: sum(revenueRows, "balance_due"),
+              total_expense: sum(expenseRows, "amount"),
+              unpaid_expense: sum(expenseRows, "balance_due"),
+              in_total: sum(txns.filter((t: any) => t.type === "Payment In"), "amount"),
+              out_total: sum(txns.filter((t: any) => t.type === "Payment Out"), "amount"),
+            };
+            const today = todayLocalISO();
+            const money = (v: number) => {
+              const n = Number(v || 0);
+              return `₹${n.toLocaleString("en-IN", Number.isInteger(n) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            };
             const filtered = txns.filter((t: any) => {
               const q = searchQuery.toLowerCase();
               const matchQ = !q || (t.party || "").toLowerCase().includes(q) || (t.details || "").toLowerCase().includes(q) || (t.ref || "").toLowerCase().includes(q);
@@ -1462,15 +1488,16 @@ export default function FinancePage() {
               return matchQ && matchD && matchM && matchP;
             });
             const statusClass = (s: string) => {
-              if (s === "Paid" || s === "Approved") return "bg-success/10 text-success border border-success/20";
-              if (s === "Partially Paid") return "bg-warning/10 text-warning border border-warning/20";
+              const k = String(s || "").toLowerCase();
+              if (k === "paid" || k === "approved") return "bg-success/10 text-success border border-success/20";
+              if (k === "partially paid" || k === "pending") return "bg-warning/10 text-warning border border-warning/20";
               return "bg-danger/10 text-danger border border-danger/20";
             };
             const sumCell = (v: number) =>
               txnLoad === "loading" ? (
                 <Skeleton className="w-16 h-4 inline-block align-middle" />
               ) : (
-                `₹${(v || 0).toLocaleString("en-IN")}`
+                money(v)
               );
             return (
             <div className="space-y-4">
@@ -1484,25 +1511,32 @@ export default function FinancePage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-card border border-border-custom rounded-lg p-4">
                   <div className="text-[10px] font-bold text-muted uppercase tracking-wider">Total Invoice</div>
-                  <div className="text-xl font-extrabold text-foreground mt-1">{sumCell(txnSummary.total_invoice)}</div>
-                  <div className="text-[10px] text-danger mt-1">Unpaid Invoice: ₹{(txnSummary.unpaid_invoice || 0).toLocaleString("en-IN")}</div>
+                  <div className="text-xl font-extrabold text-foreground mt-1">{sumCell(view.total_invoice)}</div>
+                  <div className="text-[10px] text-danger mt-1">Still to collect: {money(view.unpaid_invoice)}</div>
                 </div>
                 <div className="bg-card border border-border-custom rounded-lg p-4">
                   <div className="text-[10px] font-bold text-muted uppercase tracking-wider">Total Expense</div>
-                  <div className="text-xl font-extrabold text-foreground mt-1">{sumCell(txnSummary.total_expense)}</div>
-                  <div className="text-[10px] text-danger mt-1">Unpaid Expense: ₹{(txnSummary.unpaid_expense || 0).toLocaleString("en-IN")}</div>
+                  <div className="text-xl font-extrabold text-foreground mt-1">{sumCell(view.total_expense)}</div>
+                  <div className="text-[10px] text-danger mt-1">Still to pay: {money(view.unpaid_expense)}</div>
                 </div>
                 <div className="bg-card border border-border-custom rounded-lg p-4">
                   <div className="text-[10px] font-bold text-muted uppercase tracking-wider flex items-center gap-1">
-                    Company Balance <span title="Sum of Cash + all Bank Account balances" className="cursor-help">ⓘ</span>
+                    Company Balance
                   </div>
                   <div className="text-xl font-extrabold text-foreground mt-1">{sumCell(txnSummary.company_balance)}</div>
-                  <div className="text-[10px] text-muted mt-1">In: {sumCell(txnSummary.in_total)} | Out: {sumCell(txnSummary.out_total)}</div>
+                  <div className="text-[10px] text-muted mt-1">Cash in hand plus every bank account, opening balances included</div>
+                  <div className="text-[10px] text-muted">{scoped ? `${scopeName}: ` : ""}received {money(view.in_total)} · paid out {money(view.out_total)}</div>
                 </div>
               </div>
 
               {/* Toolbar */}
               <div className="flex flex-wrap items-center gap-2">
+                {projectId && (
+                  <div className="flex rounded border border-border-custom overflow-hidden text-[11px] font-medium">
+                    <button onClick={() => setTxnAllProjects(false)} className={`px-3 py-1 cursor-pointer ${!txnAllProjects ? "bg-primary text-white" : "bg-card text-foreground hover:bg-elevated"}`}>{scopeName}</button>
+                    <button onClick={() => setTxnAllProjects(true)} className={`px-3 py-1 cursor-pointer ${txnAllProjects ? "bg-primary text-white" : "bg-card text-foreground hover:bg-elevated"}`}>All projects</button>
+                  </div>
+                )}
                 <input type="date" value={txnDateFilter} onChange={(e) => setTxnDateFilter(e.target.value)} className="py-1 px-2 border border-border-custom bg-card hover:bg-elevated rounded text-[11px] text-foreground focus:outline-none" />
                 <button onClick={() => setShowUnbilledOnly(!showUnbilledOnly)} className={`py-1 px-3 border border-border-custom hover:bg-elevated rounded text-[11px] font-medium transition-all flex items-center gap-1 cursor-pointer ${showUnbilledOnly ? "text-primary border-primary/60" : "text-foreground"}`}>
                   <Icon name="trolley" className="w-3.5 h-3.5" /> Unpaid Material Bills <span className="bg-primary/20 text-primary text-[9px] font-bold px-1.5 py-0.5 rounded-full">{unbilledCount}</span>
@@ -1534,7 +1568,7 @@ export default function FinancePage() {
                   <tbody className="divide-y divide-border-custom/40">
                     {filtered.length === 0 && (
                       <tr><td colSpan={4} className="p-6 text-center text-muted">
-                        {txnLoad === "loading" ? "Loading transactions..." : txnLoad === "error" ? "Could not load transactions." : "No Data Transaction"}
+                        {txnLoad === "loading" ? "Loading transactions..." : txnLoad === "error" ? "Could not load transactions." : (txnAllProjects || !projectId ? "No transactions yet." : "No transactions on this project yet.")}
                       </td></tr>
                     )}
                     {filtered.map((t: any, i: number) => (
@@ -1549,9 +1583,13 @@ export default function FinancePage() {
                         <td className="p-3 text-foreground">
                           {t.details}
                           {t.project_id ? <span className="text-[10px] text-muted block">Project: {t.project_name || String(t.project_id).slice(0, 8)}</span> : null}
-                          {t.due_date ? <span className="text-[10px] text-warning block font-medium">Due: {formatDate(t.due_date)}</span> : null}
+                          {t.due_date && Number(t.balance_due || 0) > 0 ? (
+                            t.due_date < today
+                              ? <span className="text-[10px] text-danger block font-semibold">Overdue since {formatDate(t.due_date)}</span>
+                              : <span className="text-[10px] text-warning block font-medium">Due {formatDate(t.due_date)}</span>
+                          ) : null}
                         </td>
-                        <td className="p-3 text-right font-bold text-foreground">₹{(t.amount || 0).toLocaleString("en-IN")}</td>
+                        <td className="p-3 text-right font-bold text-foreground">{money(t.amount)}</td>
                         <td className="p-3">
                           <div className="flex items-center gap-2">
                             <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${statusClass(t.status)}`}>{formatLabel(t.status)}</span>
