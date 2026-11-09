@@ -51,6 +51,10 @@ interface DPRSummary {
   // answer from the same source as the DPR feed rendered below them.
   material_received_today?: number;
   material_used_today?: number;
+  // How many different materials moved today (quantities of different units
+  // cannot be added up).
+  materials_received_today?: number;
+  materials_used_today?: number;
 }
 
 interface DPRLog {
@@ -61,6 +65,7 @@ interface DPRLog {
   executed_qty: number;
   workers_deployed: number;
   task_id?: string | null;
+  task_unit?: string | null;
   materials_consumed?: { material_name: string; quantity: number; unit: string }[];
   notes: string;
   issues: string;
@@ -95,8 +100,10 @@ const PHOTO_SLOTS: { label: string; icon: IconName; color: string }[] = [
 export default function DPRPage() {
   const params = useParams();
   const companyId = params?.company_id as string;
-  const { activeProjectId } = useProject();
+  const { activeProjectId, projects } = useProject();
   const projectId = activeProjectId;
+  const activeProject = projects.find((p) => p.id === projectId);
+  const projectName = activeProject?.project_name || activeProject?.name || "";
   const { quantityDecimalPlaces } = useCompanySettings();
 
   const fmtQty = (val: number | string | null | undefined) => {
@@ -227,6 +234,30 @@ export default function DPRPage() {
     }
   };
 
+  // Every report of the most recent day: a site files one per activity.
+  const latestDayLogs = logs.length > 0 ? logs.filter((l) => l.dpr_date.slice(0, 10) === logs[0].dpr_date.slice(0, 10)) : [];
+  const latestDayWorkers = latestDayLogs.reduce((s, l) => s + (Number(l.workers_deployed) || 0), 0);
+
+  // A wrong report is deleted and filed again; the material it used goes
+  // back into stock and the task's progress is recalculated.
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const deleteDPR = async (log: DPRLog) => {
+    if (!confirm(`Delete the report for ${formatDate(log.dpr_date)}? Material it used goes back into stock.`)) return;
+    setDeletingId(log.id);
+    try {
+      const res = await fetch(`${getApiHost()}/apis/v3/dpr/${log.id}`, { method: "DELETE", headers: authHeaders() });
+      if (!res.ok) throw new Error(await readErrorDetail(res));
+      fetchDPRLogs();
+      fetchDPRSummary();
+      fetchTasks();
+      fetchMaterialsAndInventory();
+    } catch (e) {
+      alert(`Could not delete the report: ${e instanceof Error ? e.message : "server unreachable"}`);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   useEffect(() => {
     if (projectId) {
       setLogsLoaded(false);
@@ -298,7 +329,7 @@ export default function DPRPage() {
       <main className="flex-1 flex flex-col overflow-hidden">
         <PageHeader
           title="Project Daily Progress Report (DPR)"
-          subtitle="SiteFlow daily feed"
+          subtitle={projectName ? `Daily site reports for ${projectName}` : "Daily site reports"}
         >
           <button
             onClick={() => setIsCreateDPROpen(true)}
@@ -315,10 +346,10 @@ export default function DPRPage() {
           {/* Dashboard Quick Stats Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { label: "Workers on Latest DPR", value: logs.length > 0 ? fmtQty(logs[0].workers_deployed) : "—", desc: logs.length > 0 ? `As reported on ${formatDate(logs[0].dpr_date)}` : "No DPR yet", color: "border-primary/20 bg-primary/5 text-primary" },
+              { label: "Workers on Latest Day", value: logs.length > 0 ? fmtQty(latestDayWorkers) : "—", desc: logs.length > 0 ? `Across ${latestDayLogs.length} report${latestDayLogs.length === 1 ? "" : "s"} on ${formatDate(logs[0].dpr_date)}` : "No DPR yet", color: "border-primary/20 bg-primary/5 text-primary" },
               { label: "DPRs Logged", value: summary.activities_tracked || 0, desc: `${summary.issues_flagged || 0} with an issue flagged`, color: "border-secondary/20 bg-secondary/5 text-secondary" },
-              { label: "Material Received Today", value: (summary.material_received_today || 0) > 0 ? `${fmtQty(summary.material_received_today)} Units` : "Nothing received today", desc: "Material inward logged", color: "border-warning/20 bg-warning/5 text-warning" },
-              { label: "Material Used Today", value: (summary.material_used_today || 0) > 0 ? `${fmtQty(summary.material_used_today)} Units` : "No consumption logged", desc: "On-site consumption", color: "border-primary/20 bg-primary/5 text-primary" }
+              { label: "Material Received Today", value: (summary.materials_received_today || 0) > 0 ? `${summary.materials_received_today} material${summary.materials_received_today === 1 ? "" : "s"}` : "Nothing received today", desc: "Received at this site today", color: "border-warning/20 bg-warning/5 text-warning" },
+              { label: "Material Used Today", value: (summary.materials_used_today || 0) > 0 ? `${summary.materials_used_today} material${summary.materials_used_today === 1 ? "" : "s"}` : "No consumption logged", desc: "Used on site today, from today's DPRs", color: "border-primary/20 bg-primary/5 text-primary" }
             ].map((card, idx) => (
               <div key={idx} className={`p-4 rounded-lg border ${card.color} flex flex-col justify-between h-28`}>
                 <span className="text-[10px] uppercase font-bold tracking-wider opacity-70">{card.label}</span>
@@ -354,16 +385,27 @@ export default function DPRPage() {
               ) : (
                 logs.map((log) => (
                   <div key={log.id} className="p-4 rounded-md border border-border-custom bg-input space-y-2 text-xs">
-                    <div className="flex justify-between items-center text-[10px] text-muted">
+                    <div className="flex justify-between items-center gap-2 text-[10px] text-muted">
                       <span className="font-bold text-foreground">Reported By: {log.reported_by}</span>
-                      <span>Weather: <strong className="text-muted">{log.weather}</strong> · {formatDate(log.dpr_date)}</span>
+                      <span className="flex items-center gap-2">
+                        <span>Weather: <strong className="text-muted">{log.weather}</strong> · {formatDate(log.dpr_date)}</span>
+                        <button
+                          type="button"
+                          onClick={() => deleteDPR(log)}
+                          disabled={deletingId === log.id}
+                          title="Delete this report"
+                          className="p-1 rounded text-muted hover:text-danger disabled:opacity-40 cursor-pointer"
+                        >
+                          <Icon name="trash" className="w-3.5 h-3.5" />
+                        </button>
+                      </span>
                     </div>
                     <div className="border-l-2 border-border-custom pl-3 my-2 space-y-1">
                       {log.task_id && tasks.find((t) => t.id === log.task_id) && (
                         <p className="text-foreground text-xs font-bold">{tasks.find((t) => t.id === log.task_id)?.name}</p>
                       )}
                       <p className="text-foreground text-xs font-semibold">
-                        Qty Executed: {fmtQty(log.executed_qty)} · Workers: {fmtQty(log.workers_deployed)}
+                        Qty Executed: {fmtQty(log.executed_qty)}{log.task_unit ? ` ${log.task_unit}` : ""} · Workers: {fmtQty(log.workers_deployed)}
                       </p>
                       {log.materials_consumed && log.materials_consumed.length > 0 && (
                         <div className="flex flex-wrap gap-1.5 pt-1">

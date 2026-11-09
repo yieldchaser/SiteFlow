@@ -614,7 +614,7 @@ def test_pin_R2_225_timesheet_save_surfaces_error():
 
 def test_pin_R2_261_dpr_duplicate_date_409():
     src = _read("app/routers/dpr.py")
-    assert "A Daily Progress Report already exists for this project on this date" in src, "R2-261 DPR duplicate-date rejection message regressed"
+    assert "A Daily Progress Report already exists for this task on this date" in src, "R2-261 DPR duplicate-date rejection message regressed"
     assert "status_code=409" in src, "R2-261 DPR duplicate-date conflict status regressed"
 
 

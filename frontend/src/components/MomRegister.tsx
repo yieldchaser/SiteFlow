@@ -299,7 +299,7 @@ export default function MomRegister({
               <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between mb-3">
                 <div>
                   <h3 className="text-xs font-bold text-muted uppercase tracking-wider">MOM Register</h3>
-                  <p className="text-[10px] text-muted mt-1">Find minutes by meeting date, attendee, project, type or status.</p>
+                  <p className="text-[10px] text-muted mt-1">{fixedProjectId ? "Find minutes by meeting date, attendee, type or status." : "Find minutes by meeting date, attendee, project, type or status."}</p>
                 </div>
                 <div className="text-[10px] text-muted font-medium">{moms.length} meeting{moms.length === 1 ? "" : "s"} shown</div>
               </div>

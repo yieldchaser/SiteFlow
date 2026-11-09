@@ -80,6 +80,9 @@ class DPRResponse(BaseModel):
     issues: Optional[str] = None
     status: str
     created_at: datetime
+    # Unit of the BOQ line behind the task, so "Qty executed: 46" can read
+    # "46 cum". None when the task is not tied to a BOQ line.
+    task_unit: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -98,14 +101,22 @@ def create_dpr(req: DPRCreateRequest, db: Session = Depends(get_db), current_use
     # Workflow Controls: Entry Controls (creation date window)
     enforce_entry_creation_window(db, project.company_id, req.dpr_date)
 
-    existing = db.query(DailyProgressReport).filter(
+    # R2-261: one report per activity per day, so the same day's work is not
+    # counted twice. Each report carries one task, so the check is per task:
+    # a site pouring a slab and laying blockwork on the same day files one
+    # report for each. Keying it on the project alone left the second
+    # activity of any day impossible to record.
+    same_day = db.query(DailyProgressReport).filter(
         DailyProgressReport.project_id == project_uuid,
         func.date(DailyProgressReport.dpr_date) == req.dpr_date.date(),
-    ).first()
-    if existing:
+    )
+    same_day = same_day.filter(
+        DailyProgressReport.task_id == req.task_id if req.task_id else DailyProgressReport.task_id.is_(None)
+    )
+    if same_day.first():
         raise HTTPException(
             status_code=409,
-            detail="A Daily Progress Report already exists for this project on this date",
+            detail="A Daily Progress Report already exists for this task on this date. Delete that report to file it again.",
         )
 
     task_uuid = None
@@ -255,6 +266,16 @@ def get_dprs(project_id: uuid.UUID, db: Session = Depends(get_db), _: None = Dep
         DailyProgressReport.project_id == project_uuid
     ).order_by(DailyProgressReport.dpr_date.desc()).all()
     author_map = resolve_dpr_authors(db, dprs)
+    task_ids = {d.task_id for d in dprs if d.task_id}
+    unit_by_task = {}
+    if task_ids:
+        rows = (
+            db.query(Task.id, BOQItem.unit)
+            .join(BOQItem, BOQItem.id == Task.boq_item_id)
+            .filter(Task.id.in_(task_ids))
+            .all()
+        )
+        unit_by_task = {tid: unit for tid, unit in rows}
     result = []
     for d in dprs:
         result.append(
@@ -262,6 +283,7 @@ def get_dprs(project_id: uuid.UUID, db: Session = Depends(get_db), _: None = Dep
                 id=d.id,
                 project_id=d.project_id,
                 task_id=d.task_id,
+                task_unit=unit_by_task.get(d.task_id),
                 reported_by=author_map.get(d.reported_by, d.reported_by or "Unknown"),
                 dpr_date=d.dpr_date,
                 weather=d.weather,
@@ -318,7 +340,31 @@ def get_dpr_summary(project_id: uuid.UUID, db: Session = Depends(get_db), _: Non
         .scalar() or 0.0
     )
 
+    # The quantity sums above add bags to tonnes; the tiles show how many
+    # different materials moved instead, which means something.
+    used_materials_today = (
+        db.query(func.count(func.distinct(MaterialTransaction.material_name)))
+        .outerjoin(DailyProgressReport, MaterialTransaction.source_ref_id == DailyProgressReport.id)
+        .filter(
+            MaterialTransaction.project_id == project_uuid,
+            MaterialTransaction.type == "used",
+            func.date(func.coalesce(DailyProgressReport.dpr_date, MaterialTransaction.created_at)) == today_date,
+        )
+        .scalar() or 0
+    )
+    received_materials_today = (
+        db.query(func.count(func.distinct(MaterialTransaction.material_name)))
+        .filter(
+            MaterialTransaction.project_id == project_uuid,
+            MaterialTransaction.type == "received",
+            func.date(MaterialTransaction.created_at) == today_date,
+        )
+        .scalar() or 0
+    )
+
     return {
+        "materials_received_today": int(received_materials_today),
+        "materials_used_today": int(used_materials_today),
         "activities_tracked": activities_count,
         "total_workers_deployed": total_workers,
         "avg_completion": round(avg_completion, 1),
