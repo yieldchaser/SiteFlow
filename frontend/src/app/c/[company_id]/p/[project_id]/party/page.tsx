@@ -18,8 +18,19 @@ type Party = {
   balance: number;
   advance_paid: number;
   to_pay: number;
+  to_receive?: number;
+  advance_received?: number;
   status?: string;
 };
+
+// The server splits each party's position four ways; show each part that is
+// not zero with what it means, instead of one signed number.
+const POSITION_PARTS: { key: "to_pay" | "to_receive" | "advance_paid" | "advance_received"; label: string; cls: string }[] = [
+  { key: "to_pay", label: "To pay", cls: "text-danger" },
+  { key: "to_receive", label: "To receive", cls: "text-warning" },
+  { key: "advance_paid", label: "Advance paid", cls: "text-success" },
+  { key: "advance_received", label: "Advance received", cls: "text-foreground" },
+];
 
 type CompanyParty = {
   id: string;
@@ -137,7 +148,7 @@ export default function PartyPage() {
             onClick={() => setAddOpen(true)}
             className="flex items-center gap-1.5 px-4 py-2 bg-primary hover:bg-primary/95 text-white rounded-md text-xs font-semibold transition-all cursor-pointer"
           >
-            + Add Party
+            + Add Existing Party
           </button>
         }
       />
@@ -217,7 +228,7 @@ export default function PartyPage() {
                   <EmptyState
                     title="No parties linked to this project"
                     description="Link company parties or create a new party for this project."
-                    action={{ label: "+ Add Party", onClick: () => setAddOpen(true) }}
+                    action={{ label: "+ Add Existing Party", onClick: () => setAddOpen(true) }}
                   />
                 </td>
               </tr>
@@ -233,7 +244,18 @@ export default function PartyPage() {
                   </div>
                 </td>
                 <td className="px-4 py-3 text-muted">{p.party_type || "—"}</td>
-                <td className="px-4 py-3 text-right text-foreground">{fmtINR(p.balance, currencyDecimalPlaces)}</td>
+                <td className="px-4 py-3 text-right">
+                  {POSITION_PARTS.filter((part) => Math.abs(Number(p[part.key] || 0)) >= 0.005).length === 0 ? (
+                    <span className="text-muted">Settled</span>
+                  ) : (
+                    POSITION_PARTS.filter((part) => Math.abs(Number(p[part.key] || 0)) >= 0.005).map((part) => (
+                      <div key={part.key}>
+                        <span className={`font-semibold ${part.cls}`}>{fmtINR(Number(p[part.key] || 0), currencyDecimalPlaces)}</span>
+                        <span className="ml-1.5 text-[10px] text-muted">{part.label}</span>
+                      </div>
+                    ))
+                  )}
+                </td>
                 <td className="px-4 py-3">
                   <button onClick={() => toggleStatus(p)} className="cursor-pointer">
                     <Badge tone={(p.status || "—") === "Active" ? "success" : "danger"}>{p.status || "—"}</Badge>
