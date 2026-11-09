@@ -428,3 +428,42 @@ def test_pf_ecr_files_the_pf_the_payslip_deducted(client, db, make_tenant, auth_
     # Pension stays on the statutory Rs 15,000: 8.33% = 1,249.50, filed as 1,250.
     assert line["eps_contribution"] == 1250.0
     assert line["epf_contribution"] == 1150.0
+
+
+def test_26q_takes_pan_from_gstin_and_section_from_bill_type(client, db, make_tenant, auth_headers):
+    """Every live 26Q row read NOPANAVAIL although each vendor had a GSTIN,
+    which carries the PAN, and cement bought at 0.1% and a crane hired at 2%
+    were both filed under 194C. Buying goods is 194Q and hiring machinery is
+    194I(a); contract work stays 194C."""
+    comp, user, hdr = _hdr(auth_headers, make_tenant, db, "26QPAN")
+    project = models.Project(id=uuid.uuid4(), company_id=comp.id, name="P26Q",
+                             code=f"PRJ-26Q-{_SUFFIX}", status="Ongoing")
+    db.add(project)
+    teams = {}
+    for key, gstin in (("cement", "27AACCU1234F1ZQ"), ("crane", "27ABCPS5678K1Z2"), ("labour", "27AAFFG9012M1ZK")):
+        lp = models.LibraryParty(id=uuid.uuid4(), company_id=comp.id, name=f"{key} {_SUFFIX}", tax_no=gstin)
+        db.add(lp)
+        db.flush()
+        t = models.CompanyTeam(id=uuid.uuid4(), company_id=comp.id, library_party_id=lp.id)
+        db.add(t)
+        teams[key] = t
+    db.flush()
+    for key, inv_type, pct in (("cement", "purchase", 0.1), ("crane", "equipment", 2.0), ("labour", "subcon", 2.0)):
+        bill = models.Bill(
+            id=uuid.uuid4(), company_id=comp.id, project_id=project.id,
+            party_company_user_id=teams[key].id, invoice_number=f"{key}-{_SUFFIX}",
+            invoice_date=datetime(2026, 8, 10), invoice_type=inv_type,
+            status="Unpaid", subtotal=100000, gst_amount=0, total_payable=100000)
+        db.add_all([bill, models.TransactionDeduction(
+            id=uuid.uuid4(), bill_id=bill.id, deduction_type="TDS",
+            amount=100000 * pct / 100, percentage=pct, notes=None)])
+    db.commit()
+
+    r = client.get(f"/apis/v3/statutory/{comp.id}/tds-26q?quarter=Q2&year=2026", headers=hdr)
+    assert r.status_code == 200, r.text
+    rows = {row["invoice_number"].split("-")[0]: row for row in r.json()["deductee_rows"]}
+    assert rows["cement"]["pan"] == "AACCU1234F", rows
+    assert rows["crane"]["pan"] == "ABCPS5678K", rows
+    assert rows["cement"]["tds_section"] == "194Q", rows
+    assert rows["crane"]["tds_section"] == "194I(a)", rows
+    assert rows["labour"]["tds_section"] == "194C", rows

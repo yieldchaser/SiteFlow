@@ -256,14 +256,25 @@ def estimate_penalty(company_id: uuid.UUID, report_type: str = Query(...), retur
 # These were missing — the spec says /gstr1, /pf-ecr, /tds-26q but only /{company_id} existed.
 
 
-_TDS_SECTION_RE = re.compile(r"19\d[A-Z]+")
+_TDS_SECTION_RE = re.compile(r"19\d[A-Z]+(?:\([ab]\))?")
+# GSTIN = 2-digit state code + PAN + entity no. + Z + check digit.
+_GSTIN_RE = re.compile(r"^\d{2}([A-Z]{5}\d{4}[A-Z])[1-9A-Z]Z[0-9A-Z]$")
 
 
-def _parse_tds_section(notes: str) -> str:
-    """Pull the TDS section (e.g. 194C, 194J) recorded in deduction notes;
-    contractor payments default to 194C when none was captured."""
+def _pan_from_gstin(gstin) -> Optional[str]:
+    """A GSTIN carries the holder's PAN in characters 3 to 12."""
+    m = _GSTIN_RE.match((gstin or "").strip().upper())
+    return m.group(1) if m else None
+
+
+def _parse_tds_section(notes: str, invoice_type: Optional[str] = None) -> str:
+    """Pull the TDS section (e.g. 194C, 194J) recorded in deduction notes.
+    Without one, the bill type decides: buying goods is 194Q, hiring plant
+    and machinery is 194I(a), and contract work is 194C."""
     match = _TDS_SECTION_RE.search(notes or "")
-    return match.group(0) if match else "194C"
+    if match:
+        return match.group(0)
+    return {"purchase": "194Q", "equipment": "194I(a)"}.get((invoice_type or "").lower(), "194C")
 
 
 def _party_tax_identity(db: Session, party_team_id) -> tuple:
@@ -494,14 +505,15 @@ def export_tds_26q(
         amount = float(ded.amount or 0)
         pct = float(ded.percentage or 0)
         gross = round(amount / (pct / 100), 2) if pct > 0 else float(bill.subtotal or 0)
-        party_name, _gstin, party_pan = _party_tax_identity(db, bill.party_company_user_id)
+        party_name, party_gstin, party_pan = _party_tax_identity(db, bill.party_company_user_id)
         deductee_rows.append({
             # Without a PAN section 206AA mandates 20% and the return is
-            # rejected; parties without one on file stay flagged NOPANAVAIL.
-            "pan": party_pan or "NOPANAVAIL",
+            # rejected. A registered party's GSTIN carries its PAN, so that
+            # fills the gap; only parties with neither stay NOPANAVAIL.
+            "pan": (party_pan or "").strip().upper() or _pan_from_gstin(party_gstin) or "NOPANAVAIL",
             "name": party_name,
             "invoice_number": bill.invoice_number,
-            "tds_section": _parse_tds_section(ded.notes),
+            "tds_section": _parse_tds_section(ded.notes, bill.invoice_type),
             "gross_payment": gross,
             "tds_deducted": amount,
             "deduction_date": bill.invoice_date.date().isoformat(),

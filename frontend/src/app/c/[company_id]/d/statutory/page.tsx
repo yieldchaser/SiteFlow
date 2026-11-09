@@ -889,11 +889,11 @@ export default function StatutoryPage() {
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
                       <div>
                         <span className="text-muted block text-[10px] uppercase font-bold">Quarter</span>
-                        <span className="font-bold text-foreground">{tdsResult.quarter} FY {tdsResult.year}</span>
+                        <span className="font-bold text-foreground">{periodLabel(`${tdsResult.year}-${tdsResult.quarter}`)}</span>
                       </div>
                       <div>
                         <span className="text-muted block text-[10px] uppercase font-bold">Due Date</span>
-                        <span className="font-bold text-foreground">{tdsResult.due_date}</span>
+                        <span className="font-bold text-foreground">{formatDate(tdsResult.due_date)}</span>
                       </div>
                       <div>
                         <span className="text-muted block text-[10px] uppercase font-bold">Deductees</span>
@@ -940,13 +940,13 @@ export default function StatutoryPage() {
                             </td>
                             <td className="px-4 py-2.5 text-right font-medium text-foreground">₹{r.gross_payment.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
                             <td className="px-4 py-2.5 text-right font-bold text-foreground">₹{r.tds_deducted.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
-                            <td className="px-4 py-2.5 text-muted">{r.deduction_date}</td>
+                            <td className="px-4 py-2.5 text-muted">{formatDate(r.deduction_date)}</td>
                           </tr>
                         ))}
                         {tdsResult.deductee_rows.length === 0 && (
                           <tr>
                             <td colSpan={7} className="px-4 py-6 text-center text-muted">
-                              No non-salary TDS deductions recorded in {tdsResult.quarter} FY {tdsResult.year}.
+                              No non-salary TDS deductions recorded in {periodLabel(`${tdsResult.year}-${tdsResult.quarter}`)}.
                             </td>
                           </tr>
                         )}
