@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useProject } from "@/context/ProjectContext";
 import { useParams } from "next/navigation";
 import {  getApiHost , readErrorDetail } from "@/lib/api";
-import { authHeaders, todayLocalISO, formatDate } from "@/lib/siteflow";
+import { authHeaders, todayLocalISO, formatDate, downloadWithAuth } from "@/lib/siteflow";
 import SegmentedTabs from "@/components/ui/Tabs";
 import PageShell from "@/components/layout/PageShell";
 import PageHeader from "@/components/PageHeader";
@@ -126,8 +126,16 @@ export default function LabourPage() {
     } catch (e) { console.error(e); }
   };
 
+  // Fetched with the login token: opening the address in a new tab could not
+  // send it, so the export only ever showed "Could not validate credentials".
   const handleBOCWExport = async () => {
-    window.open(`${getApiHost()}/apis/v3/labour/bocw/${projectId}/export`, "_blank");
+    try {
+      await downloadWithAuth(`/labour/bocw/${projectId}/export`, "bocw-returns.csv");
+    } catch (e) {
+      alert(e instanceof Error && e.message === "HTTP 404"
+        ? "No BOCW returns filed for this project yet."
+        : "Could not export the BOCW returns. Check your connection and try again.");
+    }
   };
 
   const handleBocwSubmit = async () => {

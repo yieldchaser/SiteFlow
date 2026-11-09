@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { getApi, authHeaders } from "@/lib/siteflow";
+import { getApi, authHeaders, downloadWithAuth, formatDate } from "@/lib/siteflow";
 import Icon from "@/components/marketing/Icon";
 import PageShell from "@/components/layout/PageShell";
 import PageHeader from "@/components/PageHeader";
@@ -154,15 +154,56 @@ export default function FilesTab() {
     }
   };
 
-  const isPdf = (f: FileMeta) => (f.content_type || "").includes("pdf");
-  const previewSrc = useMemo(
-    () => (preview ? getApi(`/files/file/${preview.id}`) : ""),
-    [preview]
-  );
-  const downloadSrc = useMemo(
-    () => (preview ? getApi(`/files/file/${preview.id}?download=1`) : ""),
-    [preview]
-  );
+  const kindOf = (f: FileMeta) => {
+    const t = (f.content_type || "").toLowerCase();
+    const e = ext(f.name).toLowerCase();
+    if (t.includes("pdf") || e === "pdf") return "pdf";
+    if (t.startsWith("image/") || ["png", "jpg", "jpeg", "gif", "webp", "bmp"].includes(e)) return "image";
+    return "other";
+  };
+
+  // The file endpoint needs the login token, which a plain link, <img> or
+  // <iframe> cannot send: Download used to open a "Could not validate
+  // credentials" page and PDFs never previewed. Fetch with the token and show
+  // a local copy instead.
+  // The result is tagged with the file it belongs to, so opening another file
+  // never shows the previous one.
+  const [loaded, setLoaded] = useState<{ id: string; url: string | null } | null>(null);
+  useEffect(() => {
+    if (!preview || kindOf(preview) === "other") return;
+    let url: string | null = null;
+    let cancelled = false;
+    fetch(getApi(`/files/file/${preview.id}`), { headers: authHeaders() })
+      .then((res) => (res.ok ? res.blob() : Promise.reject(res.status)))
+      .then((blob) => {
+        if (cancelled) return;
+        // Stored copies sometimes come back as octet-stream; give the browser the real type.
+        const type = preview.content_type || blob.type;
+        url = URL.createObjectURL(type && type !== blob.type ? new Blob([blob], { type }) : blob);
+        setLoaded({ id: preview.id, url });
+      })
+      .catch(() => !cancelled && setLoaded({ id: preview.id, url: null }));
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [preview]);
+  const mine = preview && loaded?.id === preview.id ? loaded : null;
+  const previewUrl = mine?.url || null;
+  const previewState: "idle" | "loading" | "failed" =
+    !preview || kindOf(preview) === "other" ? "idle" : !mine ? "loading" : mine.url ? "idle" : "failed";
+
+  const [downloading, setDownloading] = useState(false);
+  const download = async (f: FileMeta) => {
+    setDownloading(true);
+    try {
+      await downloadWithAuth(`/files/file/${f.id}?download=1`, f.original_filename || f.name);
+    } catch {
+      alert("Could not download this file. Check your connection and try again.");
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -247,7 +288,7 @@ export default function FilesTab() {
                   </span>
                 </div>
                 <div className="text-xs text-foreground font-medium truncate">{f.name}</div>
-                <div className="text-[9px] text-muted mt-0.5">{fmtSize(f.size)}</div>
+                <div className="text-[9px] text-muted mt-0.5">{fmtSize(f.size)} · {formatDate(f.uploaded_at)}</div>
               </button>
             ))}
           </div>
@@ -303,33 +344,44 @@ export default function FilesTab() {
             <div className="flex items-center justify-between px-4 py-3 border-b border-border-custom">
               <div className="min-w-0">
                 <div className="text-sm font-semibold text-foreground truncate">{preview.name}</div>
-                <div className="text-[10px] text-muted">{fmtSize(preview.size)}</div>
+                <div className="text-[10px] text-muted">{fmtSize(preview.size)} · Uploaded {formatDate(preview.uploaded_at)}</div>
               </div>
               <div className="flex items-center gap-2">
-                <a
-                  href={downloadSrc}
-                  className="px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-lg hover:opacity-90"
+                <button
+                  onClick={() => download(preview)}
+                  disabled={downloading}
+                  className="px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-lg hover:opacity-90 disabled:opacity-50 cursor-pointer"
                 >
-                  Download
-                </a>
+                  {downloading ? "Downloading…" : "Download"}
+                </button>
                 <button onClick={() => setPreview(null)} className="text-muted hover:text-foreground cursor-pointer">
                   <Icon name="close" className="w-5 h-5" />
                 </button>
               </div>
             </div>
             <div className="flex-1 bg-elevated overflow-hidden">
-              {isPdf(preview) ? (
-                <iframe src={previewSrc} title={preview.name} className="w-full h-full border-0" />
+              {previewUrl && kindOf(preview) === "pdf" ? (
+                <iframe src={previewUrl} title={preview.name} className="w-full h-full border-0" />
+              ) : previewUrl && kindOf(preview) === "image" ? (
+                <div className="h-full overflow-auto flex items-center justify-center p-4">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={previewUrl} alt={preview.name} className="max-w-full max-h-full object-contain" />
+                </div>
+              ) : previewState === "loading" ? (
+                <div className="h-full flex items-center justify-center text-sm text-muted">Loading preview…</div>
               ) : (
                 <div className="h-full flex flex-col items-center justify-center gap-3 text-center p-6">
                   <div className="text-5xl inline-flex"><Icon name="description" className="w-12 h-12" /></div>
-                  <div className="text-sm text-muted">Preview not available for this file type.</div>
-                  <a
-                    href={downloadSrc}
-                    className="px-4 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:opacity-90"
+                  <div className="text-sm text-muted">
+                    {previewState === "failed" ? "Could not load the preview." : "This type of file cannot be previewed here."}
+                  </div>
+                  <button
+                    onClick={() => download(preview)}
+                    disabled={downloading}
+                    className="px-4 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:opacity-90 disabled:opacity-50 cursor-pointer"
                   >
                     Download {ext(preview.name)}
-                  </a>
+                  </button>
                 </div>
               )}
             </div>

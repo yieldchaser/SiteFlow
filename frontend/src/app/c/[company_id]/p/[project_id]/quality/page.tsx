@@ -498,10 +498,15 @@ isCode: cl.is_code_reference || "—",
 
   // Zone from the inspection the NCR came from, and the firm it is against.
   // Every card used to print a placeholder "Site Zone".
+  const isOverdue = (ncr: NCR) => ncr.status !== "closed" && !!ncr.dueDate && ncr.dueDate < toLocalISODate(new Date());
   const ncrMeta = (ncr: NCR, withDue = true) => {
     const zone = ncr.inspectionId ? inspections.find((i) => i.id === ncr.inspectionId)?.zone : "";
     const firm = ncr.vendorId ? ncrFirms.find((v) => v.id === ncr.vendorId)?.name : "";
-    return [zone, firm ? `Against ${firm}` : "", withDue && ncr.dueDate ? `Due ${ncr.dueDate}` : ""].filter(Boolean).join(" · ");
+    // An open NCR past its due date says so; the date reads like every other
+    // date in the app, not as a raw 2026-11-03.
+    const overdue = isOverdue(ncr);
+    const due = withDue && ncr.dueDate ? `${overdue ? "Overdue since" : "Due"} ${formatDate(ncr.dueDate)}` : "";
+    return [zone, firm ? `Against ${firm}` : "", due].filter(Boolean).join(" · ");
   };
   const openNCRs = ncrs.filter(n => n.status === "open");
   const reviewNCRs = ncrs.filter(n => n.status === "under_review");
@@ -802,7 +807,7 @@ isCode: cl.is_code_reference || "—",
                       <span className="text-[10px] text-muted font-sans">{ncr.number}</span>
                     </div>
                     <p className="text-xs font-semibold text-foreground leading-snug">{ncr.title}</p>
-                    <p className="text-[10px] text-muted">{ncrMeta(ncr)}</p>
+                    <p className={`text-[10px] ${isOverdue(ncr) ? "text-danger" : "text-muted"}`}>{ncrMeta(ncr)}</p>
                     <button onClick={() => moveNCR(ncr.id, "under_review")}
                       className="w-full text-[10px] py-1 rounded bg-info/10 text-info border border-info/20 hover:bg-info/10 font-bold transition-all cursor-pointer inline-flex items-center justify-center gap-1">
                       <Icon name="arrow_forward" className="w-3 h-3" /> Move to Review
@@ -825,7 +830,7 @@ isCode: cl.is_code_reference || "—",
                       <span className="text-[10px] text-muted font-sans">{ncr.number}</span>
                     </div>
                     <p className="text-xs font-semibold text-foreground leading-snug">{ncr.title}</p>
-                    <p className="text-[10px] text-muted">{ncrMeta(ncr)}</p>
+                    <p className={`text-[10px] ${isOverdue(ncr) ? "text-danger" : "text-muted"}`}>{ncrMeta(ncr)}</p>
                     <button onClick={() => moveNCR(ncr.id, "closed")}
                       className="w-full text-[10px] py-1 rounded bg-success/10 text-success border border-success/20 hover:bg-success/10 font-bold transition-all cursor-pointer inline-flex items-center justify-center gap-1">
                       <Icon name="check" className="w-3 h-3" /> Close NCR

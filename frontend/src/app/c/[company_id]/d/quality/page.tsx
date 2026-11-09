@@ -272,6 +272,8 @@ isCode: cl.is_code_reference || "—",
     }
   };
 
+  // Open NCRs past their due date show in red.
+  const isOverdue = (ncr: NCR) => ncr.status !== "closed" && !!ncr.dueDate && ncr.dueDate.slice(0, 10) < toLocalISODate(new Date());
   const firmName = (id?: string | null) => (id ? ncrFirms.find((v) => v.id === id)?.name || "" : "");
 
   const fetchNcrs = async () => {
@@ -853,7 +855,7 @@ isCode: cl.is_code_reference || "—",
                       <span className="text-[10px] text-muted font-sans">{ncr.number}</span>
                     </div>
                     <p className="text-xs font-semibold text-foreground leading-snug">{ncr.title}</p>
-                    <p className="text-[10px] text-muted">{ncr.zone}{firmName(ncr.vendorId) ? ` · Against ${firmName(ncr.vendorId)}` : ""} · Due {formatDate(ncr.dueDate)}</p>
+                    <p className={`text-[10px] ${isOverdue(ncr) ? "text-danger" : "text-muted"}`}>{ncr.zone}{firmName(ncr.vendorId) ? ` · Against ${firmName(ncr.vendorId)}` : ""} · {isOverdue(ncr) ? "Overdue since" : "Due"} {formatDate(ncr.dueDate)}</p>
                     <button onClick={() => moveNCR(ncr.id, "under_review")}
                       className="w-full text-[10px] py-1 rounded bg-info/10 text-info border border-info/20 hover:bg-info/20 font-bold transition-all cursor-pointer inline-flex items-center justify-center gap-1">
                       <Icon name="arrow_forward" className="w-3 h-3" /> Move to Review
@@ -876,7 +878,7 @@ isCode: cl.is_code_reference || "—",
                       <span className="text-[10px] text-muted font-sans">{ncr.number}</span>
                     </div>
                     <p className="text-xs font-semibold text-foreground leading-snug">{ncr.title}</p>
-                    <p className="text-[10px] text-muted">{ncr.zone}{firmName(ncr.vendorId) ? ` · Against ${firmName(ncr.vendorId)}` : ""} · Due {formatDate(ncr.dueDate)}</p>
+                    <p className={`text-[10px] ${isOverdue(ncr) ? "text-danger" : "text-muted"}`}>{ncr.zone}{firmName(ncr.vendorId) ? ` · Against ${firmName(ncr.vendorId)}` : ""} · {isOverdue(ncr) ? "Overdue since" : "Due"} {formatDate(ncr.dueDate)}</p>
                     <button onClick={() => moveNCR(ncr.id, "closed")}
                       className="w-full text-[10px] py-1 rounded bg-success/10 text-success border border-success/20 hover:bg-success/20 font-bold transition-all cursor-pointer inline-flex items-center justify-center gap-1">
                       <Icon name="check" className="w-3 h-3" /> Close NCR
