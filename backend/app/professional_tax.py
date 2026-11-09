@@ -27,10 +27,19 @@ PT_SLABS: dict = {
 
 PT_STATES = sorted(PT_SLABS)
 
+# Where women pay on different slabs. Maharashtra exempts women earning up
+# to Rs 25,000 a month; above that they pay like everyone else.
+PT_SLABS_WOMEN: dict = {
+    "Maharashtra": ([(25000, 0), (None, 200)], {2: 300}),
+}
 
-def professional_tax(state: Optional[str], monthly_gross: float, month: int) -> float:
+
+def professional_tax(state: Optional[str], monthly_gross: float, month: int, gender: Optional[str] = None) -> float:
     """Monthly PT for this gross in this state. 0 for an unknown or unset state."""
-    entry = PT_SLABS.get((state or "").strip())
+    state = (state or "").strip()
+    entry = PT_SLABS.get(state)
+    if (gender or "").lower() == "female" and state in PT_SLABS_WOMEN:
+        entry = PT_SLABS_WOMEN[state]
     if not entry or monthly_gross <= 0:
         return 0.0
     slabs, month_override = entry

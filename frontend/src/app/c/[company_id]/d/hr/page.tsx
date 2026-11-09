@@ -42,11 +42,12 @@ interface Employee {
   bankName: string;
   ptOn: boolean;
   weeklyOff: string;
+  gender: string;
 }
 
 // Where someone works and how they are paid: shared by the add and edit forms.
 // weeklyOff: "" = company's weekly off, "none" = works every day, else a day name.
-type SitePay = { site: string; pfOn: boolean; paidBy: "bank" | "cash"; bankAccount: string; ifsc: string; bankName: string; ptOn: boolean; weeklyOff: string };
+type SitePay = { site: string; pfOn: boolean; paidBy: "bank" | "cash"; bankAccount: string; ifsc: string; bankName: string; ptOn: boolean; weeklyOff: string; gender: string };
 const WEEK_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const weeklyOffFromApi = (v: string[] | null | undefined) => (v == null ? "" : v.length === 0 ? "none" : v[0]);
 
@@ -61,6 +62,7 @@ function sitePayBody(v: SitePay) {
     bank_name: v.paidBy === "bank" ? v.bankName.trim() || null : null,
     pt_applicable: v.ptOn,
     weekly_off_days: v.weeklyOff === "" ? null : v.weeklyOff === "none" ? [] : [v.weeklyOff],
+    gender: v.gender || null,
   };
 }
 
@@ -99,6 +101,15 @@ function SitePayFields({ value, onChange, projects }: {
         <select value={value.ptOn ? "yes" : "no"} onChange={(e) => onChange({ ...value, ptOn: e.target.value === "yes" })} className={box}>
           <option value="yes">Yes, deduct PT</option>
           <option value="no">Exempt from PT</option>
+        </select>
+      </div>
+      <div>
+        <label className={lab}>Gender</label>
+        <select value={value.gender} onChange={(e) => onChange({ ...value, gender: e.target.value })} className={box}>
+          <option value="">Not given</option>
+          <option value="male">Male</option>
+          <option value="female">Female</option>
+          <option value="other">Other</option>
         </select>
       </div>
       <div>
@@ -255,7 +266,7 @@ export default function HRPayrollPage() {
   // here was silently not paid.
   const emptyDetails = { basic: "", hra: "", allowances: "", tds: "", designation: "", department: "", mobile: "", uan: "", joined: "", otRate: "" };
   const [detailsForm, setDetailsForm] = useState(emptyDetails);
-  const [detailsPay, setDetailsPay] = useState<SitePay>({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "", bankName: "", ptOn: true, weeklyOff: "" });
+  const [detailsPay, setDetailsPay] = useState<SitePay>({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "", bankName: "", ptOn: true, weeklyOff: "", gender: "" });
 
   const openDetailsDrawer = (emp: Employee) => {
     setSelectedEmpDetail(emp);
@@ -280,6 +291,7 @@ export default function HRPayrollPage() {
       bankName: emp.bankName,
       ptOn: emp.ptOn,
       weeklyOff: emp.weeklyOff,
+      gender: emp.gender,
     });
     setShowDetailsDrawer(true);
     fetch(`${getApiHost()}/apis/v3/hr/payroll-profiles/${emp.id}`, { headers: authHeaders() })
@@ -456,7 +468,7 @@ export default function HRPayrollPage() {
     uan: "",
     joined: todayLocalISO()
   });
-  const [newPay, setNewPay] = useState<SitePay>({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "", bankName: "", ptOn: true, weeklyOff: "" });
+  const [newPay, setNewPay] = useState<SitePay>({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "", bankName: "", ptOn: true, weeklyOff: "", gender: "" });
 
   const fetchEmployees = async () => {
     if (!companyId) return;
@@ -492,6 +504,7 @@ export default function HRPayrollPage() {
           bankName: emp.bank_name || "",
           ptOn: emp.pt_applicable !== false,
           weeklyOff: weeklyOffFromApi(emp.weekly_off_days),
+          gender: emp.gender || "",
         }));
         setEmployees(mapped);
       }
@@ -743,7 +756,7 @@ export default function HRPayrollPage() {
           uan: "",
           joined: todayLocalISO()
         });
-        setNewPay({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "", bankName: "", ptOn: true, weeklyOff: "" });
+        setNewPay({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "", bankName: "", ptOn: true, weeklyOff: "", gender: "" });
       } else {
         const err = await readErrorDetail(res);
         alert(err || 'Action failed');

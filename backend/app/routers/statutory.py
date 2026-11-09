@@ -1,6 +1,6 @@
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
@@ -38,6 +38,7 @@ class StatutoryReportCreate(BaseModel):
     esi_employer_contribution: float = Field(0.0, ge=0)
     bocw_cess: float = Field(0.0, ge=0)
     tds_deducted: float = Field(0.0, ge=0)
+    professional_tax: float = Field(0.0, ge=0)
     filed_by: Optional[str] = None
     acknowledgment_number: Optional[str] = None
     status: str = "draft"
@@ -63,6 +64,7 @@ class StatutoryReportResponse(BaseModel):
     esi_employer_contribution: float
     bocw_cess: float
     tds_deducted: float
+    professional_tax: float = 0.0
     # R2-283: Optional[X] without a default is REQUIRED in Pydantic v2, so any
     # response built from a dict that omits these keys (auto-populate) died in
     # flight with "3 validation errors" before the caller saw anything.
@@ -87,6 +89,11 @@ def calculate_due_date(report_type: str, return_period: str) -> Optional[datetim
         rt = _normalize_report_type(report_type)
         if rt == "tds":
             return datetime(next_year, next_month, 7)
+        if rt == "pt":
+            # Monthly PT returns (Maharashtra and most states) fall due by
+            # the end of the following month.
+            after_year, after_month = (next_year + 1, 1) if next_month == 12 else (next_year, next_month + 1)
+            return datetime(after_year, after_month, 1) - timedelta(days=1)
         elif rt in DUE_DATE_RULE_TYPES:
             return datetime(next_year, next_month, 15)
         return None
@@ -99,7 +106,8 @@ def create_report(payload: StatutoryReportCreate, db: Session = Depends(get_db),
     require_permission(db, current_user, payload.company_id, "payroll:edit")
     data = payload.model_dump()
     for k in ("total_wages", "pf_employee_contribution", "pf_employer_contribution",
-              "esi_employee_contribution", "esi_employer_contribution", "bocw_cess", "tds_deducted"):
+              "esi_employee_contribution", "esi_employer_contribution", "bocw_cess", "tds_deducted",
+              "professional_tax"):
         data[k] = Decimal(str(data[k]))
     if not data.get("due_date"):
         data["due_date"] = calculate_due_date(data["report_type"], data["return_period"])
@@ -164,6 +172,7 @@ def auto_populate(company_id: uuid.UUID, report_type: str = Query(...), return_p
     esi_employee = sum(float(li.esi_employee or 0) for li in line_items)
     esi_employer = sum(float(li.esi_employer or 0) for li in line_items)
     tds = sum(float(li.tds or 0) for li in line_items)
+    pt = sum(float(getattr(li, "professional_tax", 0) or 0) for li in line_items)
 
     # R2-128: the BOCW Cess Act levies 1% on the cost of construction, not on
     # the wage bill. Same bill-ledger base as labour/bocw (R2-415): money-out
@@ -195,6 +204,7 @@ def auto_populate(company_id: uuid.UUID, report_type: str = Query(...), return_p
         "esi_employer_contribution": Decimal(str(round(esi_employer, 2))),
         "bocw_cess": bocw_cess,
         "tds_deducted": Decimal(str(round(tds, 2))),
+        "professional_tax": Decimal(str(round(pt, 2))),
         "status": "draft",
     }
     data["id"] = uuid.uuid4()

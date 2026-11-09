@@ -808,6 +808,8 @@ class StaffEmployee(Base):
     pt_applicable = Column(Boolean, default=True, server_default="1", nullable=False)
     # This person's weekly off days. None = the company's weekly off.
     weekly_off_days = Column(JSONB, nullable=True)
+    # "male" / "female" / "other". Some states' professional tax differs for women.
+    gender = Column(String(10), nullable=True)
     status = Column(String(50), default="active", nullable=False)
     date_of_joining = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=func.now(), nullable=False)
@@ -1981,6 +1983,7 @@ class StatutoryReport(Base):
     esi_employer_contribution = Column(Numeric(14, 2), default=0.0, nullable=False)
     bocw_cess = Column(Numeric(14, 2), default=0.0, nullable=False)
     tds_deducted = Column(Numeric(14, 2), default=0.0, nullable=False)
+    professional_tax = Column(Numeric(14, 2), default=0.0, server_default="0", nullable=False)
     filed_at = Column(DateTime(timezone=True), nullable=True)
     filed_by = Column(String(255), nullable=True)
     acknowledgment_number = Column(String(100), nullable=True)

@@ -150,3 +150,35 @@ def test_move_day_marked_at_both_sites_is_paid_once(client, db, make_tenant, aut
         "company_id": str(comp.id), "project_id": str(b.id), "payroll_month": "2026-10"})
     assert run.status_code == 201, run.text
     assert run.json()["payslips"][0]["days_present"] == 1.0
+
+
+def test_women_slab_and_pt_in_statutory_return(client, db, make_tenant, auth_headers):
+    """Maharashtra exempts women earning up to Rs 25,000; the PT return for
+    the month carries the PT actually deducted."""
+    assert professional_tax("Maharashtra", 20000, 10, "female") == 0
+    assert professional_tax("Maharashtra", 20000, 10, "male") == 200
+    assert professional_tax("Maharashtra", 30000, 2, "female") == 300
+    assert professional_tax("Gujarat", 20000, 10, "female") == 200
+
+    comp, user, _ = make_tenant(company_name=f"PTR Co {_SFX}", user_name="PTR",
+                                email=f"ptr-{_SFX}@example.com")
+    comp.pt_state = "Maharashtra"
+    hdr = auth_headers(user, comp)
+    site = models.Project(id=uuid.uuid4(), company_id=comp.id, name="Site", status="Ongoing")
+    db.add(site)
+    db.commit()
+    base = {"company_id": str(comp.id), "project_id": str(site.id), "basic_salary": 20000,
+            "pf_employee_pct": 0, "pf_employer_pct": 0}
+    r = client.post("/apis/v3/hr/employees", headers=hdr, json={**base, "name": "Asha", "gender": "Female"})
+    assert r.status_code == 201 and r.json()["gender"] == "female"
+    client.post("/apis/v3/hr/employees", headers=hdr, json={**base, "name": "Raju", "gender": "male"})
+    run = _run(client, hdr, comp, site)
+    assert run.status_code == 201, run.text
+    pts = {p["employee_name"]: p["professional_tax"] for p in run.json()["payslips"]}
+    assert pts == {"Asha": 0, "Raju": 200}
+
+    r = client.get(f"/apis/v3/statutory/{comp.id}/auto-populate",
+                   params={"report_type": "pt", "return_period": "2026-10"}, headers=hdr)
+    assert r.status_code == 200, r.text
+    assert r.json()["professional_tax"] == 200
+    assert r.json()["due_date"] is None or r.json()["due_date"].startswith("2026-11-30")

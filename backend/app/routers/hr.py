@@ -133,6 +133,13 @@ class _SalaryPaymentFields(BaseModel):
     pt_applicable: Optional[bool] = None
     # This person's weekly off. None = the company's weekly off; [] = none.
     weekly_off_days: Optional[List[str]] = None
+    # Professional tax slabs differ for women in some states.
+    gender: Optional[Literal["male", "female", "other"]] = None
+
+    @field_validator("gender", mode="before")
+    @classmethod
+    def _gender_lower(cls, v):
+        return str(v).strip().lower() or None if v is not None else None
 
     @field_validator("weekly_off_days", mode="before")
     @classmethod
@@ -253,6 +260,7 @@ class EmployeeResponse(BaseModel):
     bank_name: Optional[str] = None
     pt_applicable: Optional[bool] = True
     weekly_off_days: Optional[List[str]] = None
+    gender: Optional[str] = None
     status: str
     date_of_joining: Optional[datetime]
     created_at: datetime
@@ -1099,7 +1107,8 @@ def _compute_payslip(emp: StaffEmployee, days_present: float, days_in_month: int
         esi_emp = esi_er = 0.0
 
     tds = float(emp.tds_monthly)
-    pt = professional_tax(pt_state, gross, pay_month) if getattr(emp, "pt_applicable", True) is not False else 0.0
+    pt = (professional_tax(pt_state, gross, pay_month, getattr(emp, "gender", None))
+          if getattr(emp, "pt_applicable", True) is not False else 0.0)
     total_ded = round(pf_emp + esi_emp + tds + pt, 2)
     net = round(gross - total_ded, 2)
 

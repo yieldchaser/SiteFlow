@@ -24,6 +24,7 @@ interface Report {
   esi_employer_contribution: number;
   bocw_cess: number;
   tds_deducted: number;
+  professional_tax?: number;
   filed_at?: string;
   filed_by?: string;
   acknowledgment_number?: string;
@@ -223,6 +224,7 @@ export default function StatutoryPage() {
     esi_employer_contribution: 0,
     bocw_cess: 0,
     tds_deducted: 0,
+    professional_tax: 0,
     filed_by: "",
   });
 
@@ -418,6 +420,7 @@ export default function StatutoryPage() {
           esi_employer_contribution: Number(data.esi_employer_contribution),
           bocw_cess: Number(data.bocw_cess),
           tds_deducted: Number(data.tds_deducted),
+          professional_tax: Number(data.professional_tax || 0),
           filed_by: "",
         });
         setMessage({ text: "Auto-populated from employee data", type: "success" });
@@ -478,6 +481,7 @@ export default function StatutoryPage() {
           esi_employer_contribution: 0,
           bocw_cess: 0,
           tds_deducted: 0,
+          professional_tax: 0,
           filed_by: "",
         });
         fetchReports();
@@ -968,16 +972,17 @@ export default function StatutoryPage() {
                       <th className="px-4 py-3 font-bold text-right">ESI (EE / ER)</th>
                       <th className="px-4 py-3 font-bold text-right">BOCW</th>
                       <th className="px-4 py-3 font-bold text-right">TDS</th>
+                      <th className="px-4 py-3 font-bold text-right">PT</th>
                       <th className="px-4 py-3 font-bold">Status</th>
                       <th className="px-4 py-3 font-bold">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border-custom/30">
                     {reports.length === 0 && reportsLoading ? (
-                      <tr><td colSpan={10} className="p-8 text-center text-muted text-sm">Loading statutory reports...</td></tr>
+                      <tr><td colSpan={11} className="p-8 text-center text-muted text-sm">Loading statutory reports...</td></tr>
                     ) : reports.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="p-8">
+                        <td colSpan={11} className="p-8">
                           <EmptyState
                             title="No statutory compliance reports found"
                             description="Create statutory filing summaries for PF, ESI, BOCW Cess and contractor TDS."
@@ -1010,6 +1015,9 @@ export default function StatutoryPage() {
                           </td>
                           <td className="px-4 py-3 text-right font-medium text-foreground">
                             ₹{Number(r.tds_deducted).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="px-4 py-3 text-right font-medium text-foreground">
+                            ₹{Number(r.professional_tax || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-1.5">
@@ -1235,6 +1243,18 @@ export default function StatutoryPage() {
                           className="w-full bg-input border border-border-custom rounded-md px-3 py-2 text-foreground text-xs"
                           value={form.tds_deducted}
                           onChange={(e) => setForm({ ...form, tds_deducted: parseFloat(e.target.value) || 0 })}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] uppercase font-bold text-muted mb-1">Professional Tax (₹)</label>
+                        <input
+                          type="number"
+                          className="w-full bg-input border border-border-custom rounded-md px-3 py-2 text-foreground text-xs"
+                          value={form.professional_tax}
+                          onChange={(e) => setForm({ ...form, professional_tax: parseFloat(e.target.value) || 0 })}
                         />
                       </div>
                     </div>
