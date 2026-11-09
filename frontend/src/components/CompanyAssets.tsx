@@ -30,6 +30,7 @@ export default function CompanyAssets({ companyId }: { companyId: string }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     if (!companyId) return;
@@ -73,10 +74,11 @@ export default function CompanyAssets({ companyId }: { companyId: string }) {
       serial_number: form.serial_number.trim() || null,
       assigned_to: form.assigned_to.trim() || null,
     };
+    setSaving(true);
     const res = await fetch(
       editingId ? `${getApiHost()}/apis/v3/equipment/${editingId}` : `${getApiHost()}/apis/v3/equipment`,
       { method: editingId ? "PUT" : "POST", headers: { "Content-Type": "application/json", ...(authHeaders() || {}) }, body: JSON.stringify(body) },
-    );
+    ).finally(() => setSaving(false));
     if (!res.ok) {
       setError((await readErrorDetail(res)) || "Could not save the asset");
       return;
@@ -178,7 +180,7 @@ export default function CompanyAssets({ companyId }: { companyId: string }) {
               </div>
               <div className="flex gap-2 justify-end border-t border-border-custom pt-4">
                 <button type="button" onClick={() => setOpen(false)} className="px-4 py-2 bg-elevated text-muted hover:text-foreground rounded-md">Cancel</button>
-                <button type="submit" className="px-5 py-2.5 bg-primary text-white font-bold rounded-md">{editingId ? "Update Asset" : "Save Asset"}</button>
+                <button type="submit" disabled={saving} className="px-5 py-2.5 bg-primary text-white font-bold rounded-md disabled:opacity-60">{saving ? "Saving..." : editingId ? "Update Asset" : "Save Asset"}</button>
               </div>
             </form>
           </div>

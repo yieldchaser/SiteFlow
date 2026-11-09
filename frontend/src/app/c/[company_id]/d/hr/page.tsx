@@ -119,7 +119,7 @@ function SitePayFields({ value, onChange, projects }: {
                 onChange({ ...value, ifsc, bankName: !value.bankName && guess ? guess : value.bankName });
               }} className={box} />
           </div>
-          <div className="md:col-span-2">
+          <div>
             <label className={lab}>Bank</label>
             <select value={typing ? "__other" : value.bankName}
               onChange={(e) => {
