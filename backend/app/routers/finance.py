@@ -393,6 +393,24 @@ def get_ledger(project_id: uuid.UUID, db: Session = Depends(get_db), _: None = D
         .all()
     )
 
+    # Party and staff names in one batch each: resolved per row, 30 rows took
+    # over 8 s on prod.
+    _names = resolve_party_names_batch(
+        db,
+        [b.party_company_user_id for b in bills] + [p.party_company_user_id for p in payments],
+        fallback="Unknown Party",
+    )
+
+    def _ledger_party(team_id):
+        if not team_id:
+            return "Walk-in Party"
+        return _names.get(team_id, "Unknown Party")
+
+    _staff_names = {
+        e.id: e.name
+        for e in db.query(StaffEmployee).filter(StaffEmployee.id.in_({s.employee_id for s in salaries})).all()
+    } if salaries else {}
+
     raw_entries = []
     for p in payments:
         raw_entries.append((p.payment_date, "payment", p))
@@ -421,7 +439,7 @@ def get_ledger(project_id: uuid.UUID, db: Session = Depends(get_db), _: None = D
             # R2-276: shared resolution (linked user, then linked LibraryParty)
             # instead of the silent users-only walk that printed "Walk-in Party"
             # for real parties.
-            party_name = _txn_party_name(db, obj.party_company_user_id)
+            party_name = _ledger_party(obj.party_company_user_id)
             
             is_in = obj.payment_type == "in"
             amount = float(obj.amount)
@@ -453,7 +471,7 @@ def get_ledger(project_id: uuid.UUID, db: Session = Depends(get_db), _: None = D
             # R2-276: shared resolution (linked user, then linked LibraryParty)
             # instead of the silent users-only walk that printed "Vendor/Client"
             # for real parties.
-            party_name = _txn_party_name(db, obj.party_company_user_id)
+            party_name = _ledger_party(obj.party_company_user_id)
             # R2-238 + D3: settlement vouchers are cash movements, not revenue or
             # cost accruals. Use the single shared classifier so the buckets
             # cannot drift per call site.
@@ -523,9 +541,8 @@ def get_ledger(project_id: uuid.UUID, db: Session = Depends(get_db), _: None = D
         elif entry_type == "salary":
             party_name = "Staff Member"
             if obj.employee_id:
-                emp = db.query(StaffEmployee).filter(StaffEmployee.id == obj.employee_id).first()
-                if emp and emp.name:
-                    party_name = emp.name
+                if _staff_names.get(obj.employee_id):
+                    party_name = _staff_names[obj.employee_id]
             amount = float(obj.net_payable)
             debit = 0.0
             credit = amount
