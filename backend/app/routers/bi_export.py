@@ -30,6 +30,7 @@ from app.constants import REVENUE_INVOICE_TYPES, EXPENSE_INVOICE_TYPES
 # R2-743: the shared CSV formula guard, so this exporter cannot drift from the
 # other three again.
 from app.csv_export import csv_safe_cell
+from app import payroll_scope
 from app.database import get_db
 from app.rate_limit import limiter
 from app.bill_scope import _active_bills
@@ -286,11 +287,11 @@ def feed_budget_variance(
                 other_actual += amount
         # Labour actual: sum of payroll line-item net payables for this project's finalized runs (C2).
         labour_actual = float(
-            db.query(func.coalesce(func.sum(models.PayrollLineItem.gross_salary + models.PayrollLineItem.pf_employer + models.PayrollLineItem.esi_employer), 0))
-            .join(models.PayrollRun)
-            .filter(
-                models.PayrollRun.project_id == p.id,
-                models.PayrollRun.status == "finalized",
+            payroll_scope.for_project(
+                db.query(func.coalesce(func.sum(models.PayrollLineItem.gross_salary + models.PayrollLineItem.pf_employer + models.PayrollLineItem.esi_employer), 0))
+                .join(models.PayrollRun)
+                .filter(models.PayrollRun.status == "finalized"),
+                p.id,
             )
             .scalar()
             or 0

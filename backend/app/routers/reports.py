@@ -12,9 +12,10 @@ from decimal import Decimal
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import FileResponse
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from app import payroll_scope
 from app.database import get_db
 
 # Anchor the PDF store to the repo's backend/static/reports directory so writes
@@ -573,7 +574,7 @@ def _rep_attendance_salary(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]
             PayrollLineItem.employee_id == emp.id
         )
         if pid:
-            pl = pl.filter(PayrollRun.project_id == pid)
+            pl = payroll_scope.for_project(pl, pid)
         pli = pl.order_by(PayrollRun.run_date.desc()).first()
         if pli:
             net = _clean(pli.net_payable)
@@ -706,8 +707,10 @@ def _build_party_ledger(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
     # A draft payroll run is a working sheet, not money owed.
     salaries_q = db.query(PayrollLineItem).join(PayrollRun).filter(
         PayrollRun.company_id == cid, PayrollRun.status == "finalized")
+    # Company-wide runs (no project) are the company's own salaries and
+    # belong on the company ledger; filtering to project runs dropped them.
     if proj_ids:
-        salaries_q = salaries_q.filter(PayrollRun.project_id.in_(proj_ids))
+        salaries_q = salaries_q.filter(or_(PayrollRun.project_id.in_(proj_ids), PayrollRun.project_id.is_(None)))
     else:
         salaries_q = salaries_q.filter(PayrollRun.project_id.is_(None))
 
@@ -716,7 +719,7 @@ def _build_party_ledger(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
         bills_q = bills_q.filter(Bill.project_id == pid)
         debit_q = debit_q.filter(DebitNote.project_id == pid)
         credit_q = credit_q.filter(CreditNote.project_id == pid)
-        salaries_q = salaries_q.filter(PayrollRun.project_id == pid)
+        salaries_q = payroll_scope.for_project(salaries_q, pid)
 
     raw = []
     for p in payments_q.all():

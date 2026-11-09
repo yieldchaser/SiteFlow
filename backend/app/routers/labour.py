@@ -3,13 +3,14 @@ from datetime import datetime, date
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.auth import get_current_user, verify_project_in_company, verify_project_access, get_company_membership, require_permission
 from app.models import (
     WorkOrder, SubcontractorPerformance,
     BOCWRecord, MusterRoll, Bill, User,
-    AttendanceLog, SubcontractorAttendance, PayrollRun
+    AttendanceLog, SubcontractorAttendance, PayrollRun, PayrollLineItem, StaffEmployee
 )
 from app.party_names import resolve_party_name
 from app.routers.delete_logs import log_deletion
@@ -245,6 +246,22 @@ def create_bocw(req: BOCWCreate, db: Session = Depends(get_db), current_user: Us
             PayrollRun.payroll_month == req.month_year,
         ).all()
         wages_paid = float(sum(float(r.total_net or 0) for r in runs))
+        # A company-wide run (no project) pays this site's staff too: their
+        # lines count here (see app.payroll_scope).
+        wages_paid += float(
+            db.query(func.sum(PayrollLineItem.net_payable))
+            .select_from(PayrollLineItem)
+            .join(PayrollRun)
+            .join(StaffEmployee, StaffEmployee.id == PayrollLineItem.employee_id)
+            .filter(
+                PayrollRun.project_id.is_(None),
+                PayrollRun.payroll_month == req.month_year,
+                PayrollRun.status == "finalized",
+                StaffEmployee.project_id == req.project_id,
+            )
+            .scalar()
+            or 0
+        )
     contribution_amount = req.contribution_amount
     if contribution_amount is None:
         # BOCW Cess Act: 1% of the cost of construction - the bill ledger

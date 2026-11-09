@@ -6,6 +6,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, File, Form, UploadFile, Response, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from app import payroll_scope
 from app.database import get_db
 from app.models import Payment, PaymentSettlement, Bill, PayrollRun, PayrollLineItem, StaffEmployee, ProjectBudget, Project, CompanyTeam, User, Equipment, EquipmentDeployment, FuelLog, BankAccount, PaymentRequest, PaymentRequestPayment, CashAccount, LibraryParty, Company, ApprovalRule, LibraryCostCode, MaterialWastage
 from app.auth import (
@@ -373,7 +374,10 @@ def get_ledger(project_id: uuid.UUID, db: Session = Depends(get_db), _: None = D
     # 2. Fetch bills
     bills = db.query(Bill).filter(Bill.project_id == proj_uuid).all()
     # 3. Fetch salary line items
-    salaries = db.query(PayrollLineItem).join(PayrollRun).filter(PayrollRun.project_id == proj_uuid).all()
+    # A draft run is a working sheet, not money owed.
+    salaries = payroll_scope.for_project(
+        db.query(PayrollLineItem).join(PayrollRun).filter(PayrollRun.status == "finalized"), proj_uuid
+    ).all()
 
     # Payments that settled one or more bills are already reflected in those
     # bills' Receipt/Expense lines (accrual basis). Posting them again here would
@@ -571,11 +575,11 @@ def get_project_pl(project_id: uuid.UUID, db: Session = Depends(get_db), _: None
     labour_actual = (
         # Cost to the company: gross pay plus employer PF and ESI. Net pay
         # left out the employee PF, ESI and TDS the company still pays over.
-        db.query(func.sum(PayrollLineItem.gross_salary + PayrollLineItem.pf_employer + PayrollLineItem.esi_employer))
-        .join(PayrollRun)
-        .filter(
-            PayrollRun.project_id == proj_uuid,
-            PayrollRun.status == "finalized",
+        payroll_scope.for_project(
+            db.query(func.sum(PayrollLineItem.gross_salary + PayrollLineItem.pf_employer + PayrollLineItem.esi_employer))
+            .join(PayrollRun)
+            .filter(PayrollRun.status == "finalized"),
+            proj_uuid,
         )
         .scalar()
         or 0.0

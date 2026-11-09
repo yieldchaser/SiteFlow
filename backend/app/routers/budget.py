@@ -4,6 +4,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from app import payroll_scope
 from app.database import get_db
 from app.auth import get_current_user, verify_project_access
 from app.models import (
@@ -124,9 +125,12 @@ def get_committed_costs(project_id: UUID, db: Session = Depends(get_db), _: None
     labour_actual = float(
         # Cost to the company: gross pay plus employer PF and ESI. Net pay
         # left out the employee PF, ESI and TDS the company still pays over.
-        db.query(func.sum(PayrollLineItem.gross_salary + PayrollLineItem.pf_employer + PayrollLineItem.esi_employer))
-        .join(PayrollRun)
-        .filter(PayrollRun.project_id == project_id, PayrollRun.status == "finalized")
+        payroll_scope.for_project(
+            db.query(func.sum(PayrollLineItem.gross_salary + PayrollLineItem.pf_employer + PayrollLineItem.esi_employer))
+            .join(PayrollRun)
+            .filter(PayrollRun.status == "finalized"),
+            project_id,
+        )
         .scalar()
         or 0.0
     )
