@@ -95,8 +95,9 @@ export default function TaskPage() {
 
   const today = useMemo(() => new Date(), []);
 
+  // In schedule order, so the chart reads top to bottom like a programme.
   const rows = useMemo(
-    () => tasks.map((t) => ({ task: t, ...compute(t, today) })),
+    () => tasks.map((t) => ({ task: t, ...compute(t, today) })).sort((a, b) => a.start.getTime() - b.start.getTime()),
     [tasks, today]
   );
 
@@ -114,10 +115,32 @@ export default function TaskPage() {
     return { min, max, days };
   }, [rows, today]);
 
-  const todayPct = useMemo(
-    () => clamp(((span.max.getTime() - today.getTime()) / (span.max.getTime() - span.min.getTime())) * 100, 0, 100),
-    [span, today]
+  // Position from the left edge of the track. Bars used to be placed by
+  // their start date measured from the right, so each bar ended where it
+  // should have begun.
+  const posPct = useCallback(
+    (d: Date) => {
+      const range = span.max.getTime() - span.min.getTime();
+      return range > 0 ? clamp(((d.getTime() - span.min.getTime()) / range) * 100, 0, 100) : 0;
+    },
+    [span]
   );
+  const todayPct = useMemo(() => posPct(today), [posPct, today]);
+
+  // Month labels along the track, at most about ten of them.
+  const monthTicks = useMemo(() => {
+    const ticks: { pct: number; label: string }[] = [];
+    if (rows.length === 0) return ticks;
+    const first = new Date(span.min.getFullYear(), span.min.getMonth() + 1, 1);
+    const months = Math.max(1, (span.max.getFullYear() - first.getFullYear()) * 12 + span.max.getMonth() - first.getMonth() + 1);
+    const step = Math.max(1, Math.ceil(months / 10));
+    for (let i = 0; i < months; i += step) {
+      const d = new Date(first.getFullYear(), first.getMonth() + i, 1);
+      if (d > span.max) break;
+      ticks.push({ pct: posPct(d), label: d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" }) });
+    }
+    return ticks;
+  }, [rows.length, span, posPct]);
 
   const updateProgress = async (id: string, value: number) => {
     setSavingId(id);
@@ -145,7 +168,12 @@ export default function TaskPage() {
     <div className="flex-1 flex flex-col overflow-hidden">
       <PageHeader
         title="Tasks & Schedule"
-        subtitle="Delay and Forecast End are computed live from start/end dates and actual progress, with no estimates faked."
+        subtitle="Delay and Forecast End are worked out from the planned dates and the progress logged."
+        action={
+          <a href={`/c/${companyId}/d/planning/gantt?project=${projectId}`} className="rounded-md bg-primary px-3.5 py-1.5 text-xs font-bold text-white hover:opacity-90">
+            + Add or plan tasks
+          </a>
+        }
       />
       <div className="flex-1 overflow-y-auto">
         <PageShell width="wide">
@@ -163,15 +191,15 @@ export default function TaskPage() {
           />
         )}
         {rows.map((r) => {
-          const left = clamp(((span.max.getTime() - r.start.getTime()) / (span.max.getTime() - span.min.getTime())) * 100, 0, 100);
-          const width = clamp((r.totalDays / span.days) * 100, 1, 100);
+          const left = posPct(r.start);
+          const width = clamp((r.totalDays / span.days) * 100, 1, 100 - left);
           return (
             <div key={r.task.id} className="flex items-center gap-3 mb-2">
               <div className="w-40 shrink-0 truncate text-sm text-foreground" title={r.task.name}>{r.task.name}</div>
               <div className="relative flex-1 h-6 rounded bg-elevated overflow-hidden">
                 <div
                   className="absolute top-0 h-full rounded bg-primary/30"
-                  style={{ right: `${left}%`, width: `${width}%` }}
+                  style={{ left: `${left}%`, width: `${width}%` }}
                 >
                   <div
                     className="h-full bg-primary/70"
@@ -184,8 +212,19 @@ export default function TaskPage() {
           );
         })}
         {rows.length > 0 && (
-          <div className="relative h-0.5 bg-border-custom mt-1">
-            <div className="absolute -top-1 w-0.5 h-3 bg-danger" style={{ right: `${todayPct}%` }} title="Today" />
+          // Same columns as the rows above, so the axis lines up with the bars.
+          <div className="flex items-start gap-3 mt-1">
+            <div className="w-40 shrink-0" />
+            <div className="relative flex-1 h-8 border-t border-border-custom">
+              {monthTicks.map((t) => (
+                <div key={t.label} className="absolute top-0 -translate-x-1/2 text-[10px] text-muted whitespace-nowrap" style={{ left: `${t.pct}%` }}>
+                  <div className="mx-auto h-1.5 w-px bg-border-custom" />
+                  {t.label}
+                </div>
+              ))}
+              <div className="absolute -top-2 h-4 w-0.5 bg-danger" style={{ left: `${todayPct}%` }} title="Today" />
+            </div>
+            <div className="w-12" />
           </div>
         )}
       </div>
