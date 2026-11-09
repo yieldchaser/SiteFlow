@@ -2064,6 +2064,33 @@ def _rep_budget_vs_actual_cost_code(db: Session, cid: uuid.UUID, pid: Optional[u
         return _REPORT_FAILED
 
 
+_STOCK_TYPE_LABELS = {
+    "received": "Received", "returned": "Returned", "used": "Used",
+    "transferred": "Transferred Out", "adjustment": "Stock Correction",
+    "grn_cancellation": "Receipt Cancelled",
+}
+
+
+def _stock_delta(m) -> float:
+    """Signed change a site material entry makes to stock. Received and
+    returned add, used and transferred take away, corrections and cancelled
+    receipts carry their own sign."""
+    qty = float(m.qty or 0)
+    kind = (m.type or "").lower()
+    if kind in ("received", "returned"):
+        return abs(qty)
+    if kind in ("used", "transferred"):
+        return -abs(qty)
+    if kind in ("adjustment", "grn_cancellation"):
+        return qty
+    return 0.0
+
+
+def _order_rates(db: Session, proj_ids, pid) -> dict:
+    """Average purchase order rate per (project, material name)."""
+    return {(f["project_id"], f["material"].lower()): f["rate"] for f in _material_flow(db, proj_ids, pid)}
+
+
 def _material_flow(db: Session, proj_ids, pid):
     """Per project and material: ordered (purchase orders), received (GRNs
     against them), used and in stock (site material entries), plus the
@@ -2105,15 +2132,10 @@ def _material_flow(db: Session, proj_ids, pid):
         mt_q = mt_q.filter(MaterialTransaction.project_id == pid)
     for m in mt_q.all():
         f = slot(m.project_id, m.material_name, m.unit)
-        qty = float(m.qty or 0)
-        kind = (m.type or "").lower()
-        if kind == "used":
-            f["used"] += qty
-            f["stock"] -= qty
-        elif kind in ("received", "returned"):
-            f["stock"] += qty
-        elif kind == "transferred":
-            f["stock"] -= qty
+        if (m.type or "").lower() == "used":
+            f["used"] += abs(float(m.qty or 0))
+        # Corrections and cancelled receipts move stock too; they were skipped.
+        f["stock"] += _stock_delta(m)
     for f in flow.values():
         f["rate"] = f["ordered_value"] / f["ordered"] if f["ordered"] else 0.0
     return sorted(flow.values(), key=lambda f: (str(f["project_id"]), f["material"].lower()))
@@ -2248,16 +2270,26 @@ def _rep_project_wise_sales_summary(db: Session, cid: uuid.UUID, pid: Optional[u
         for p in q.all():
             bills = db.query(Bill).filter(Bill.project_id == p.id, Bill.status != "Cancelled").all()
             sales_bills = [b for b in bills if is_revenue_invoice_type(b.invoice_type)]
-            total_sales = sum(float(b.total_payable or 0) for b in sales_bills)
+            # A bill's total is already net of its deductions; show the gross
+            # (work + GST), what was held back, and the net. Retention and
+            # deductions used to read 0 on every project.
+            gross = sum(float(b.subtotal or 0) + float(b.gst_amount or 0) for b in sales_bills)
+            retention = other_ded = 0.0
+            if sales_bills:
+                for d in db.query(TransactionDeduction).filter(TransactionDeduction.bill_id.in_([b.id for b in sales_bills])).all():
+                    if "retention" in (d.deduction_type or "").lower():
+                        retention += float(d.amount or 0)
+                    else:
+                        other_ded += float(d.amount or 0)
+            net_amt = sum(float(b.total_payable or 0) for b in sales_bills)
             paid_amt = sum(float(b.paid_amount or 0) for b in sales_bills)
-            net_amt = total_sales
             rows.append({
                 "Project Name": p.name,
                 "No. of Invoices": len(sales_bills),
-                "Total Sales": _clean(total_sales),
-                "Retention Amount": 0.0,
-                "Post Tax Deduction": 0.0,
-                "Net Amount": _clean(net_amt),
+                "Total Sales": _clean(round(gross, 2)),
+                "Retention Amount": _clean(round(retention, 2)),
+                "Post Tax Deduction": _clean(round(other_ded, 2)),
+                "Net Amount": _clean(round(net_amt, 2)),
                 "Payment Received": _clean(paid_amt),
                 "Balance Due": _clean(max(0.0, net_amt - paid_amt)),
             })
@@ -2336,6 +2368,14 @@ def _rep_all_expense_deduction_retention(db: Session, cid: uuid.UUID, pid: Optio
         return _REPORT_FAILED
 
 
+_EXPENSE_TYPE_LABELS = {
+    "purchase": "Material Purchase",
+    "subcon": "Subcontractor Bill",
+    "expense": "Site Expense",
+    "equipment": "Equipment Bill",
+}
+
+
 def _rep_company_expense(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
     try:
         q = db.query(Bill).filter(Bill.company_id == cid, Bill.status != "Cancelled")
@@ -2349,17 +2389,19 @@ def _rep_company_expense(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
             party = _team_user_name(db, b.party_company_user_id)
             total = float(b.total_payable or 0)
             paid = float(b.paid_amount or 0)
+            gross = float(b.subtotal or 0) + float(b.gst_amount or 0)
+            if gross <= 0:
+                gross = total
             rows.append({
-                "Txn Type": b.invoice_type,
+                "Txn Type": _EXPENSE_TYPE_LABELS.get(b.invoice_type, (b.invoice_type or "").replace("_", " ").title()),
                 "Project Name": proj.name if proj else "",
                 "Description": "",
                 "Party Name": party,
                 "Txn Status": b.status,
                 "Base Amount": _clean(b.subtotal or total),
                 "Tax Amount": _clean(b.gst_amount or 0),
-                "Bill Discount": 0,
-                "Additional Charges": 0,
-                "Total Amount": _clean(total),
+                "Total Amount": _clean(round(gross, 2)),
+                "Deductions": _clean(round(max(gross - total, 0.0), 2)),
                 "Net Amount": _clean(total),
                 "Paid Amount": _clean(paid),
                 "Unpaid Amount": _clean(max(0.0, total - paid)),
@@ -2571,8 +2613,20 @@ def _rep_project_level_party_balance(db: Session, cid: uuid.UUID, pid: Optional[
                 # out of the balance, so a client who owed money read Settled.
                 bills = db.query(Bill).filter(Bill.project_id == p_id, Bill.party_company_user_id == ct.id, Bill.status != "Cancelled").all()
                 payments = db.query(Payment).filter(Payment.project_id == p_id, Payment.party_company_user_id == ct.id).all()
-                if not bills and not payments:
+                ok_flags = ("approved", "auto_approved")
+                debit_notes = sum(float(n.total_amount or 0) for n in db.query(DebitNote).filter(
+                    DebitNote.project_id == p_id, DebitNote.party_company_user_id == ct.id).all()
+                    if (n.approval_flag or "").lower() in ok_flags)
+                credit_notes = sum(float(n.total_amount or 0) for n in db.query(CreditNote).filter(
+                    CreditNote.project_id == p_id, CreditNote.party_company_user_id == ct.id).all()
+                    if (n.approval_flag or "").lower() in ok_flags)
+                if not bills and not payments and not debit_notes and not credit_notes:
                     continue
+                retention_held = 0.0
+                if bills:
+                    for d in db.query(TransactionDeduction).filter(TransactionDeduction.bill_id.in_([b.id for b in bills])).all():
+                        if "retention" in (d.deduction_type or "").lower():
+                            retention_held += float(d.amount or 0) - float(d.released_amount or 0)
 
                 def _owed(types):
                     return sum(float(b.total_payable or 0) for b in bills if b.invoice_type in types)
@@ -2586,24 +2640,23 @@ def _rep_project_level_party_balance(db: Session, cid: uuid.UUID, pid: Optional[
                 party_rec = sum(float(p.amount or 0) for p in payments if p.payment_type in ("in", "receipt"))
                 party_paid = sum(float(p.amount or 0) for p in payments if p.payment_type in ("out", "payout"))
                 # Positive: they owe us. Negative: we owe them.
-                net_bal = (sales_inv + mat_sale - party_rec) - (mat_purch + subcon_amt + site_exp + equip_exp - party_paid)
+                # Debit notes cut what we owe a supplier; credit notes cut what
+                # a client owes us. Approved notes only.
+                net_bal = (sales_inv + mat_sale - credit_notes - party_rec) - (mat_purch + subcon_amt + site_exp + equip_exp - debit_notes - party_paid)
                 bal_type = "To Receive" if net_bal > 0.005 else ("To Pay" if net_bal < -0.005 else "Settled")
                 rows.append({
                     "Party Name": party_name,
                     "Party Type": ct.priority_type or "Vendor",
                     "Project Name": proj.name if proj else "",
-                    "Salary": 0.0,
                     "Material Purchase": _clean(mat_purch),
-                    "Other Expense": 0.0,
                     "Subcon Amount": _clean(subcon_amt),
                     "Site Expense": _clean(site_exp),
                     "Equipment Expense": _clean(equip_exp),
-                    "Debit Note": 0.0,
+                    "Debit Note": _clean(round(debit_notes, 2)),
                     "Sales Invoice": _clean(sales_inv),
-                    "Net Retention": 0.0,
-                    "Credit Note": 0.0,
+                    "Credit Note": _clean(round(credit_notes, 2)),
                     "Material Sale": _clean(mat_sale),
-                    "Material Return": 0.0,
+                    "Retention Held": _clean(round(retention_held, 2)),
                     "Party Received": _clean(party_rec),
                     "Party Paid": _clean(party_paid),
                     "Net Balance": _clean(abs(net_bal)),
@@ -2652,25 +2705,28 @@ def _rep_daily_based_equipment_used(db: Session, cid: uuid.UUID, pid: Optional[u
         for dep in q.order_by(EquipmentDeployment.start_date.desc()).all():
             eq = _get(db, Equipment, dep.equipment_id)
             proj = _get(db, Project, dep.project_id) if dep.project_id else None
-            fuel = db.query(FuelLog).filter(FuelLog.equipment_id == dep.equipment_id, FuelLog.project_id == dep.project_id).all()
-            fuel_liters = sum(float(f.liters or 0) for f in fuel)
+            fq = db.query(FuelLog).filter(FuelLog.equipment_id == dep.equipment_id, FuelLog.project_id == dep.project_id)
+            if dep.start_date:
+                start = dep.start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                end = (dep.end_date or dep.start_date).replace(hour=23, minute=59, second=59, microsecond=999999)
+                fq = fq.filter(FuelLog.logged_date >= start, FuelLog.logged_date <= end)
+            fuel_liters = sum(float(f.liters or 0) for f in fq.all())
+            hours = float(dep.hours_used or 0)
+            if not hours and dep.start_meter is not None and dep.end_meter is not None:
+                hours = max(float(dep.end_meter) - float(dep.start_meter), 0.0)
             rows.append({
                 "Project Name": proj.name if proj else "",
                 "Equipment Name": eq.name if eq else "",
                 "Vehicle No.": eq.code if eq else "",
                 "Ownership Type": eq.ownership_type if eq else "",
-                "Party Name": "",
-                "Measurement Type": eq.category if eq else "Hours",
-                "Usage Unit": "Hours",
-                "Date": _clean(dep.start_date),
-                "Equipment Used": _clean(dep.hours_used or 0),
-                "Fuel Added": _clean(fuel_liters),
-                "Fuel Adjusted": 0,
-                "Equipment Reading": 0,
+                "Category": eq.category if eq else "",
+                "Start Date": _clean(dep.start_date),
+                "End Date": _clean(dep.end_date),
+                "Hours Used": _clean(round(hours, 2)),
+                "Start Reading": _clean(dep.start_meter) if dep.start_meter is not None else "",
+                "End Reading": _clean(dep.end_meter) if dep.end_meter is not None else "",
+                "Fuel Added (Litres)": _clean(round(fuel_liters, 2)),
                 "Remarks": dep.remarks or "",
-                "Total Trips": 1,
-                "Total Distance": 0,
-                "Total Load Carried": 0,
             })
         return rows
     except Exception:
@@ -2863,6 +2919,19 @@ def _rep_material_request_item(db: Session, cid: uuid.UUID, pid: Optional[uuid.U
             ind = _get(db, MaterialIndent, it.indent_id)
             proj = _get(db, Project, ind.project_id) if ind and ind.project_id else None
             req_qty = float(it.quantity or 0)
+            # Ordered = this material on purchase orders raised from the
+            # request. It used to read 0 with every request fully pending.
+            ordered_qty, po_nos = 0.0, []
+            if ind:
+                for poi, po in db.query(PurchaseOrderItem, PurchaseOrder).join(
+                    PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.po_id
+                ).filter(PurchaseOrder.indent_id == ind.id).all():
+                    if (po.status or "").lower() == "cancelled":
+                        continue
+                    if (poi.material_name or "").strip().lower() == (it.material_name or "").strip().lower():
+                        ordered_qty += float(poi.quantity or 0)
+                        if po.po_number and po.po_number not in po_nos:
+                            po_nos.append(po.po_number)
             req_user = _team_user_name(db, ind.requested_by) if (ind and ind.requested_by) else ""
             app_user = _team_user_name(db, ind.approved_by) if (ind and ind.approved_by) else ""
             rows.append({
@@ -2873,9 +2942,9 @@ def _rep_material_request_item(db: Session, cid: uuid.UUID, pid: Optional[uuid.U
                 "Specifications": getattr(it, "specifications", "") or "",
                 "Unit": it.unit,
                 "Request Quantity": _clean(req_qty),
-                "Ordered Quantity": 0,
-                "Pending Quantity": _clean(req_qty),
-                "PO No.": "",
+                "Ordered Quantity": _clean(round(ordered_qty, 3)),
+                "Pending Quantity": _clean(round(max(req_qty - ordered_qty, 0.0), 3)),
+                "PO No.": ", ".join(po_nos),
                 "Requested by": req_user,
                 "Status": ind.status if ind else "pending",
                 "Approved/Rejected By": app_user,
@@ -2924,19 +2993,35 @@ def _rep_warehouse_current_stock(db: Session, cid: uuid.UUID, pid: Optional[uuid
         q = db.query(WarehouseInventory).filter(WarehouseInventory.project_id.in_(proj_ids))
         if pid:
             q = q.filter(WarehouseInventory.project_id == pid)
+        rates = _order_rates(db, proj_ids, pid)
+        moves: dict = {}
+        mt_q = db.query(MaterialTransaction).filter(MaterialTransaction.project_id.in_(proj_ids))
+        if pid:
+            mt_q = mt_q.filter(MaterialTransaction.project_id == pid)
+        for m in mt_q.all():
+            d = _stock_delta(m)
+            slot = moves.setdefault((m.project_id, (m.material_name or "").strip().lower()), [0.0, 0.0])
+            if d >= 0:
+                slot[0] += d
+            else:
+                slot[1] -= d
         rows = []
         for w in q.all():
+            key = (w.project_id, (w.material_name or "").strip().lower())
             curr_stock = float(w.on_hand_qty or 0)
+            got_in, got_out = moves.get(key, (0.0, 0.0))
+            rate = rates.get(key, 0.0)
+            proj = _get(db, Project, w.project_id)
             rows.append({
+                "Project Name": proj.name if proj else "",
                 "Material Name": w.material_name,
                 "Material Category": w.category or "General",
                 "Unit": w.unit,
-                "Opening Stock": _clean(curr_stock),
-                "Total In Quantity": _clean(curr_stock),
-                "Total Out Quantity": 0,
+                "Total In Quantity": _clean(round(got_in, 3)),
+                "Total Out Quantity": _clean(round(got_out, 3)),
                 "Current Stock": _clean(curr_stock),
-                "Avg Purchase Price": 0.0,
-                "Current Stock Value": 0.0,
+                "Avg Purchase Price": _clean(round(rate, 2)),
+                "Current Stock Value": _clean(round(curr_stock * rate, 2)),
             })
         return rows
     except Exception:
@@ -2952,22 +3037,30 @@ def _rep_warehouse_stock_movement(db: Session, cid: uuid.UUID, pid: Optional[uui
         q = db.query(MaterialTransaction).filter(MaterialTransaction.project_id.in_(proj_ids))
         if pid:
             q = q.filter(MaterialTransaction.project_id == pid)
+        rates = _order_rates(db, proj_ids, pid)
+        balance: dict = {}
         rows = []
-        for mt in q.order_by(MaterialTransaction.created_at.desc()).all():
-            qty = float(mt.qty or 0)
+        for mt in q.order_by(MaterialTransaction.created_at.asc()).all():
+            key = (mt.project_id, (mt.material_name or "").strip().lower())
+            delta = _stock_delta(mt)
+            opening = balance.get(key, 0.0)
+            closing = opening + delta
+            balance[key] = closing
+            rate = rates.get(key, 0.0)
+            proj = _get(db, Project, mt.project_id)
             rows.append({
+                "Project Name": proj.name if proj else "",
                 "Material Name": mt.material_name,
                 "Material Category": mt.category or "General",
                 "Transaction Date": _clean(mt.created_at),
-                "Transaction Type": mt.type,
-                "Direction": "IN" if mt.type in ("received", "inward", "purchase", "receipt") else "OUT",
-                "Reference ID": str(mt.id)[:8],
-                "Unit": mt.unit or "Unit",
-                "Opening Qty": 0,
-                "Stock Movement": _clean(qty),
-                "Closing Qty": _clean(qty),
-                "Stock Value": 0.0,
-                "Avg Purchase Price": 0.0,
+                "Transaction Type": _STOCK_TYPE_LABELS.get((mt.type or "").lower(), (mt.type or "").title()),
+                "Direction": "In" if delta >= 0 else "Out",
+                "Unit": mt.unit or "",
+                "Opening Qty": _clean(round(opening, 3)),
+                "Stock Movement": _clean(round(abs(delta), 3)),
+                "Closing Qty": _clean(round(closing, 3)),
+                "Avg Purchase Price": _clean(round(rate, 2)),
+                "Stock Value": _clean(round(closing * rate, 2)),
             })
         return rows
     except Exception:
@@ -2983,19 +3076,28 @@ def _rep_warehouse_transaction(db: Session, cid: uuid.UUID, pid: Optional[uuid.U
         q = db.query(MaterialTransaction).filter(MaterialTransaction.project_id.in_(proj_ids))
         if pid:
             q = q.filter(MaterialTransaction.project_id == pid)
+        rates = _order_rates(db, proj_ids, pid)
         rows = []
         for mt in q.order_by(MaterialTransaction.created_at.desc()).all():
-            qty = float(mt.qty or 0)
+            qty = abs(float(mt.qty or 0))
+            rate = rates.get((mt.project_id, (mt.material_name or "").strip().lower()), 0.0)
+            party = ""
+            if mt.source_ref_id:
+                grn = _get(db, GoodsReceiptNote, mt.source_ref_id)
+                po = _get(db, PurchaseOrder, grn.po_id) if grn and grn.po_id else None
+                if po and po.vendor_id:
+                    party = _team_user_name(db, po.vendor_id)
+            proj = _get(db, Project, mt.project_id)
             rows.append({
                 "Transaction Date": _clean(mt.created_at),
-                "Transaction Type": mt.type,
-                "Party Name": "",
-                "Bill Subtotal": 0.0,
-                "Bill GST": 0,
-                "Bill Discount": 0,
-                "Bill Additional Charges": 0,
-                "Total Amount": 0.0,
+                "Transaction Type": _STOCK_TYPE_LABELS.get((mt.type or "").lower(), (mt.type or "").title()),
+                "Project Name": proj.name if proj else "",
+                "Party Name": party,
                 "Material Name": mt.material_name,
+                "Quantity": _clean(round(qty, 3)),
+                "Unit": mt.unit or "",
+                "Avg Purchase Price": _clean(round(rate, 2)),
+                "Value": _clean(round(qty * rate, 2)),
                 "Description": mt.reason or "",
             })
         return rows

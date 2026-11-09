@@ -142,7 +142,7 @@ const REPORT_METADATA: Record<string, ReportMeta> = {
     title: "Company Expense Report",
     hasDownload: true,
     filters: [{ label: "Project Name", type: "select", options: ["All"] }, { label: "Party Name", type: "select", options: ["All"] }, { label: "Expense Date", type: "date" }, { label: "Expense Type", type: "select", options: ["All"] }, { label: "Expense Status", type: "select", options: ["All"] }, { label: "Cost Code", type: "select", options: ["All"] }, { label: "Settlement By", type: "select", options: ["All"] }, { label: "Creator Name", type: "select", options: ["All"] }, { label: "Due Date (+ Show more filters)", type: "date" }],
-    columns: ['Txn Type', 'Project Name', 'Description', 'Party Name', 'Txn Status', 'Base Amount', 'Tax Amount', 'Bill Discount', 'Additional Charges', 'Total Amount', 'Net Amount', 'Paid Amount', 'Unpaid Amount', 'Due Date', 'Settlement By', 'Payment Mode', 'Cost Code', 'Sub Cost Code', 'Notes/Remarks', 'Reference No.', 'Creator Name', 'Approval Status', 'Created Date']
+    columns: ['Txn Type', 'Project Name', 'Description', 'Party Name', 'Txn Status', 'Base Amount', 'Tax Amount', 'Total Amount', 'Deductions', 'Net Amount', 'Paid Amount', 'Unpaid Amount', 'Due Date', 'Settlement By', 'Payment Mode', 'Cost Code', 'Sub Cost Code', 'Notes/Remarks', 'Reference No.', 'Creator Name', 'Approval Status', 'Created Date']
   },
   "cost-code-expense-analysis": {
     title: "Cost Code Expense Analysis",
@@ -178,7 +178,7 @@ const REPORT_METADATA: Record<string, ReportMeta> = {
     title: "Project level Party Balance Report",
     hasDownload: false,
     filters: [{ label: "Party Name", type: "select", options: ["All"] }, { label: "Project Name", type: "select", options: ["All"] }, { label: "Party Type", type: "select", options: ["All"] }, { label: "Balance Type", type: "select", options: ["All"] }],
-    columns: ['Party Name', 'Party Type', 'Project Name', 'Salary', 'Material Purchase', 'Other Expense', 'Subcon Amount', 'Site Expense', 'Equipment Expense', 'Debit Note', 'Sales Invoice', 'Net Retention', 'Credit Note', 'Material Sale', 'Material Return', 'Party Received', 'Party Paid', 'Net Balance', 'Balance Type']
+    columns: ['Party Name', 'Party Type', 'Project Name', 'Material Purchase', 'Subcon Amount', 'Site Expense', 'Equipment Expense', 'Debit Note', 'Sales Invoice', 'Credit Note', 'Material Sale', 'Retention Held', 'Party Received', 'Party Paid', 'Net Balance', 'Balance Type']
   },
   "material-request-item": {
     title: "Material Request Item Report",
@@ -309,8 +309,8 @@ const REPORT_METADATA: Record<string, ReportMeta> = {
   "daily-based-equipment-used": {
     title: "Daily based Equipment Used Report",
     hasDownload: false,
-    filters: [{ label: "Project Name", type: "select", options: ["All"] }, { label: "Equipment Name", type: "select", options: ["All"] }, { label: "Vehicle No.", type: "select", options: ["All"] }, { label: "Party Name", type: "select", options: ["All"] }, { label: "Date", type: "date" }],
-    columns: ['Project Name', 'Equipment Name', 'Vehicle No.', 'Ownership Type', 'Party Name', 'Measurement Type', 'Usage Unit', 'Date', 'Equipment Used', 'Fuel Added', 'Fuel Adjusted', 'Equipment Reading', 'Remarks', 'Total Trips', 'Total Distance', 'Total Load Carried']
+    filters: [{ label: "Project Name", type: "select", options: ["All"] }, { label: "Equipment Name", type: "select", options: ["All"] }, { label: "Vehicle No.", type: "select", options: ["All"] }, { label: "Start Date", type: "date" }],
+    columns: ['Project Name', 'Equipment Name', 'Vehicle No.', 'Ownership Type', 'Category', 'Start Date', 'End Date', 'Hours Used', 'Start Reading', 'End Reading', 'Fuel Added (Litres)', 'Remarks']
   },
   "equipment-expense-summary": {
     title: "Equipment Expense Summary",
@@ -334,19 +334,19 @@ const REPORT_METADATA: Record<string, ReportMeta> = {
     title: "Warehouse Stock Movement Report",
     hasDownload: false,
     filters: [{ label: "Material Name", type: "select", options: ["All"] }, { label: "Material Category", type: "select", options: ["All"] }, { label: "Transaction Type", type: "select", options: ["All"] }, { label: "Transaction Date", type: "date" }],
-    columns: ['Material Name', 'Material Category', 'Transaction Date', 'Transaction Type', 'Direction', 'Reference ID', 'Unit', 'Opening Qty', 'Stock Movement', 'Closing Qty', 'Stock Value', 'Avg Purchase Price']
+    columns: ['Project Name', 'Material Name', 'Material Category', 'Transaction Date', 'Transaction Type', 'Direction', 'Unit', 'Opening Qty', 'Stock Movement', 'Closing Qty', 'Avg Purchase Price', 'Stock Value']
   },
   "warehouse-transaction": {
     title: "Warehouse Transaction Report",
     hasDownload: false,
     filters: [{ label: "Transaction Type", type: "select", options: ["All"] }, { label: "Transaction Date", type: "date" }],
-    columns: ['Transaction Date', 'Transaction Type', 'Party Name', 'Bill Subtotal', 'Bill GST', 'Bill Discount', 'Bill Additional Charges', 'Total Amount', 'Material Name', 'Description']
+    columns: ['Transaction Date', 'Transaction Type', 'Project Name', 'Party Name', 'Material Name', 'Quantity', 'Unit', 'Avg Purchase Price', 'Value', 'Description']
   },
   "warehouse-current-stock": {
     title: "Warehouse Current Stock Report",
     hasDownload: false,
     filters: [{ label: "Material Name", type: "select", options: ["All"] }, { label: "Material Category", type: "select", options: ["All"] }],
-    columns: ['Material Name', 'Material Category', 'Unit', 'Opening Stock', 'Total In Quantity', 'Total Out Quantity', 'Current Stock', 'Avg Purchase Price', 'Current Stock Value']
+    columns: ['Project Name', 'Material Name', 'Material Category', 'Unit', 'Total In Quantity', 'Total Out Quantity', 'Current Stock', 'Avg Purchase Price', 'Current Stock Value']
   },
   "subcon-workorder-summary": {
     title: "Subcon Workorder Summary Report",
