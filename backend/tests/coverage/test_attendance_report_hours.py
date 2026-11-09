@@ -3,11 +3,15 @@ manual marking is not reported as 'Outside' the site fence."""
 import uuid
 
 from app import models
-from tests.coverage.test_domain_formula_fixes import _mail, _mk_project, _mob, _utc
+from tests.coverage.test_domain_formula_fixes import _mk_project, _utc
+
+_TAG = uuid.uuid4().hex[:8]
+_MOB = "+9177" + str(int(_TAG, 16))[-8:]
+_MAIL = f"t-{_TAG}@test.com"
 
 
 def test_absent_day_reports_zero_hours(client, db, make_tenant, auth_headers):
-    comp, user, _team = make_tenant(company_name="AR1", user_name="UAR1", mobile=_mob(82), email=_mail(82))
+    comp, user, _team = make_tenant(company_name="AR1", user_name="UAR1", mobile=_MOB, email=_MAIL)
     hdr = auth_headers(user, comp)
     project = _mk_project(db, comp)
     emp = models.StaffEmployee(

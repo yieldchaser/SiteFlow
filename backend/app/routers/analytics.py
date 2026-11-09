@@ -16,6 +16,7 @@ from sqlalchemy import Date, cast, func, true
 from sqlalchemy.orm import Session
 
 from app.office_projects import is_office_project
+from app.project_health import project_health
 from app.database import get_db
 from app.auth import get_current_user, verify_company_access, scope_projects, project_ids_for_user
 from app.constants import (
@@ -613,19 +614,7 @@ def get_company_operational_analytics(company_id: uuid.UUID, project_id: Optiona
             )
         spend = sum(_to_float(b.subtotal) for b in db.query(Bill).filter(Bill.project_id == p.id, Bill.invoice_type.in_(EXPENSE_INVOICE_TYPES), Bill.status != "Cancelled").all())
 
-        # Determine Health
-        if p_status == "Completed":
-            health = "Completed"
-        elif count_status == "On Hold":
-            health = "Onhold"
-        elif p_status == "Cancelled":
-            health = "Cancelled"
-        elif spend > budget_total and budget_total > 0:
-            health = "Critical"
-        elif spend > 0.9 * budget_total and budget_total > 0:
-            health = "Warning"
-        else:
-            health = "Healthy"
+        health = project_health(p_status, spend, budget_total)
         
         if health in health_counts:
             health_counts[health] += 1
@@ -795,18 +784,7 @@ def get_company_financial_analytics(company_id: uuid.UUID, project_id: Optional[
         payment_in = sum(_to_float(b.paid_amount) for b in p_bills if is_revenue_invoice_type(b.invoice_type) or is_settlement_money_in(b.invoice_type))
         payment_out = sum(_to_float(b.paid_amount) for b in p_bills if is_expense_invoice_type(b.invoice_type) or is_settlement_money_out(b.invoice_type))
 
-        if p_status == "Completed":
-            health = "Completed"
-        elif p_status in ("Onhold", "On Hold"):
-            health = "Onhold"
-        elif p_status == "Cancelled":
-            health = "Cancelled"
-        elif total_expense > budget_total and budget_total > 0:
-            health = "Critical"
-        elif total_expense > 0.9 * budget_total and budget_total > 0:
-            health = "Warning"
-        else:
-            health = "Healthy"
+        health = project_health(p_status, total_expense, budget_total)
 
         project_summaries.append({
             "project_id": str(p.id),

@@ -395,7 +395,7 @@ const REPORT_METADATA: Record<string, ReportMeta> = {
     title: "Project Financial Summary",
     hasDownload: true,
     filters: [{ label: "Project Name", type: "select", options: ["All"] }],
-    columns: ['Project Name', 'Project Status', 'Project Health', 'Project Budget', 'Total Expense', 'Budget Remaining', 'Total Sales', 'Project Margin', 'Payment In', 'Payment Out', 'Cash Balance']
+    columns: ['Project Name', 'Project Status', 'Project Health', 'Contract Value', 'Project Budget', 'Total Expense', 'Budget Remaining', 'Total Sales', 'Project Margin', 'Payment In', 'Payment Out', 'Cash Balance']
   },
   "project-operational-summary": {
     title: "Project Operational Summary",

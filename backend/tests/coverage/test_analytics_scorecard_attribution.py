@@ -3,11 +3,15 @@ on, and a firm with no judged bills shows no on-time rate rather than 0%."""
 import uuid
 
 from app import models
-from tests.coverage.test_domain_formula_fixes import _mail, _mk_project, _mob, _utc
+from tests.coverage.test_domain_formula_fixes import _mk_project, _utc
+
+_TAG = uuid.uuid4().hex[:8]
+_MOB = "+9177" + str(int(_TAG, 16))[-8:]
+_MAIL = f"t-{_TAG}@test.com"
 
 
 def test_ncr_counts_only_against_its_own_subcontractor(client, db, make_tenant, auth_headers):
-    comp, user, team_a = make_tenant(company_name="SC1", user_name="USC1", mobile=_mob(81), email=_mail(81))
+    comp, user, team_a = make_tenant(company_name="SC1", user_name="USC1", mobile=_MOB, email=_MAIL)
     hdr = auth_headers(user, comp)
     project = _mk_project(db, comp)
     team_b = models.CompanyTeam(id=uuid.uuid4(), company_id=comp.id, priority_type="subcontractor")

@@ -29,8 +29,9 @@ from app.constants import (
     is_settlement_invoice_type,
     is_settlement_money_in,
 )
+from app.project_health import budget_total, health_label, project_health
 from app.models import (
-    ClientReport, Project, Task, Bill, WorkOrder, WorkOrderItem,
+    ClientReport, Project, ProjectMember, Task, Bill, WorkOrder, WorkOrderItem,
     MaterialIndent, MaterialIndentItem, PurchaseOrder, SiteInspection, NCR, MaterialTestResult,
     DailyProgressReport, PurchaseOrderItem, WarehouseInventory,
     StaffEmployee, AttendanceLog, PayrollRun, PayrollLineItem,
@@ -365,6 +366,9 @@ def _clean(v):
         return ""
     if isinstance(v, Decimal):
         return float(v)
+    if isinstance(v, float):
+        # Sums of floats leave noise like 6981744.999999999 in a rupee cell.
+        return round(v, 4)
     if isinstance(v, uuid.UUID):
         return str(v)
     if isinstance(v, datetime):
@@ -2050,7 +2054,11 @@ def _rep_project_financial_summary(db: Session, cid: uuid.UUID, pid: Optional[uu
             q = q.filter(Project.id == pid)
         rows = []
         for p in q.all():
-            budget = float(p.project_value or 0)
+            # Budget is the cost budget set in Budgeting, the same figure the
+            # dashboard and analytics use. The contract value is what the
+            # client pays and has its own column.
+            budget = budget_total(db, p.id)
+            contract_value = float(p.project_value or 0)
             bills = db.query(Bill).filter(Bill.project_id == p.id, Bill.status != "Cancelled").all()
             # Work value, before GST and deductions, like the project margin.
             total_expense = sum(float(b.subtotal or 0) for b in bills if is_expense_invoice_type(b.invoice_type))
@@ -2064,10 +2072,11 @@ def _rep_project_financial_summary(db: Session, cid: uuid.UUID, pid: Optional[uu
             rows.append({
                 "Project Name": p.name,
                 "Project Status": p.status or "Active",
-                "Project Health": "Good" if budget_rem >= 0 else "Over Budget",
-                "Project Budget": _clean(budget),
+                "Project Health": health_label(project_health(p.status, total_expense, budget)),
+                "Contract Value": _clean(contract_value),
+                "Project Budget": _clean(budget) if budget else "",
                 "Total Expense": _clean(total_expense),
-                "Budget Remaining": _clean(budget_rem),
+                "Budget Remaining": _clean(budget_rem) if budget else "",
                 "Total Sales": _clean(total_sales),
                 "Project Margin": _clean(margin),
                 "Payment In": _clean(pay_in),
@@ -3385,17 +3394,27 @@ def _rep_project_operational_summary(db: Session, cid: uuid.UUID, pid: Optional[
         for p in q.all():
             tasks = db.query(Task).filter(Task.project_id == p.id).all()
             avg_prog = (sum(float(t.progress or 0) for t in tasks) / len(tasks)) if tasks else 0.0
+            p_bills = db.query(Bill).filter(Bill.project_id == p.id, Bill.status != "Cancelled").all()
+            spend = sum(float(b.subtotal or 0) for b in p_bills if is_expense_invoice_type(b.invoice_type))
+            # The customer is whoever the project's sales bills are raised to.
+            customer_ids = [b.party_company_user_id for b in sorted(
+                (b for b in p_bills if is_revenue_invoice_type(b.invoice_type) and b.party_company_user_id),
+                key=lambda b: str(b.invoice_date or b.created_at or ""), reverse=True)]
+            customer = _team_user_name(db, customer_ids[0]) if customer_ids else ""
+            member_ids = [m.company_team_id for m in db.query(ProjectMember).filter(ProjectMember.project_id == p.id).all()]
+            names = _team_user_names_batch(db, member_ids) if member_ids else {}
+            personnel = ", ".join(sorted(n for n in (names.values() if isinstance(names, dict) else []) if n)[:5])
             rows.append({
                 "Project Name": p.name,
                 "Project Category": p.category or "Construction",
                 "Project Stage": p.stage or p.status or "Execution",
-                "Key Personnel": "",
+                "Key Personnel": personnel,
                 "Project Status": p.status or "Active",
-                "Project Health": "On Track",
+                "Project Health": health_label(project_health(p.status, spend, budget_total(db, p.id))),
                 "Start Date": _clean(p.planned_start_date or p.actual_start_date or p.created_at),
                 "End Date": _clean(p.planned_end_date or p.actual_end_date),
                 "Progress": _clean(int(avg_prog)),
-                "Customer Name": "",
+                "Customer Name": customer,
             })
         return rows
     except Exception:
