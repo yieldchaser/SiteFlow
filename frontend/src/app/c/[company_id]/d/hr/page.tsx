@@ -1248,21 +1248,6 @@ export default function HRPayrollPage() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* ── HR sub-navigation (top tabs) ── */}
-      <div className="px-6 py-2 border-b border-border-custom bg-card shrink-0 overflow-x-auto">
-        <SegmentedTabs
-          tabs={[
-            { id: "employees", label: "Employees", icon: <Icon name="worker" className="w-3.5 h-3.5" /> },
-            { id: "attendance", label: "Attendance", icon: <Icon name="location_pin" className="w-3.5 h-3.5" /> },
-            { id: "timesheets", label: "Timesheets", icon: <Icon name="clipboard" className="w-3.5 h-3.5" /> },
-            { id: "payroll", label: "Payroll Runs", icon: <Icon name="money_bag" className="w-3.5 h-3.5" /> },
-            { id: "leaves", label: "Leaves", icon: <Icon name="calendar" className="w-3.5 h-3.5" /> },
-            { id: "holidays", label: "Holidays", icon: <Icon name="sun" className="w-3.5 h-3.5" /> },
-          ]}
-          activeTab={tab}
-          onChange={(t) => setTab(t as any)}
-        />
-      </div>
 
       {/* Main */}
       <main className="flex-1 flex flex-col overflow-hidden">
@@ -1316,6 +1301,21 @@ export default function HRPayrollPage() {
             )}
           </div>
         </PageHeader>
+        {/* ── HR sub-navigation (top tabs) ── */}
+        <div className="px-6 py-2 border-b border-border-custom bg-card shrink-0 overflow-x-auto">
+          <SegmentedTabs
+            tabs={[
+              { id: "employees", label: "Employees", icon: <Icon name="worker" className="w-3.5 h-3.5" /> },
+              { id: "attendance", label: "Attendance", icon: <Icon name="location_pin" className="w-3.5 h-3.5" /> },
+              { id: "timesheets", label: "Timesheets", icon: <Icon name="clipboard" className="w-3.5 h-3.5" /> },
+              { id: "payroll", label: "Payroll Runs", icon: <Icon name="money_bag" className="w-3.5 h-3.5" /> },
+              { id: "leaves", label: "Leaves", icon: <Icon name="calendar" className="w-3.5 h-3.5" /> },
+              { id: "holidays", label: "Holidays", icon: <Icon name="sun" className="w-3.5 h-3.5" /> },
+            ]}
+            activeTab={tab}
+            onChange={(t) => setTab(t as any)}
+          />
+        </div>
 
         <div className="flex-1 overflow-y-auto">
           <PageShell width="wide">

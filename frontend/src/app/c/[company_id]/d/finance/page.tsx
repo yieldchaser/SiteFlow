@@ -1359,24 +1359,6 @@ export default function FinancePage() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* ── Finance sub-navigation (top tabs) ── */}
-      <div className="px-6 py-2 border-b border-border-custom bg-card shrink-0 overflow-x-auto">
-        <SegmentedTabs
-          tabs={[
-            { id: "party", label: "Party", icon: <Icon name="group" className="w-3.5 h-3.5" /> },
-            { id: "ledger", label: "Transaction", icon: <Icon name="ledger" className="w-3.5 h-3.5" /> },
-            { id: "general_ledger", label: "General Ledger", icon: <Icon name="payments" className="w-3.5 h-3.5" /> },
-            { id: "payment_requests", label: "Payment Requests", icon: <Icon name="envelope" className="w-3.5 h-3.5" /> },
-            { id: "accounts", label: "Accounts", icon: <Icon name="bank" className="w-3.5 h-3.5" /> },
-            { id: "tally", label: "Tally Sync", icon: <Icon name="refresh" className="w-3.5 h-3.5" /> },
-          ]}
-          activeTab={tab}
-          onChange={(t) => {
-            setTab(t as any);
-            if (t === "general_ledger") fetchGeneralLedger();
-          }}
-        />
-      </div>
 
       {/* ── Main content area ── */}
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -1446,6 +1428,24 @@ export default function FinancePage() {
             </div>
           </div>
         </PageHeader>
+        {/* ── Finance sub-navigation (top tabs) ── */}
+        <div className="px-6 py-2 border-b border-border-custom bg-card shrink-0 overflow-x-auto">
+          <SegmentedTabs
+            tabs={[
+              { id: "party", label: "Party", icon: <Icon name="group" className="w-3.5 h-3.5" /> },
+              { id: "ledger", label: "Transaction", icon: <Icon name="ledger" className="w-3.5 h-3.5" /> },
+              { id: "general_ledger", label: "General Ledger", icon: <Icon name="payments" className="w-3.5 h-3.5" /> },
+              { id: "payment_requests", label: "Payment Requests", icon: <Icon name="envelope" className="w-3.5 h-3.5" /> },
+              { id: "accounts", label: "Accounts", icon: <Icon name="bank" className="w-3.5 h-3.5" /> },
+              { id: "tally", label: "Tally Sync", icon: <Icon name="refresh" className="w-3.5 h-3.5" /> },
+            ]}
+            activeTab={tab}
+            onChange={(t) => {
+              setTab(t as any);
+              if (t === "general_ledger") fetchGeneralLedger();
+            }}
+          />
+        </div>
 
         <div className="flex-1 overflow-y-auto">
           <PageShell width="wide">

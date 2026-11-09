@@ -887,23 +887,6 @@ export default function ProcurementPage() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* ── Top Bar Switcher ── */}
-      <div className="px-6 py-2 border-b border-border-custom bg-card shrink-0 flex items-center justify-between overflow-x-auto gap-3">
-        <SegmentedTabs
-          tabs={[
-            { id: "po", label: "PO", icon: <Icon name="description" className="w-3.5 h-3.5" /> },
-            { id: "indent", label: "Indent", icon: <Icon name="inbox" className="w-3.5 h-3.5" /> },
-            { id: "inventory", label: "Inventory", icon: <Icon name="package" className="w-3.5 h-3.5" /> },
-            { id: "ledger", label: "Ledger", icon: <Icon name="receipt" className="w-3.5 h-3.5" /> },
-            { id: "unbilled", label: "Unbilled", icon: <Icon name="warning" className="w-3.5 h-3.5" /> },
-          ]}
-          activeTab={tab}
-          onChange={(t) => setTab(t as any)}
-        />
-        <Link href={`/c/${companyId}/d/procurement/vendor-performance`} className="whitespace-nowrap px-3 py-1.5 rounded-md text-xs font-semibold transition-all text-muted hover:text-foreground hover:bg-elevated inline-flex items-center gap-1.5 shrink-0 border border-border-custom">
-          <Icon name="bar_chart" className="w-3.5 h-3.5" />Vendor Performance
-        </Link>
-      </div>
 
       {/* Main Framework */}
       <main className="flex-1 flex flex-col overflow-hidden h-full">
@@ -931,6 +914,23 @@ export default function ProcurementPage() {
             </button>
           </div>
         </PageHeader>
+        {/* ── Top Bar Switcher ── */}
+        <div className="px-6 py-2 border-b border-border-custom bg-card shrink-0 flex items-center justify-between overflow-x-auto gap-3">
+          <SegmentedTabs
+            tabs={[
+              { id: "po", label: "PO", icon: <Icon name="description" className="w-3.5 h-3.5" /> },
+              { id: "indent", label: "Indent", icon: <Icon name="inbox" className="w-3.5 h-3.5" /> },
+              { id: "inventory", label: "Inventory", icon: <Icon name="package" className="w-3.5 h-3.5" /> },
+              { id: "ledger", label: "Ledger", icon: <Icon name="receipt" className="w-3.5 h-3.5" /> },
+              { id: "unbilled", label: "Unbilled", icon: <Icon name="warning" className="w-3.5 h-3.5" /> },
+            ]}
+            activeTab={tab}
+            onChange={(t) => setTab(t as any)}
+          />
+          <Link href={`/c/${companyId}/d/procurement/vendor-performance`} className="whitespace-nowrap px-3 py-1.5 rounded-md text-xs font-semibold transition-all text-muted hover:text-foreground hover:bg-elevated inline-flex items-center gap-1.5 shrink-0 border border-border-custom">
+            <Icon name="bar_chart" className="w-3.5 h-3.5" />Vendor Performance
+          </Link>
+        </div>
 
         {/* Content Workspace */}
         <div className="flex-1 overflow-y-auto">
