@@ -2016,6 +2016,9 @@ class SubcontractorResponse(BaseModel):
 
 class SubcontractorListResponse(BaseModel):
     company_team_id: UUID
+    # The Party Library row, so a project screen can keep the crews that are
+    # on that project (project parties are keyed by library party).
+    library_party_id: Optional[UUID] = None
     name: str
     gstin: Optional[str] = None
     phone: Optional[str] = None
@@ -2115,6 +2118,7 @@ def list_subcontractors(company_id: UUID, db: Session = Depends(get_db), _: None
         res.append(
             SubcontractorListResponse(
                 company_team_id=r.id,
+                library_party_id=r.library_party_id,
                 name=display_name,
                 gstin=r.tax_no,
                 phone=r.phone,

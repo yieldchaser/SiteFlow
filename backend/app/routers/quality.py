@@ -28,7 +28,7 @@ from app.database import get_db
 from app.auth import get_current_user, verify_company_access, verify_project_access, get_company_membership, require_permission
 from app.models import (
     QualityChecklist, ChecklistItem, SiteInspection,
-    InspectionResponse, NCR, MaterialTestResult, Project, User, Task
+    InspectionResponse, NCR, MaterialTestResult, Project, User, Task, CompanyTeam
 )
 from app.workflow_controls import enforce_entry_creation_window
 from app.routers.delete_logs import log_deletion
@@ -481,6 +481,14 @@ def raise_ncr(payload: NCRCreate, db: Session = Depends(get_db), current_user: U
         raise HTTPException(status_code=404, detail="Project not found")
     get_company_membership(db, current_user, project.company_id)
     require_permission(db, current_user, project.company_id, "quality:edit")
+    # The firm the NCR is raised against must be one of this company's
+    # parties; any id was accepted before.
+    if payload.vendor_id is not None:
+        vendor = db.query(CompanyTeam).filter(
+            CompanyTeam.id == payload.vendor_id, CompanyTeam.company_id == project.company_id
+        ).first()
+        if not vendor:
+            raise HTTPException(status_code=400, detail="Pick a subcontractor or supplier from this company")
     # Auto-assign a sequential number when the caller omits it.
     ncr_number = payload.ncr_number or _generate_ncr_number(db, payload.project_id)
     # R2-386: ncr_number is unique per project. Answer a friendly conflict

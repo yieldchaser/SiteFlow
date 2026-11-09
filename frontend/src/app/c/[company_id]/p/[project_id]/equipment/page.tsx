@@ -358,6 +358,10 @@ export default function EquipmentTrackingPage() {
   // Machines that have worked here, plus any free to deploy. Listing only the
   // first left a newly added machine invisible, so it could never be deployed.
   const projectFleet = fleet.filter(eq => deployments.some(d => d.equipment_id === eq.id) || eq.status !== "deployed");
+  // Overdue servicing for the machines shown here. The banner listed every
+  // machine in the company, including ones working on other sites.
+  const projectFleetIds = new Set(projectFleet.map(eq => eq.id));
+  const overdueHere = maintenanceLogs.filter(m => m.completed_date === null && new Date(m.scheduled_date) < new Date() && projectFleetIds.has(m.equipment_id));
   const timelineEvents = [
     ...deployments.map(d => {
       const eq = fleet.find(e => e.id === d.equipment_id);
@@ -444,14 +448,14 @@ export default function EquipmentTrackingPage() {
               {activeTab === "fleet" && (
                 <div className="space-y-6">
                   {/* Overdue Maintenance Banner Alert */}
-                  {maintenanceLogs.filter(m => m.completed_date === null && new Date(m.scheduled_date) < new Date()).length > 0 && (
+                  {overdueHere.length > 0 && (
                     <div className="p-4 bg-danger/10 border border-danger/20 text-danger rounded-lg flex items-start gap-3 text-xs">
                       <Icon name="warning" className="w-5 h-5 shrink-0" />
                       <div>
                         <strong className="font-extrabold block text-foreground">Overdue Maintenance Alert!</strong>
                         <p className="text-muted mt-0.5">The following machinery requires immediate servicing to prevent site safety incidents:</p>
                         <ul className="list-disc pl-5 mt-1.5 space-y-1 font-sans text-[10px]">
-                          {maintenanceLogs.filter(m => m.completed_date === null && new Date(m.scheduled_date) < new Date()).map(m => {
+                          {overdueHere.map(m => {
                             const eq = fleet.find(e => e.id === m.equipment_id);
                             return (
                               <li key={m.id}>
