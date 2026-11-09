@@ -279,7 +279,7 @@ def get_indents(
     else:
         query = query.filter(MaterialIndent.company_id == company_id)
 
-    indents = query.all()
+    indents = query.order_by(MaterialIndent.created_at.desc()).all()
     res = []
     for ind in indents:
         items = db.query(MaterialIndentItem).filter(MaterialIndentItem.indent_id == ind.id).all()
@@ -320,7 +320,7 @@ def get_company_indents(
     if status:
         from sqlalchemy import func
         q = q.filter(func.lower(MaterialIndent.status) == status.strip().lower())
-    indents = q.all()
+    indents = q.order_by(MaterialIndent.created_at.desc()).all()
     res = []
     for ind in indents:
         items = db.query(MaterialIndentItem).filter(MaterialIndentItem.indent_id == ind.id).all()
@@ -677,7 +677,7 @@ def _po_response(db: Session, po: PurchaseOrder) -> POResponse:
 
 @router.get("/pos", response_model=List[POResponse])
 def get_pos(project_id: UUID, db: Session = Depends(get_db), _: None = Depends(verify_project_access)):
-    pos = db.query(PurchaseOrder).filter(PurchaseOrder.project_id == project_id).all()
+    pos = db.query(PurchaseOrder).filter(PurchaseOrder.project_id == project_id).order_by(PurchaseOrder.po_date.desc(), PurchaseOrder.created_at.desc()).all()
     return [_po_response(db, po) for po in pos]
 
 @router.post("/pos", response_model=POResponse, status_code=201)
@@ -1010,7 +1010,7 @@ def _advance_to_sent_if_behind(po) -> None:
 
 @router.get("/grns", response_model=List[GRNResponse])
 def get_grns(project_id: UUID, db: Session = Depends(get_db), _: None = Depends(verify_project_access)):
-    grns = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.project_id == project_id).all()
+    grns = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.project_id == project_id).order_by(GoodsReceiptNote.received_date.desc(), GoodsReceiptNote.created_at.desc()).all()
     res = []
     for g in grns:
         items = db.query(GRNItem).filter(GRNItem.grn_id == g.id).all()
@@ -1335,7 +1335,7 @@ def cancel_grn(grn_id: UUID, db: Session = Depends(get_db), current_user: User =
 # 4. Warehouse Inventory
 @router.get("/inventory", response_model=List[InventoryResponse])
 def get_inventory(project_id: UUID, db: Session = Depends(get_db), _: None = Depends(verify_project_access)):
-    inv = db.query(WarehouseInventory).filter(WarehouseInventory.project_id == project_id).all()
+    inv = db.query(WarehouseInventory).filter(WarehouseInventory.project_id == project_id).order_by(WarehouseInventory.material_name.asc()).all()
     return [
         InventoryResponse(
             id=i.id,
