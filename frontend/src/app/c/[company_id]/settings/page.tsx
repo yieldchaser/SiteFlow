@@ -518,59 +518,6 @@ export default function CompanySettingsPage() {
     } catch { setNumStatus("error"); }
   };
 
-  // Custom Fields (entity_type-based, wired to /custom-fields)
-  const DOC_TYPES = [
-    "Project", "Task", "Lead", "Vendor", "Customer", "Invoice", "Bill",
-    "Work Order", "Purchase Order", "Quotation", "BOQ", "Payment", "Expense", "Material", "Equipment",
-    "Party", "Labour Party", "Sales Invoice", "Subcon Work Order", "Payroll", "CRM Lead",
-  ];
-  const CF_DATA_TYPES = ["text", "number", "date", "select", "multiselect", "checkbox"];
-  const [cfEntity, setCfEntity] = useState(DOC_TYPES[0]);
-  const [cfList, setCfList] = useState<CustomField[]>([]);
-  const [showAddCf, setShowAddCf] = useState(false);
-  const [cfBusy, setCfBusy] = useState(false);
-  const [cfMsg, setCfMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
-  const [cfDraft, setCfDraft] = useState({ field_name: "", field_type: "text", default_value: "", set_default: false });
-  const loadCf = useCallback(() => {
-    if (!company_id) return;
-    fetch(`${apiHost}/apis/v3/custom-fields/fields/${company_id}?entity_type=${encodeURIComponent(cfEntity)}`, { headers: authHeaders() })
-      .then((r) => r.json())
-      .then((d) => setCfList(Array.isArray(d) ? d : []))
-      .catch(() => setCfList([]));
-  }, [company_id, apiHost, cfEntity]);
-  useEffect(() => { if (activeSection === "docfields") loadCf(); }, [activeSection, loadCf]);
-  useEffect(() => { if (activeSection === "docfields") loadTerms(); }, [activeSection, loadTerms]);
-  const addCf = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const name = cfDraft.field_name.trim();
-    if (!name) return;
-    setCfBusy(true); setCfMsg(null);
-    try {
-      const res = await fetch(`${apiHost}/apis/v3/custom-fields/fields`, {
-        method: "POST", headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
-        body: JSON.stringify({
-          company_id, entity_type: cfEntity, field_name: name, field_label: name,
-          field_type: cfDraft.field_type, is_required: false, options: [], display_order: cfList.length,
-          default_value: cfDraft.set_default ? cfDraft.default_value : null,
-          set_default: cfDraft.set_default,
-        }),
-      });
-      if (res.ok) {
-        const f = await res.json();
-        setCfList([...cfList, f]);
-        setCfDraft({ field_name: "", field_type: "text", default_value: "", set_default: false });
-        setShowAddCf(false);
-        setCfMsg({ type: "ok", text: "Custom field added" });
-      } else {
-        setCfMsg({ type: "err", text: "Failed to add custom field" });
-      }
-    } catch {
-      setCfMsg({ type: "err", text: "Failed to add custom field" });
-    } finally {
-      setCfBusy(false);
-    }
-  };
-
   // ─── Multi Level Approval (CD-1: only enforcement-wired categories offered) ──
   // Mirrors APPROVAL_FEATURE_TYPES in backend/app/approvals.py (contract-pinned).
   const APPROVAL_CATEGORIES = [
@@ -2436,79 +2383,18 @@ export default function CompanySettingsPage() {
               )}
 
               {/* ── Custom Fields ── */}
+              {/* One place to manage them: this tab had its own copy that sent the
+                  record type in capitals, which the server refused, so every
+                  save here failed. */}
               {docTab === "custom" && (
-                <div className="space-y-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h2 className="text-sm font-bold text-foreground uppercase tracking-wider text-muted">Custom Fields</h2>
-                      <p className="mt-1 text-xs text-muted">Define custom fields to capture specialized tracking data across documents and records.</p>
-                    </div>
-                    <button onClick={() => setShowAddCf(true)} className="bg-primary text-white text-xs font-bold px-4 py-2.5 rounded-md">+ New Custom Field</button>
-                  </div>
-
-                  <div className="flex items-center gap-3 max-w-sm">
-                    <label className="text-[10px] uppercase tracking-wider text-muted font-bold">Document / Entity Type</label>
-                    <select value={cfEntity} onChange={(e) => setCfEntity(e.target.value)}
-                      className="flex-1 bg-elevated border border-border-custom focus:border-primary rounded-md px-3 py-2 text-xs text-foreground outline-none">
-                      {DOC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </div>
-
-                  {cfMsg && (<div className={`p-4 text-xs rounded-lg border ${cfMsg.type === "ok" ? "bg-success/10 border-success/20 text-success" : "bg-danger/10 border-danger/20 text-danger"}`}>{cfMsg.text}</div>)}
-
-                  {showAddCf && (
-                    <form onSubmit={addCf} className="bg-card border border-border-custom rounded-lg p-6 space-y-4 max-w-xl">
-                      <h3 className="text-xs font-bold text-foreground uppercase tracking-wider">New Custom Field — {cfEntity}</h3>
-                      <Field label="Field Name">
-                        <input type="text" placeholder="e.g. Client PO Reference" value={cfDraft.field_name}
-                          onChange={(e) => setCfDraft({ ...cfDraft, field_name: e.target.value })} required
-                          className="w-full bg-elevated border border-border-custom focus:border-primary rounded-md px-3 py-2 text-xs text-foreground outline-none" />
-                      </Field>
-                      <Field label="Data Type">
-                        <select value={cfDraft.field_type} onChange={(e) => setCfDraft({ ...cfDraft, field_type: e.target.value })}
-                          className="w-full bg-elevated border border-border-custom focus:border-primary rounded-md px-3 py-2 text-xs text-foreground outline-none">
-                          {CF_DATA_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                      </Field>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={cfDraft.set_default} onChange={(e) => setCfDraft({ ...cfDraft, set_default: e.target.checked })} className="h-4 w-4 accent-primary" />
-                        <span className="text-xs text-foreground">Set Default</span>
-                      </label>
-                      {cfDraft.set_default && (
-                        <Field label="Default Value">
-                          <input type="text" placeholder="Default value" value={cfDraft.default_value}
-                            onChange={(e) => setCfDraft({ ...cfDraft, default_value: e.target.value })}
-                            className="w-full bg-elevated border border-border-custom focus:border-primary rounded-md px-3 py-2 text-xs text-foreground outline-none" />
-                        </Field>
-                      )}
-                      <div className="flex gap-2 justify-end">
-                        <button type="button" onClick={() => setShowAddCf(false)} className="text-muted hover:text-foreground text-xs font-bold px-4 py-2">Cancel</button>
-                        <button type="submit" disabled={cfBusy} className="bg-primary text-white text-xs font-bold px-4 py-2 rounded-md disabled:opacity-50">Add Field</button>
-                      </div>
-                    </form>
-                  )}
-
-                  <div className="bg-card border border-border-custom rounded-lg overflow-hidden">
-                    <div className="grid grid-cols-[2fr_1.5fr_1fr_2fr] gap-4 px-5 py-3 text-[10px] uppercase tracking-wider text-muted font-bold border-b border-border-custom">
-                      <div>Field Name</div><div>Data Type</div><div>Set Default</div><div>Default Value</div>
-                    </div>
-                    {cfList.length === 0 ? (
-                      <div className="p-8 text-center text-xs text-muted">No custom fields for {cfEntity}.</div>
-                    ) : (
-                      cfList.map((f) => (
-                        <div key={f.id} className="grid grid-cols-[2fr_1.5fr_1fr_2fr] gap-4 px-5 py-3 items-center border-b border-border-custom last:border-0">
-                          <div className="font-bold text-foreground text-sm">{f.field_name}</div>
-                          <div className="text-xs text-muted">{formatLabel(f.field_type)}</div>
-                          <div>{f.set_default ? <Badge tone="success" className="font-bold">Yes</Badge> : <span className="text-[10px] text-muted">—</span>}</div>
-                          <div className="text-xs text-muted truncate">{f.default_value || "—"}</div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  <div className="p-4 bg-warning/10 border border-warning/20 text-warning text-xs rounded-lg">
-                    Note: custom fields you define here are saved per record type and listed above. They do not yet appear on Project, Task, Invoice, or other record forms, so values cannot be filled in on individual records yet.
-                  </div>
+                <div className="bg-card border border-border-custom rounded-lg p-6 space-y-2 max-w-xl">
+                  <h2 className="text-sm font-bold text-foreground">Custom Fields</h2>
+                  <p className="text-xs text-muted">
+                    Extra boxes on your project, sales invoice and subcontractor bill forms are managed on their own page.
+                  </p>
+                  <a href={`/c/${company_id}/d/custom-fields`} className="inline-block text-xs font-semibold text-primary underline">
+                    Open Custom Fields
+                  </a>
                 </div>
               )}
             </div>

@@ -64,11 +64,11 @@ def test_parity_tier2_custom_fields_lead_and_vendor(client, db, make_tenant, aut
     assert fields_vendor.status_code == 200
     assert any(f["field_name"] == "vendor_compliance_grade" for f in fields_vendor.json())
 
-    # 4. Verify frontend page includes lead and vendor options
+    # 4. No form shows lead or vendor fields, so the page does not offer to
+    # make them; any that exist are listed under "Not on any form" to delete.
     page_path = (
         Path(__file__).resolve().parents[3]
         / "frontend" / "src" / "app" / "c" / "[company_id]" / "d" / "custom-fields" / "page.tsx"
     )
     page_content = page_path.read_text(encoding="utf-8")
-    assert '<option value="lead">Lead</option>' in page_content, "Frontend custom fields page missing Lead option"
-    assert '<option value="vendor">Vendor</option>' in page_content, "Frontend custom fields page missing Vendor option"
+    assert "Not on any form" in page_content

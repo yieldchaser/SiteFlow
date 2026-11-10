@@ -18,6 +18,9 @@ from app.models import (
 from app import models
 from app.party_names import resolve_party_name, resolve_party_names_batch
 from app.routers.custom_fields import CustomFieldValueInput, upsert_values_for_entity, enforce_required_custom_fields
+
+# Which custom-field set each bill type carries; other types carry none.
+CUSTOM_FIELD_ENTITY_FOR_INVOICE_TYPE = {"sale": "invoice", "subcon": "bill"}
 from app.routers.library import next_party_id_custom
 from app.routers.projects import ensure_project_party_link
 from app.zatca import build_zatca_payload
@@ -1361,8 +1364,13 @@ def create_bill(req: BillCreateRequest, db: Session = Depends(get_db), current_u
             status_code=422,
             detail="Set the state the site is in (Project settings) first. GST on this project's bills depends on it.",
         )
-    enforce_required_custom_fields(db, req.company_id, "invoice", [cf.model_dump() for cf in req.custom_fields])
-    enforce_required_custom_fields(db, req.company_id, "bill", [cf.model_dump() for cf in req.custom_fields])
+    # Custom fields belong to one kind of document: "Invoice" fields to sales
+    # invoices, "Bill" fields to subcontractor bills (the only two forms that
+    # show them). Both used to be required on every bill of every type, so one
+    # required field blocked purchases, expenses and the other kind of bill.
+    cf_entity = CUSTOM_FIELD_ENTITY_FOR_INVOICE_TYPE.get(req.invoice_type)
+    if cf_entity:
+        enforce_required_custom_fields(db, req.company_id, cf_entity, [cf.model_dump() for cf in req.custom_fields])
 
     # Resolve or auto-generate invoice number (Onsite Parity 14.9.2)
     inv_num = (req.invoice_number or "").strip()
@@ -1602,10 +1610,11 @@ def create_bill(req: BillCreateRequest, db: Session = Depends(get_db), current_u
     if bill_team is not None and bill_team.library_party_id:
         ensure_project_party_link(db, req.project_id, bill_team.library_party_id)
 
-    upsert_values_for_entity(
-        db, req.company_id, "invoice", bill.id,
-        [cf.model_dump() for cf in req.custom_fields],
-    )
+    if cf_entity:
+        upsert_values_for_entity(
+            db, req.company_id, cf_entity, bill.id,
+            [cf.model_dump() for cf in req.custom_fields],
+        )
 
     ded_responses = []
     for d, calculated_amt in deduction_details:

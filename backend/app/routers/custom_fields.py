@@ -4,7 +4,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.database import get_db
 from app.auth import get_current_user, verify_company_access, get_company_membership, require_permission
 from app.models import CustomField, CustomFieldValue, User, Project, Task, Bill, CRMLead
@@ -42,6 +42,17 @@ class CustomFieldCreate(BaseModel):
     default_value: Optional[str] = None
     set_default: bool = False
 
+    @model_validator(mode="after")
+    def _check(self):
+        self.field_label = (self.field_label or "").strip()
+        self.field_name = (self.field_name or "").strip() or self.field_label
+        if not self.field_label:
+            raise ValueError("Give the field a name")
+        self.options = [o.strip() for o in self.options if o and o.strip()]
+        if self.field_type in ("select", "multiselect") and not self.options:
+            raise ValueError("Add the choices people can pick from")
+        return self
+
 
 class CustomFieldUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -52,6 +63,7 @@ class CustomFieldUpdate(BaseModel):
     options: Optional[List[str]] = None
     display_order: Optional[int] = None
     default_value: Optional[str] = None
+    set_default: Optional[bool] = None
     is_active: Optional[bool] = None
 
 
@@ -173,7 +185,8 @@ def upsert_values_for_entity(
         raw_value = item.get("value") if isinstance(item, dict) else getattr(item, "value", None)
 
         field = db.query(CustomField).filter(CustomField.id == field_id).first()
-        if not field:
+        # Only this company's fields for this kind of record.
+        if not field or field.company_id != company_id or field.entity_type != entity_type:
             continue
 
         value_text = value_number = value_date = value_json = None
@@ -227,10 +240,15 @@ def enforce_required_custom_fields(
     entity_type: str,
     values: Optional[List[dict]],
 ) -> None:
+    # A required field counts as filled only with a value: it used to count as
+    # soon as its id was sent, so a blank box passed.
     provided = set()
     for item in values or []:
         field_id = item.get("field_id") if isinstance(item, dict) else getattr(item, "field_id", None)
-        if field_id:
+        value = item.get("value") if isinstance(item, dict) else getattr(item, "value", None)
+        if isinstance(value, str):
+            value = value.strip()
+        if field_id and value not in (None, "", []):
             provided.add(str(field_id))
     missing = [
         f.field_label or f.field_name
@@ -245,7 +263,7 @@ def enforce_required_custom_fields(
     if missing:
         raise HTTPException(
             status_code=422,
-            detail="Missing required custom field(s): " + ", ".join(missing),
+            detail="Fill in: " + ", ".join(missing),
         )
 
 

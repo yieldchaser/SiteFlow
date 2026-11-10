@@ -838,8 +838,10 @@ export default function TallyIntegrationPage() {
                       Tally is not set up for this company yet, so nothing is queued. Set it up under{" "}
                       <a href={`/c/${companyId}/d/finance`} className="text-primary underline">Finance</a> &gt; Tally Sync.
                     </>
-                  ) : (
+                  ) : tallyConnected ? (
                     "Nothing waiting. Every bill and payment in the sync period is already marked as imported."
+                  ) : (
+                    "No vouchers waiting."
                   )}
                 </div>
               ) : (

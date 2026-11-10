@@ -1,14 +1,19 @@
 "use client";
-import Badge, { type BadgeTone } from "@/components/ui/Badge";
-import { getApiHost, detailToMessage} from "@/lib/api";
-import { authHeaders, formatDate, formatLabel } from "@/lib/siteflow";
-import React, { useState, useEffect } from "react";
-import { useProject } from "@/context/ProjectContext";
+import { getApiHost, readErrorDetail } from "@/lib/api";
+import { authHeaders } from "@/lib/siteflow";
+import React, { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import PageShell from "@/components/layout/PageShell";
 import PageHeader from "@/components/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import Icon from "@/components/marketing/Icon";
+
+// Custom fields are extra boxes a company adds to its own forms, for example
+// "Client PO number" on sales invoices. They are filled in on the form itself.
+//
+// This page used to fill values in by typing a record's internal ID, had no
+// box at all for pick-list or tick-box fields, offered task, lead and vendor
+// fields that no form shows, and could not mark a field as must-fill.
 
 interface Field {
   id: string;
@@ -19,354 +24,297 @@ interface Field {
   is_required: boolean;
   options: string[];
   display_order: number;
-  is_active: boolean;
+  default_value?: string | null;
+  set_default?: boolean;
 }
 
-interface FieldValueRow {
-  field_id: string;
-  entity_type: string;
-  value_text: string | null;
-  value_number: number | null;
-  value_date: string | null;
-  value_json: unknown;
-}
+// The forms that show custom fields, and the server's name for each.
+const WHERE: { id: string; label: string; form: string }[] = [
+  { id: "project", label: "Projects", form: "the New Project and Edit Project forms" },
+  { id: "invoice", label: "Sales invoices", form: "the Sales Invoice form in a project's Transactions" },
+  { id: "bill", label: "Subcontractor bills", form: "the subcontractor bill form on the Billing page" },
+];
+
+const TYPES: { id: string; label: string }[] = [
+  { id: "text", label: "Text" },
+  { id: "number", label: "Number" },
+  { id: "date", label: "Date" },
+  { id: "select", label: "Pick one from a list" },
+  { id: "multiselect", label: "Pick several from a list" },
+  { id: "checkbox", label: "Tick box" },
+];
+const typeLabel = (t: string) => TYPES.find((x) => x.id === t)?.label || t;
+
+const blankForm = { entity_type: "project", field_label: "", field_type: "text", is_required: false, options: "", default_value: "" };
 
 export default function CustomFieldsPage() {
   const params = useParams();
   const companyId = params?.company_id as string;
-  const { activeProjectId } = useProject();
-  const projectId = activeProjectId;
 
-  const [fields, setFields] = useState<Field[]>([]);
-  const [showFieldModal, setShowFieldModal] = useState(false);
-  const [showValueModal, setShowValueModal] = useState(false);
-  const [selectedField, setSelectedField] = useState<Field | null>(null);
-  const [message, setMessage] = useState("");
-  const [values, setValues] = useState<FieldValueRow[]>([]);
-  const [entityFilter, setEntityFilter] = useState("project");
+  const [fields, setFields] = useState<Field[] | null>(null);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [editing, setEditing] = useState<Field | "new" | null>(null);
+  const [form, setForm] = useState(blankForm);
+  const [formError, setFormError] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const [fieldForm, setFieldForm] = useState({
-    entity_type: "project",
-    field_name: "",
-    field_label: "",
-    field_type: "text",
-    is_required: false,
-    options: "",
-    display_order: 0,
-  });
-
-  const [valueForm, setValueForm] = useState({
-    field_id: "",
-    entity_type: "project",
-    entity_id: projectId || "",
-    value_text: "",
-    value_number: 0,
-    value_date: "",
-  });
-
-  const fetchFields = async () => {
+  const fetchFields = useCallback(async () => {
     try {
-      const res = await fetch(`${getApiHost()}/apis/v3/custom-fields/fields/${companyId}?entity_type=${entityFilter}`, { headers: authHeaders() });
-      if (res.ok) setFields(await res.json());
-    } catch (e) { console.error("Failed to load fields", e); }
-  };
-
-  const fetchValues = async (entityType?: string) => {
-    const type = entityType || selectedField?.entity_type;
-    if (!type || !projectId) return;
-    try {
-      const res = await fetch(`${getApiHost()}/apis/v3/custom-fields/values/${type}/${projectId}`, { headers: authHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        const rows: FieldValueRow[] = Array.isArray(data) ? data : [];
-        setValues((prev) => [...prev.filter((v) => v.entity_type !== type), ...rows]);
-      }
-    } catch (e) { console.error("Failed to load values", e); }
-  };
-
-  const formatFieldValue = (f: Field): string => {
-    const v = values.find((row) => row.field_id === f.id);
-    if (!v) return "Not set";
-    if (f.field_type === "number") return v.value_number === null || v.value_number === undefined ? "Not set" : String(v.value_number);
-    if (f.field_type === "date") return v.value_date ? formatDate(v.value_date) : "Not set";
-    if (v.value_json !== null && v.value_json !== undefined) {
-      if (Array.isArray(v.value_json)) return v.value_json.length ? v.value_json.join(", ") : "Not set";
-      return String(v.value_json);
+      const res = await fetch(`${getApiHost()}/apis/v3/custom-fields/fields/${companyId}`, { headers: authHeaders() });
+      setFields(res.ok ? await res.json() : []);
+    } catch {
+      setFields([]);
     }
-    return v.value_text || "Not set";
+  }, [companyId]);
+
+  useEffect(() => {
+    const id = setTimeout(() => { fetchFields(); }, 0);
+    return () => clearTimeout(id);
+  }, [fetchFields]);
+
+  const openNew = (entity = "project") => {
+    setForm({ ...blankForm, entity_type: entity });
+    setFormError("");
+    setEditing("new");
   };
 
-  useEffect(() => {
-    const id = setTimeout(() => fetchFields(), 0);
-    return () => clearTimeout(id);
-  }, [companyId, entityFilter]);
+  const openEdit = (f: Field) => {
+    setForm({
+      entity_type: f.entity_type,
+      field_label: f.field_label,
+      field_type: f.field_type,
+      is_required: f.is_required,
+      options: (f.options || []).join(", "),
+      default_value: f.set_default ? f.default_value || "" : "",
+    });
+    setFormError("");
+    setEditing(f);
+  };
 
-  useEffect(() => {
-    if (!selectedField) return;
-    const id = setTimeout(() => fetchValues(selectedField.entity_type), 0);
-    return () => clearTimeout(id);
-  }, [selectedField]);
+  const choices = form.options.split(",").map((s) => s.trim()).filter(Boolean);
+  const isPick = form.field_type === "select" || form.field_type === "multiselect";
 
-  useEffect(() => {
-    const types = Array.from(new Set(fields.map((f) => f.entity_type)));
-    const id = setTimeout(() => types.forEach((t) => fetchValues(t)), 0);
-    return () => clearTimeout(id);
-  }, [fields]);
-
-  const handleCreateField = async (e: React.FormEvent) => {
+  const save = async (e: React.FormEvent) => {
     e.preventDefault();
-    setMessage("");
+    if (!form.field_label.trim()) return setFormError("Give the field a name");
+    if (isPick && choices.length === 0) return setFormError("Add the choices people can pick from, separated by commas");
+    const def = form.field_type === "checkbox" ? "" : form.default_value.trim();
+    if (def && isPick && !choices.includes(def)) return setFormError("The starting value must be one of the choices");
+    setSaving(true);
+    setFormError("");
     try {
-      const body = {
-        ...fieldForm,
-        company_id: companyId,
-        options: fieldForm.options.split(",").map((s) => s.trim()).filter(Boolean),
+      const common = {
+        field_label: form.field_label.trim(),
+        is_required: form.is_required,
+        options: isPick ? choices : [],
+        default_value: def || null,
+        set_default: !!def,
       };
-      const res = await fetch(`${getApiHost()}/apis/v3/custom-fields/fields`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
-        body: JSON.stringify(body),
-      });
+      const res =
+        editing === "new"
+          ? await fetch(`${getApiHost()}/apis/v3/custom-fields/fields`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
+              body: JSON.stringify({
+                ...common,
+                company_id: companyId,
+                entity_type: form.entity_type,
+                field_name: form.field_label.trim(),
+                field_type: form.field_type,
+                display_order: (fields || []).filter((f) => f.entity_type === form.entity_type).length,
+              }),
+            })
+          : await fetch(`${getApiHost()}/apis/v3/custom-fields/fields/${(editing as Field).id}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
+              body: JSON.stringify(common),
+            });
       if (res.ok) {
-        setMessage("Field created");
-        setShowFieldModal(false);
-        setFieldForm({ entity_type: "project", field_name: "", field_label: "", field_type: "text", is_required: false, options: "", display_order: 0 });
+        setMessage({ ok: true, text: editing === "new" ? `"${common.field_label}" added` : `"${common.field_label}" saved` });
+        setEditing(null);
         fetchFields();
       } else {
-        const err = await res.json();
-        setMessage(detailToMessage(err.detail, "Failed"));
+        setFormError((await readErrorDetail(res)) || "Could not save. Try again.");
       }
-    } catch (_e) { void _e; setMessage("Error"); }
-  };
-
-  const handleSetValue = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setMessage("");
-    try {
-      const body: Record<string, unknown> = {
-        field_id: valueForm.field_id,
-        entity_type: valueForm.entity_type,
-        entity_id: valueForm.entity_id,
-        company_id: companyId,
-      };
-      if (selectedField?.field_type === "number") {
-        body.value_number = valueForm.value_number;
-      } else if (selectedField?.field_type === "date") {
-        body.value_date = valueForm.value_date || null;
-      } else {
-        body.value_text = valueForm.value_text || "";
-      }
-      const res = await fetch(`${getApiHost()}/apis/v3/custom-fields/values`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
-        body: JSON.stringify(body),
-      });
-      if (res.ok) {
-        setMessage("Value saved");
-        setShowValueModal(false);
-        if (selectedField) fetchValues(selectedField.entity_type);
-      } else {
-        const err = await res.json();
-        setMessage(detailToMessage(err.detail, "Failed"));
-      }
-    } catch (_e) { void _e; setMessage("Error"); }
-  };
-
-  const handleDeleteField = async (fieldId: string) => {
-    if (!confirm("Are you sure you want to delete this custom field? This will delete all stored values for this field.")) return;
-    try {
-      const res = await fetch(`${getApiHost()}/apis/v3/custom-fields/fields/${fieldId}`, {
-        method: "DELETE",
-        headers: authHeaders() || {},
-      });
-      if (res.ok) {
-        setFields(prev => prev.filter(f => f.id !== fieldId));
-        setMessage("Custom field deleted successfully");
-      } else {
-        const err = await res.json().catch(() => ({}));
-        setMessage(detailToMessage(err.detail, "Failed to delete field"));
-      }
-    } catch (_e) {
-      void _e;
-      setMessage("Error deleting custom field");
+    } catch {
+      setFormError("Could not reach the server. Try again.");
+    } finally {
+      setSaving(false);
     }
   };
 
-  const openValueModal = (field: Field) => {
-    setSelectedField(field);
-    setValueForm({ field_id: field.id, entity_type: field.entity_type, entity_id: projectId || "", value_text: "", value_number: 0, value_date: "" });
-    setShowValueModal(true);
+  const remove = async (f: Field) => {
+    if (!confirm(`Delete "${f.field_label}"? What was filled in for it on every record is deleted too.`)) return;
+    try {
+      const res = await fetch(`${getApiHost()}/apis/v3/custom-fields/fields/${f.id}`, { method: "DELETE", headers: authHeaders() || {} });
+      if (res.ok) {
+        setFields((prev) => (prev || []).filter((x) => x.id !== f.id));
+        setMessage({ ok: true, text: `"${f.field_label}" deleted` });
+      } else {
+        setMessage({ ok: false, text: (await readErrorDetail(res)) || "Could not delete. Try again." });
+      }
+    } catch {
+      setMessage({ ok: false, text: "Could not reach the server. Try again." });
+    }
   };
+
+  const row = (f: Field, shown: boolean) => (
+    <div key={f.id} className="grid grid-cols-[2fr_1.5fr_1fr_auto] gap-4 px-5 py-3 items-center border-b border-border-custom last:border-0 text-xs">
+      <div>
+        <p className="font-semibold text-foreground">{f.field_label}</p>
+        {f.options?.length > 0 && <p className="text-muted mt-0.5 truncate">Choices: {f.options.join(", ")}</p>}
+        {f.set_default && f.default_value && <p className="text-muted mt-0.5">Starts as: {f.default_value}</p>}
+      </div>
+      <div className="text-muted">{typeLabel(f.field_type)}</div>
+      <div>{f.is_required ? <span className="text-danger font-semibold">Must fill</span> : <span className="text-muted">Optional</span>}</div>
+      <div className="flex items-center gap-1">
+        {shown && (
+          <button onClick={() => openEdit(f)} className="p-1.5 text-muted hover:text-foreground rounded hover:bg-elevated cursor-pointer" title="Edit">
+            <Icon name="pencil" className="w-3.5 h-3.5" />
+          </button>
+        )}
+        <button onClick={() => remove(f)} className="p-1.5 text-muted hover:text-danger rounded hover:bg-elevated cursor-pointer" title="Delete">
+          <Icon name="trash" className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+
+  const unused = (fields || []).filter((f) => !WHERE.some((w) => w.id === f.entity_type));
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <PageHeader
-        title="Custom Fields"
-        subtitle="Add dynamic fields to projects, tasks, bills, and more"
-      >
-        <div className="flex items-center gap-2">
-          <select
-            value={entityFilter}
-            onChange={(e) => setEntityFilter(e.target.value)}
-            className="bg-input border border-border-custom rounded-md px-2.5 py-1.5 text-xs text-foreground"
-            title="Filter fields by entity type"
-          >
-            <option value="project">Project fields</option>
-            <option value="task">Task fields</option>
-            {/* bill and invoice are separate entity types in the backend and
-                enforce_required_custom_fields runs on both. Omitting bill here
-                meant a required field on it was invisible and unmanageable,
-                and it silently blocked every subcontractor RA bill. */}
-            <option value="bill">Bill fields</option>
-            <option value="invoice">Invoice fields</option>
-            <option value="lead">Lead fields</option>
-            <option value="vendor">Vendor fields</option>
-          </select>
-          <button onClick={() => setShowFieldModal(true)} className="px-3.5 py-1.5 bg-primary hover:bg-primary/90 text-white rounded-md text-xs font-semibold transition-all cursor-pointer">
-            + New Field
-          </button>
-        </div>
+      <PageHeader title="Custom Fields" subtitle="Extra boxes on your own forms, such as a client PO number on sales invoices">
+        <button onClick={() => openNew()} className="px-3.5 py-1.5 bg-primary hover:bg-primary/90 text-white rounded-md text-xs font-semibold cursor-pointer">
+          New Field
+        </button>
       </PageHeader>
       <div className="flex-1 overflow-y-auto">
         <PageShell width="wide">
-
-        {message && (
-          <div className={`mb-6 p-4 rounded-md ${message.includes("success") || message.includes("saved") || message.includes("created") ? "bg-success/10 text-success" : "bg-danger/10 text-danger"}`}>
-            {message}
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {fields.length === 0 ? (
-            <div className="col-span-full">
-              <EmptyState
-                title="No custom fields defined yet"
-                description="Create user-defined custom attributes for projects, workers, inventory, or billing entities."
-                action={{
-                  label: "+ Define Field",
-                  onClick: () => setShowFieldModal(true),
-                }}
-              />
-            </div>
-          ) : (
-            fields.map((f) => (
-              <div key={f.id} className="bg-card border border-border-custom rounded-lg p-6 hover:bg-elevated transition-all">
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <h3 className="text-foreground font-semibold">{f.field_label}</h3>
-                    <p className="text-muted text-xs mt-1">{f.field_name} • {f.field_type}</p>
-                  </div>
-                  <Badge tone={f.is_active ? "success" : "neutral"}>{f.is_active ? "Active" : "Inactive"}</Badge>
-                </div>
-                <div className="flex items-center justify-between text-xs text-muted mb-4">
-                  <span>{formatLabel(f.entity_type)}</span>
-                  {f.is_required && <span className="text-danger">Required</span>}
-                </div>
-                <div className="text-xs mb-4 truncate">
-                  <span className="text-muted">Current value: </span>
-                  <span className="text-foreground font-medium">{formatFieldValue(f)}</span>
-                </div>
-                <div className="flex gap-2 items-center">
-                  <button onClick={() => openValueModal(f)} className="flex-1 px-3 py-2 bg-input hover:bg-elevated text-foreground rounded-md text-xs font-medium transition-all cursor-pointer">
-                    Set Value
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteField(f.id)}
-                    className="p-2 rounded-md bg-danger/10 hover:bg-danger/20 border border-danger/20 text-danger text-xs transition-all cursor-pointer"
-                    title="Delete custom field"
-                  >
-                    <Icon name="trash" className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            ))
+          {message && (
+            <div className={`mb-4 p-3 rounded-md text-xs ${message.ok ? "bg-success/10 text-success" : "bg-danger/10 text-danger"}`}>{message.text}</div>
           )}
-        </div>
 
-      {showFieldModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-elevated border border-border-custom rounded-lg p-6 w-full max-w-lg">
-            <h2 className="text-xl font-bold text-foreground mb-4">New Custom Field</h2>
-            <form onSubmit={handleCreateField} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-muted mb-1">Entity Type</label>
-                <select className="w-full bg-input border border-border-custom rounded-md px-4 py-2 text-foreground" value={fieldForm.entity_type} onChange={(e) => setFieldForm({...fieldForm, entity_type: e.target.value})}>
-                  <option value="project">Project</option>
-                  <option value="task">Task</option>
-                  <option value="bill">Bill</option>
-                  <option value="invoice">Invoice</option>
-                  <option value="lead">Lead</option>
-                  <option value="vendor">Vendor</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-muted mb-1">Field Name</label>
-                <input type="text" required className="w-full bg-input border border-border-custom rounded-md px-4 py-2 text-foreground" value={fieldForm.field_name} onChange={(e) => setFieldForm({...fieldForm, field_name: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-muted mb-1">Field Label</label>
-                <input type="text" required className="w-full bg-input border border-border-custom rounded-md px-4 py-2 text-foreground" value={fieldForm.field_label} onChange={(e) => setFieldForm({...fieldForm, field_label: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-muted mb-1">Type</label>
-                <select className="w-full bg-input border border-border-custom rounded-md px-4 py-2 text-foreground" value={fieldForm.field_type} onChange={(e) => setFieldForm({...fieldForm, field_type: e.target.value})}>
-                  <option value="text">Text</option>
-                  <option value="number">Number</option>
-                  <option value="date">Date</option>
-                  <option value="select">Select</option>
-                  <option value="multiselect">Multi-select</option>
-                  <option value="checkbox">Checkbox</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-muted mb-1">Options (comma-separated, for select)</label>
-                <input type="text" className="w-full bg-input border border-border-custom rounded-md px-4 py-2 text-foreground" value={fieldForm.options} onChange={(e) => setFieldForm({...fieldForm, options: e.target.value})} />
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button type="submit" className="flex-1 px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-md text-sm font-semibold">Create Field</button>
-                <button type="button" onClick={() => { setShowFieldModal(false); setMessage(""); }} className="px-4 py-2 bg-elevated hover:bg-elevated/70 text-foreground rounded-md text-sm font-semibold">Cancel</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+          {fields === null ? (
+            <p className="text-xs text-muted">Loading...</p>
+          ) : (
+            <div className="space-y-6">
+              {WHERE.map((w) => {
+                const list = fields.filter((f) => f.entity_type === w.id);
+                return (
+                  <div key={w.id} className="bg-card border border-border-custom rounded-lg overflow-hidden">
+                    <div className="px-5 py-3 border-b border-border-custom flex items-center justify-between gap-3">
+                      <div>
+                        <h2 className="text-sm font-bold text-foreground">{w.label}</h2>
+                        <p className="text-[11px] text-muted">Filled in on {w.form}.</p>
+                      </div>
+                      <button onClick={() => openNew(w.id)} className="text-xs font-semibold text-primary hover:underline cursor-pointer">Add field</button>
+                    </div>
+                    {list.length === 0 ? <p className="px-5 py-4 text-xs text-muted">No extra fields.</p> : list.map((f) => row(f, true))}
+                  </div>
+                );
+              })}
 
-      {showValueModal && selectedField && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-elevated border border-border-custom rounded-lg p-6 w-full max-w-lg">
-            <h2 className="text-xl font-bold text-foreground mb-4">Set Value: {selectedField.field_label}</h2>
-            <form onSubmit={handleSetValue} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-muted mb-1">Entity ID</label>
-                <input type="text" required className="w-full bg-input border border-border-custom rounded-md px-4 py-2 text-foreground" value={valueForm.entity_id} onChange={(e) => setValueForm({...valueForm, entity_id: e.target.value})} />
-              </div>
-              {selectedField.field_type === "text" && (
-                <div>
-                  <label className="block text-xs font-medium text-muted mb-1">Value</label>
-                  <input type="text" required className="w-full bg-input border border-border-custom rounded-md px-4 py-2 text-foreground" value={valueForm.value_text} onChange={(e) => setValueForm({...valueForm, value_text: e.target.value})} />
+              {unused.length > 0 && (
+                <div className="bg-card border border-warning/30 rounded-lg overflow-hidden">
+                  <div className="px-5 py-3 border-b border-border-custom">
+                    <h2 className="text-sm font-bold text-foreground">Not on any form</h2>
+                    <p className="text-[11px] text-muted">
+                      These were made for tasks, leads or vendors, whose forms do not show extra fields, so nobody can fill them in. Delete them, or make them again under one of the forms above.
+                    </p>
+                  </div>
+                  {unused.map((f) => row(f, false))}
                 </div>
               )}
-              {selectedField.field_type === "number" && (
-                <div>
-                  <label className="block text-xs font-medium text-muted mb-1">Value</label>
-                  <input type="number" required className="w-full bg-input border border-border-custom rounded-md px-4 py-2 text-foreground" value={valueForm.value_number} onChange={(e) => setValueForm({...valueForm, value_number: parseFloat(e.target.value)})} />
-                </div>
+
+              {fields.length === 0 && (
+                <EmptyState
+                  title="No custom fields yet"
+                  description="Add a field when your forms need a box they do not have, for example a client PO number on sales invoices."
+                  action={{ label: "New Field", onClick: () => openNew() }}
+                />
               )}
-              {selectedField.field_type === "date" && (
+            </div>
+          )}
+
+          {editing && (
+            <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+              <form onSubmit={save} className="bg-elevated border border-border-custom rounded-lg p-6 w-full max-w-lg space-y-4">
+                <h2 className="text-base font-bold text-foreground">{editing === "new" ? "New Custom Field" : `Edit "${(editing as Field).field_label}"`}</h2>
+                {formError && <div className="p-3 rounded-md bg-danger/10 text-danger text-xs">{formError}</div>}
+
+                {editing === "new" && (
+                  <div>
+                    <label className="block text-xs font-medium text-muted mb-1">Which form</label>
+                    <select
+                      className="w-full bg-input border border-border-custom rounded-md px-3 py-2 text-sm text-foreground"
+                      value={form.entity_type}
+                      onChange={(e) => setForm({ ...form, entity_type: e.target.value })}
+                    >
+                      {WHERE.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}
+                    </select>
+                  </div>
+                )}
                 <div>
-                  <label className="block text-xs font-medium text-muted mb-1">Value</label>
-                  <input type="date" required className="w-full bg-input border border-border-custom rounded-md px-4 py-2 text-foreground" value={valueForm.value_date} onChange={(e) => setValueForm({...valueForm, value_date: e.target.value})} />
+                  <label className="block text-xs font-medium text-muted mb-1">Field name, as people will see it</label>
+                  <input
+                    type="text"
+                    className="w-full bg-input border border-border-custom rounded-md px-3 py-2 text-sm text-foreground"
+                    placeholder="e.g. Client PO number"
+                    value={form.field_label}
+                    onChange={(e) => setForm({ ...form, field_label: e.target.value })}
+                  />
                 </div>
-              )}
-              <div className="flex gap-3 pt-2">
-                <button type="submit" className="flex-1 px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-md text-sm font-semibold">Save Value</button>
-                <button type="button" onClick={() => { setShowValueModal(false); setMessage(""); }} className="px-4 py-2 bg-elevated hover:bg-elevated/70 text-foreground rounded-md text-sm font-semibold">Cancel</button>
-              </div>
-            </form>
-          </div>
-        </div>
-        )}
+                {editing === "new" ? (
+                  <div>
+                    <label className="block text-xs font-medium text-muted mb-1">What goes in it</label>
+                    <select
+                      className="w-full bg-input border border-border-custom rounded-md px-3 py-2 text-sm text-foreground"
+                      value={form.field_type}
+                      onChange={(e) => setForm({ ...form, field_type: e.target.value })}
+                    >
+                      {TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                    </select>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted">Type: {typeLabel(form.field_type)} (cannot be changed once made, so filled-in values stay readable)</p>
+                )}
+                {isPick && (
+                  <div>
+                    <label className="block text-xs font-medium text-muted mb-1">Choices, separated by commas</label>
+                    <input
+                      type="text"
+                      className="w-full bg-input border border-border-custom rounded-md px-3 py-2 text-sm text-foreground"
+                      placeholder="e.g. Cash, Cheque, NEFT"
+                      value={form.options}
+                      onChange={(e) => setForm({ ...form, options: e.target.value })}
+                    />
+                  </div>
+                )}
+                {form.field_type !== "checkbox" && (
+                  <div>
+                    <label className="block text-xs font-medium text-muted mb-1">Starting value (optional)</label>
+                    <input
+                      type={form.field_type === "number" ? "number" : form.field_type === "date" ? "date" : "text"}
+                      className="w-full bg-input border border-border-custom rounded-md px-3 py-2 text-sm text-foreground"
+                      value={form.default_value}
+                      onChange={(e) => setForm({ ...form, default_value: e.target.value })}
+                    />
+                  </div>
+                )}
+                <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+                  <input type="checkbox" checked={form.is_required} onChange={(e) => setForm({ ...form, is_required: e.target.checked })} className="h-4 w-4 accent-primary" />
+                  Must be filled in before the form can be saved
+                </label>
+                <div className="flex gap-3 pt-2 justify-end">
+                  <button type="button" onClick={() => setEditing(null)} className="px-4 py-2 border border-border-custom text-foreground rounded-md text-sm font-semibold cursor-pointer">Cancel</button>
+                  <button type="submit" disabled={saving} className="px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-md text-sm font-semibold disabled:opacity-50 cursor-pointer">
+                    {saving ? "Saving..." : "Save"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
         </PageShell>
       </div>
     </div>

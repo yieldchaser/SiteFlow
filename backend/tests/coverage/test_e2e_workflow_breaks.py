@@ -208,18 +208,28 @@ def test_equipment_return_records_hours_and_the_closing_meter():
 
 def test_custom_field_admin_exposes_every_entity_type_the_backend_allows():
     """Observed: a required 'bill' custom field blocked every RA bill and could
-    not be seen or edited, because the admin page listed only four of six types."""
-    be = _be("app/routers/custom_fields.py")
-    m = re.search(r"CUSTOM_FIELD_ENTITY_TYPES\s*=\s*\(([^)]*)\)", be)
-    assert m, "could not read CUSTOM_FIELD_ENTITY_TYPES"
-    backend_types = {t.strip().strip("\"'") for t in m.group(1).split(",") if t.strip()}
+    not be seen or edited, because the admin page listed only four of six types.
+
+    Every type a save checks for required fields must be manageable on the
+    page, and fields of any other type must still be listed (so they can be
+    seen and deleted)."""
+    import glob, os
+    enforced = set()
+    for path in glob.glob(os.path.join(os.path.dirname(__file__), "..", "..", "app", "routers", "*.py")):
+        src = open(path, encoding="utf-8").read()
+        enforced |= set(re.findall(r'enforce_required_custom_fields\(\s*db,[^,]+,\s*"(\w+)"', src))
+        mapping = re.search(r"CUSTOM_FIELD_ENTITY_FOR_INVOICE_TYPE\s*=\s*\{([^}]*)\}", src)
+        if mapping:
+            enforced |= set(re.findall(r':\s*"(\w+)"', mapping.group(1)))
+    assert {"project", "invoice", "bill"} <= enforced, enforced
 
     fe = _fe("src/app/c/[company_id]/d/custom-fields/page.tsx")
-    missing = sorted(t for t in backend_types if f'value="{t}"' not in fe)
+    missing = sorted(t for t in enforced if f'{{ id: "{t}"' not in fe)
     assert not missing, (
         "E2E-21 regressed: the custom-field admin page cannot manage these entity "
         f"types, so a required field on one of them blocks its form forever: {missing}"
     )
+    assert "Not on any form" in fe
 
 
 def test_a_purchase_order_can_name_a_supplier_from_the_party_library(

@@ -38,7 +38,9 @@ export function detailToMessage(detail: unknown, fallback: string): string {
         const field = Array.isArray(row.loc)
           ? row.loc.filter((p) => p !== "body" && p !== "query").join(".")
           : "";
-        return field && row.msg ? `${field}: ${row.msg}` : (row.msg || "");
+        // Pydantic prefixes a check's own message with "Value error, ".
+        const msg = (row.msg || "").replace(/^Value error, /, "");
+        return field && msg ? `${field}: ${msg}` : msg;
       })
       .filter(Boolean);
     if (parts.length) return parts.join("; ");
@@ -61,7 +63,9 @@ export async function readErrorDetail(res: Response): Promise<string> {
           const field = Array.isArray(row.loc)
             ? row.loc.filter((p) => p !== "body" && p !== "query").join(".")
             : "";
-          return field && row.msg ? `${field}: ${row.msg}` : (row.msg || "");
+          // Pydantic prefixes a check's own message with "Value error, ".
+          const msg = (row.msg || "").replace(/^Value error, /, "");
+          return field && msg ? `${field}: ${msg}` : msg;
         })
         .filter(Boolean);
       if (parts.length) return parts.join("; ");
