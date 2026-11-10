@@ -691,7 +691,7 @@ def create_quotation(lead_id: uuid.UUID, req: QuotationCreateRequest, db: Sessio
             if not str(getattr(_proj, "state", "") or "").strip():
                 raise HTTPException(
                     status_code=422,
-                    detail="Project.state is required for quotations — set the site state before quoting; place of supply derives from the site per IGST Act s.12(3)",
+                    detail="Set the state the site is in (Project settings) first. GST on this project's bills depends on it.",
                 )
             _d4_project_state = _proj.state
             _comp = db.query(Company).filter(Company.id == lead.company_id).first()
@@ -1029,7 +1029,7 @@ def convert_quotation_to_invoice(quotation_id: uuid.UUID, req: QuotationConvertR
     if not project or not str(getattr(project, "state", "") or "").strip():
         raise HTTPException(
             status_code=422,
-            detail="Project.state is required for invoicing — set the site state before converting quotations; place of supply derives from the site per IGST Act s.12(3)",
+            detail="Set the state the site is in (Project settings) first. GST on this project's bills depends on it.",
         )
     party_row = db.query(CompanyTeam).filter(CompanyTeam.id == req.party_company_user_id).first()
     if not party_row or party_row.company_id != lead.company_id:

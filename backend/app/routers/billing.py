@@ -1359,7 +1359,7 @@ def create_bill(req: BillCreateRequest, db: Session = Depends(get_db), current_u
     if not _bill_proj or not str(getattr(_bill_proj, "state", "") or "").strip():
         raise HTTPException(
             status_code=422,
-            detail="Project.state is required for invoicing - set the site state (GST state code or name) before creating invoices; place of supply derives from the site per IGST Act s.12(3)",
+            detail="Set the state the site is in (Project settings) first. GST on this project's bills depends on it.",
         )
     enforce_required_custom_fields(db, req.company_id, "invoice", [cf.model_dump() for cf in req.custom_fields])
     enforce_required_custom_fields(db, req.company_id, "bill", [cf.model_dump() for cf in req.custom_fields])

@@ -1058,12 +1058,12 @@ def create_project_v3(payload: ProjectCreateSchema, db: Session = Depends(get_db
     if not payload.state or not str(payload.state).strip():
         raise HTTPException(
             status_code=422,
-            detail="Project.state is required for invoicing - set the site state (GST state code or name); place of supply derives from the site per IGST Act s.12(3)",
+            detail="Pick the state the site is in. GST on this project's bills depends on it.",
         )
     try:
         from app.gst_utils import project_state_code as _psc
         if _psc(payload.state) is None:
-            raise HTTPException(status_code=422, detail="Project.state must be a valid GST state code or name (e.g. 27, Maharashtra, KA)")
+            raise HTTPException(status_code=422, detail="That state was not recognised. Pick it from the list, for example Maharashtra.")
     except HTTPException:
         raise
     except Exception:

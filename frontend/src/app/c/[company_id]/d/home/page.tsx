@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { getApiHost, readErrorDetail, detailToMessage} from "@/lib/api";
 import { formatDate, formatLabel } from "@/lib/siteflow";
+import { GST_STATES } from "@/lib/gstStates";
 import { useProject } from "@/context/ProjectContext";
 import { usePermissions } from "@/context/PermissionsContext";
 import Icon from "@/components/marketing/Icon";
@@ -148,7 +149,8 @@ export default function ProjectsHomePage() {
   // New Project Form state
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectCode, setNewProjectCode] = useState("");
-  const [newProjectCity, setNewProjectCity] = useState("Bangalore");
+  const [newProjectCity, setNewProjectCity] = useState("");
+  const [newProjectState, setNewProjectState] = useState("");
 
   // Material requests drawer tab and filter states
   const [mrTab, setMrTab] = useState<"pending" | "approved" | "ordered" | "rejected">("pending");
@@ -246,8 +248,9 @@ export default function ProjectsHomePage() {
         body: JSON.stringify({
           company_id: companyId,
           name: newProjectName,
-          code: newProjectCode || `PROJ-${Math.floor(100 + Math.random() * 900)}`,
+          code: newProjectCode.trim() || null,
           city: newProjectCity,
+          state: newProjectState,
           status: "Ongoing"
         })
       });
@@ -255,6 +258,8 @@ export default function ProjectsHomePage() {
         showToast("Project created successfully!");
         setNewProjectName("");
         setNewProjectCode("");
+        setNewProjectCity("");
+        setNewProjectState("");
         setIsNewProjectOpen(false);
         fetchData();
       } else {
@@ -747,9 +752,25 @@ export default function ProjectsHomePage() {
                   type="text"
                   value={newProjectCity}
                   onChange={(e) => setNewProjectCity(e.target.value)}
-                  placeholder="e.g. Bangalore"
+                  placeholder="e.g. Pune"
                   className="input-field w-full"
                 />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-muted uppercase tracking-wider">State *</label>
+                <select
+                  required
+                  value={newProjectState}
+                  onChange={(e) => setNewProjectState(e.target.value)}
+                  className="input-field w-full"
+                >
+                  <option value="">Pick the state the site is in</option>
+                  {GST_STATES.map((st) => (
+                    <option key={st.code} value={st.name}>{st.name}</option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-muted">GST on this project&apos;s bills depends on the site&apos;s state.</p>
               </div>
 
               <button

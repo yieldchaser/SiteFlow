@@ -447,12 +447,12 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db), curren
     if not payload.state or not str(payload.state).strip():
         raise HTTPException(
             status_code=422,
-            detail="Project.state is required for invoicing - set the site state (GST state code or name) before creating invoices; place of supply derives from the site per IGST Act s.12(3)",
+            detail="Set the state the site is in (Project settings) first. GST on this project's bills depends on it.",
         )
     try:
         from app.gst_utils import project_state_code as _psc
         if _psc(payload.state) is None:
-            raise HTTPException(status_code=422, detail="Project.state must be a valid GST state code or name (e.g. 27, Maharashtra, KA)")
+            raise HTTPException(status_code=422, detail="That state was not recognised. Pick it from the list, for example Maharashtra.")
     except HTTPException:
         raise
     except Exception:
@@ -517,12 +517,12 @@ def update_project(project_id: uuid.UUID, payload: ProjectUpdate, db: Session = 
         if updates["state"] is None or not str(updates["state"]).strip():
             raise HTTPException(
                 status_code=422,
-                detail="Project.state is required - clearing the site state is not allowed; place of supply derives from the site per IGST Act s.12(3)",
+                detail="The site's state cannot be cleared. GST on this project's bills depends on it.",
             )
         try:
             from app.gst_utils import project_state_code as _psc2
             if _psc2(updates["state"]) is None:
-                raise HTTPException(status_code=422, detail="Project.state must be a valid GST state code or name (e.g. 27, Maharashtra, KA)")
+                raise HTTPException(status_code=422, detail="That state was not recognised. Pick it from the list, for example Maharashtra.")
         except HTTPException:
             raise
         except Exception:
@@ -542,7 +542,7 @@ def update_project(project_id: uuid.UUID, payload: ProjectUpdate, db: Session = 
             if has_bills:
                 raise HTTPException(
                     status_code=422,
-                    detail="Project.state is required for invoicing - set the site state before updating this project; place of supply derives from the site per IGST Act s.12(3)",
+                    detail="Set the state the site is in (Project settings) first. GST on this project's bills depends on it.",
                 )
         except HTTPException:
             raise

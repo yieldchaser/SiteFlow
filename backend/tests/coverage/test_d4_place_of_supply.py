@@ -164,7 +164,7 @@ def test_missing_state_422_on_project_create(client, db, make_tenant, auth_heade
         "state": "",
     })
     assert r.status_code == 422, r.text
-    assert "Project.state" in r.text
+    assert "state the site is in" in r.text
     # No state key at all also 422 (payload state Optional but D4 makes it required)
     r2 = client.post("/apis/v3/projects/", headers=hdr, json={
         "company_id": str(comp.id),
@@ -201,7 +201,7 @@ def test_missing_state_422_on_bill_create(client, db, make_tenant, auth_headers)
         "items_json": json.dumps([{"desc": "Test", "qty": 1, "rate": 1000, "amount": 1000}]),
     })
     assert r.status_code == 422, r.text
-    assert "Project.state" in r.text
+    assert "state the site is in" in r.text
 
 
 def test_missing_state_422_on_project_update_clearing_state(client, db, make_tenant, auth_headers):
@@ -302,7 +302,7 @@ def test_quotation_missing_project_state_422(client, db, make_tenant, auth_heade
         "items": [item],
     })
     assert r.status_code == 422, r.text
-    assert "Project.state" in r.text
+    assert "state the site is in" in r.text
 
 
 # ---------------------------------------------------------------------------

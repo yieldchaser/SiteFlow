@@ -144,7 +144,7 @@ def test_project_create_surfaces_collect_the_gst_state():
 
 def test_backend_still_requires_state_on_project_create():
     src = _be("app/routers/projects.py")
-    assert "Project.state is required for invoicing" in src, (
+    assert "GST on this project's bills depends on it" in src, (
         "E2E-01: the guard was removed instead of the UI being fixed. Place of "
         "supply derives from the site; this check must stay."
     )

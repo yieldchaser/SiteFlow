@@ -490,7 +490,7 @@ export default function SubcontractorBillingPage() {
           company_id: companyId,
           project_id: projectId,
           subcontractor_id: subconId,
-          wo_number: newWONum,
+          wo_number: newWONum.trim() || null,
           wo_date: new Date().toISOString(),
           items: [
             {
@@ -507,7 +507,7 @@ export default function SubcontractorBillingPage() {
         fetchWorkOrders(subconNameMap);
         setShowWOModal(false);
         setNewWOItem("");
-        setNewWONum(`WO-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`);
+        setNewWONum("");
       } else {
         const err = await readErrorDetail(res);
         alert(err || 'Action failed');
@@ -1100,11 +1100,12 @@ export default function SubcontractorBillingPage() {
             <div className="space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] uppercase font-bold text-muted block mb-1">WO Serial Code</label>
+                  <label className="text-[10px] uppercase font-bold text-muted block mb-1">WO Number</label>
                   <input
                     type="text"
                     value={newWONum}
                     onChange={(e) => setNewWONum(e.target.value)}
+                    placeholder="Leave blank for the next number"
                     className="w-full bg-card border border-border-custom rounded-md px-3 py-2 text-xs text-foreground outline-none focus:border-secondary font-sans"
                   />
                 </div>
