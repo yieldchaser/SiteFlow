@@ -242,7 +242,7 @@ def test_paint_calculator_parity(client, make_tenant, auth_headers):
     paintable = wall_area - (doors * 21.0) - (windows * 12.0)
     coverage = 135.0
     paint_litres = (paintable / coverage) * coats * 1.10
-    putty_kg = (paintable / 100.0) * 2.25 * 1.10
+    putty_kg = (paintable / 100.0) * 5.5 * 1.10
     primer_litres = (paintable / 175.0) * 1.05
 
     res = client.post(

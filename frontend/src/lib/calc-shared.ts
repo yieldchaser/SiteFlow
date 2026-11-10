@@ -592,7 +592,9 @@ export const PAINT_COVERAGE_SQFT_PER_LITRE: Record<string, number> = {
   texture: 80.0,
 };
 export const PAINT_WASTAGE_FACTOR = 1.1;
-export const PUTTY_KG_PER_SQFT_FACTOR = 2.25;
+// kg per 100 sq ft for two coats on smooth plaster (Birla White: 1.5-2.0 sq m/kg,
+// about 18 sq ft/kg). It was 2.25, less than half what the maker quotes.
+export const PUTTY_KG_PER_SQFT_FACTOR = 5.5;
 export const PUTTY_WASTAGE = 1.1;
 export const PRIMER_DIVISOR = 175.0;
 export const PRIMER_WASTAGE = 1.05;

@@ -25,7 +25,9 @@ PAINT_COVERAGE_SQFT_PER_LITRE: Dict[str, float] = {
     "texture": 80.0,
 }
 PAINT_WASTAGE_FACTOR = 1.10
-PUTTY_KG_PER_SQFT_FACTOR = 2.25
+# kg per 100 sq ft for two coats on smooth plaster (Birla White: 1.5-2.0 sq m/kg,
+# about 18 sq ft/kg). It was 2.25, less than half what the maker quotes.
+PUTTY_KG_PER_SQFT_FACTOR = 5.5
 PUTTY_WASTAGE = 1.10
 PRIMER_DIVISOR = 175.0
 PRIMER_WASTAGE = 1.05
