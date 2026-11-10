@@ -533,7 +533,7 @@ def update_work_order(wo_id: UUID, req: WOUpdateRequest, db: Session = Depends(g
     if billed_count > 0:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Work order has been billed against and cannot be edited. Please issue a new work order or variation instead.",
+            detail="A bill has been raised against this work order, so it cannot be edited. To change its value or terms, use the clock button next to it (Amendments).",
         )
 
     if req.subcontractor_id:

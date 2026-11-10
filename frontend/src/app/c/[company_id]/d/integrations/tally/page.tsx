@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { useProject } from "@/context/ProjectContext";
 import { getApiHost, readErrorDetail } from "@/lib/api";
-import { authHeaders, formatLabel } from "@/lib/siteflow";
+import { authHeaders, formatDate, formatLabel } from "@/lib/siteflow";
 import { isMissingOrDemoTenant, redirectToLogin } from "@/lib/company-guard";
 import Icon from "@/components/marketing/Icon";
 import PageShell from "@/components/layout/PageShell";
@@ -98,10 +98,11 @@ export default function TallyIntegrationPage() {
   const [pendingPaymentIds, setPendingPaymentIds] = useState<string[]>([]);
   const [syncLoading, setSyncLoading] = useState(false);
   const [unmarking, setUnmarking] = useState(false);
-  const [unmarkInput, setUnmarkInput] = useState({
-    entity_type: "bill" as "bill" | "payment",
-    entity_id: "",
-  });
+  // Bills and payments already marked as imported, so a wrong mark can be
+  // undone by picking the record (the box used to ask for its internal ID).
+  const [syncedRecords, setSyncedRecords] = useState<
+    { kind: "bill" | "payment"; id: string; number: string; party: string; date: string; amount: number; type: string }[]
+  >([]);
 
   const [toastMessage, setToastMessage] = useState("");
 
@@ -152,10 +153,15 @@ export default function TallyIntegrationPage() {
     if (!companyId) return;
     setSyncLoading(true);
     try {
-      const [logRes, pendingRes] = await Promise.all([
+      const [logRes, pendingRes, syncedRes] = await Promise.all([
         fetch(`${getApiHost()}/apis/v3/tally/sync-logs?company_id=${companyId}`, { headers: authHeaders() }),
         fetch(`${getApiHost()}/apis/v3/tally/pending?company_id=${companyId}`, { headers: authHeaders() }),
+        fetch(`${getApiHost()}/apis/v3/tally/synced?company_id=${companyId}`, { headers: authHeaders() }),
       ]);
+      if (syncedRes.ok) {
+        const data = await syncedRes.json();
+        setSyncedRecords(Array.isArray(data) ? data : []);
+      }
       if (logRes.ok) {
         const data = await logRes.json();
         setSyncLogs(Array.isArray(data) ? data : []);
@@ -403,20 +409,13 @@ export default function TallyIntegrationPage() {
     }
   };
 
-  const handleUnmarkSynced = async (entityType?: "bill" | "payment", entityId?: string) => {
-    const type = entityType || unmarkInput.entity_type;
-    const id = entityId || unmarkInput.entity_id;
-
-    if (!id.trim()) {
-      alert("Please specify a voucher/record UUID to unmark");
-      return;
-    }
-
+  const handleUnmarkSynced = async (type: "bill" | "payment", id: string, label: string) => {
+    if (!confirm(`Put ${label} back in the export queue? It will be in the next Tally file again.`)) return;
     setUnmarking(true);
     try {
       const payload = {
-        bill_ids: type === "bill" ? [id.trim()] : [],
-        payment_ids: type === "payment" ? [id.trim()] : [],
+        bill_ids: type === "bill" ? [id] : [],
+        payment_ids: type === "payment" ? [id] : [],
       };
       const res = await fetch(`${getApiHost()}/apis/v3/tally/unmark-synced`, {
         method: "POST",
@@ -425,16 +424,15 @@ export default function TallyIntegrationPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        showToast(`Unmarked ${data.unmarked_bills || 0} bill(s) and ${data.unmarked_payments || 0} payment(s). Re-queued for export.`);
-        setUnmarkInput({ entity_type: "bill", entity_id: "" });
+        showToast(data.unmarked_bills || data.unmarked_payments ? `${label} is back in the export queue` : `${label} was already in the queue`);
         fetchSyncData();
       } else {
         const err = await readErrorDetail(res);
-        alert(err || "Failed to unmark synced record");
+        alert(err || "Could not put it back in the queue. Try again.");
       }
     } catch (e) {
       console.error(e);
-      alert("Failed to unmark synced voucher");
+      alert("Could not reach the server. Try again.");
     } finally {
       setUnmarking(false);
     }
@@ -766,42 +764,54 @@ export default function TallyIntegrationPage() {
             {/* Unmark / Re-sync Box */}
             <div className="bg-card border border-border-custom rounded-xl p-5 space-y-4">
               <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">Re-Queue Synced Voucher (Unmark Synced)</h3>
-                <p className="text-[10px] text-muted">If an export was marked as synced but failed during Tally import, unmark it here to restore it to the pending queue.</p>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">Already Imported</h3>
+                <p className="text-[10px] text-muted">
+                  Bills and payments marked as imported into Tally, newest first. If one did not actually go into Tally, put it back so it is in the next file.
+                </p>
               </div>
-
-              <div className="flex flex-col sm:flex-row items-end gap-3">
-                <div className="w-full sm:w-48">
-                  <label className="text-[10px] uppercase font-bold text-muted block mb-1">Entity Type</label>
-                  <select
-                    value={unmarkInput.entity_type}
-                    onChange={(e) => setUnmarkInput({ ...unmarkInput, entity_type: e.target.value as any })}
-                    className="w-full bg-background border border-border-custom rounded-lg px-3 py-2 text-xs text-foreground focus:outline-none focus:border-primary"
-                  >
-                    <option value="bill">Vendor Bill / PO</option>
-                    <option value="payment">Payment Voucher</option>
-                  </select>
+              {syncedRecords.length === 0 ? (
+                <div className="text-xs text-muted text-center py-6 bg-elevated/30 rounded-lg">Nothing has been marked as imported yet.</div>
+              ) : (
+                <div className="border border-border-custom rounded-lg overflow-hidden max-h-72 overflow-y-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-elevated border-b border-border-custom text-muted text-[10px] uppercase font-bold tracking-wider">
+                      <tr>
+                        <th className="px-4 py-2.5">Type</th>
+                        <th className="px-4 py-2.5">Number</th>
+                        <th className="px-4 py-2.5">Party</th>
+                        <th className="px-4 py-2.5">Date</th>
+                        <th className="px-4 py-2.5 text-right">Amount</th>
+                        <th className="px-4 py-2.5"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border-custom">
+                      {syncedRecords.map((r) => {
+                        const kindLabel = r.kind === "bill" ? "Bill" : r.type === "in" ? "Payment received" : "Payment made";
+                        const label = `${kindLabel}${r.number ? ` ${r.number}` : ""}`;
+                        return (
+                          <tr key={`${r.kind}-${r.id}`}>
+                            <td className="px-4 py-2">{kindLabel}</td>
+                            <td className="px-4 py-2 font-semibold text-foreground">{r.number || "-"}</td>
+                            <td className="px-4 py-2">{r.party || "-"}</td>
+                            <td className="px-4 py-2 whitespace-nowrap">{formatDate(r.date)}</td>
+                            <td className="px-4 py-2 text-right">₹{Number(r.amount || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
+                            <td className="px-4 py-2 text-right">
+                              <button
+                                type="button"
+                                onClick={() => handleUnmarkSynced(r.kind, r.id, label)}
+                                disabled={unmarking}
+                                className="px-2.5 py-1 border border-border-custom rounded-md text-[11px] font-semibold hover:bg-elevated cursor-pointer disabled:opacity-50"
+                              >
+                                Put back in queue
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-                <div className="flex-1 w-full">
-                  <label className="text-[10px] uppercase font-bold text-muted block mb-1">Record UUID / ID</label>
-                  <input
-                    type="text"
-                    value={unmarkInput.entity_id}
-                    onChange={(e) => setUnmarkInput({ ...unmarkInput, entity_id: e.target.value })}
-                    placeholder="Enter Bill or Payment UUID..."
-                    className="w-full bg-background border border-border-custom rounded-lg px-3 py-2 text-xs text-foreground focus:outline-none focus:border-primary font-mono"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleUnmarkSynced()}
-                  disabled={unmarking || !unmarkInput.entity_id.trim()}
-                  className="px-4 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary/95 transition-all cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5 shrink-0"
-                >
-                  <Icon name="refresh" className="w-3.5 h-3.5" />
-                  {unmarking ? "Unmarking..." : "Unmark & Re-Queue"}
-                </button>
-              </div>
+              )}
             </div>
 
             {/* Pending Vouchers Queue */}

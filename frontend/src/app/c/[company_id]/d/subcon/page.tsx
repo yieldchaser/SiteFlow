@@ -743,6 +743,13 @@ export default function SubconPage() {
                                 >
                                   <Icon name="pencil" className="w-4 h-4" />
                                 </button>
+                                <a
+                                  href={`/c/${companyId}/d/subcon/work-orders/amendments?project=${projectId}&wo=${wo.id}`}
+                                  className="p-1 text-muted hover:text-foreground rounded hover:bg-elevated transition-colors"
+                                  title="Change value or terms after billing, and see past changes"
+                                >
+                                  <Icon name="clock" className="w-4 h-4" />
+                                </a>
                                 <button
                                   onClick={() => handleCancelWorkOrder(wo.id, wo.woNumber)}
                                   className="p-1 text-muted hover:text-danger rounded hover:bg-elevated transition-colors cursor-pointer"

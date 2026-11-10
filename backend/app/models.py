@@ -2025,6 +2025,8 @@ class WorkOrderAmendment(Base):
     wo_id = Column(UUID(as_uuid=True), ForeignKey("work_orders.id", ondelete="CASCADE"), nullable=False)
     amendment_number = Column(Integer, nullable=False)
     amended_fields = Column(JSONB, nullable=False)
+    # What the changed fields were before this amendment.
+    previous_values = Column(JSONB, nullable=True)
     amended_by = Column(String(255), nullable=True)
     amended_at = Column(DateTime(timezone=True), default=func.now(), nullable=False)
     reason = Column(String, nullable=True)

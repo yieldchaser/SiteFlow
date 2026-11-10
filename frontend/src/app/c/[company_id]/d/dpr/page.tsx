@@ -518,7 +518,7 @@ export default function DPRPage() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <div className="flex justify-between items-center">
+                  <div className="flex justify-between items-center h-5">
                     <label className="text-muted">Executed Qty</label>
                     <button
                       type="button"
@@ -531,7 +531,9 @@ export default function DPRPage() {
                   <input type="number" step="0.01" value={executedQty} onChange={(e) => setExecutedQty(e.target.value)} className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground" placeholder="e.g. 45" />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-muted">Workers Deployed</label>
+                  <div className="flex items-center h-5">
+                    <label className="text-muted">Workers Deployed</label>
+                  </div>
                   <input type="number" value={workersDeployed} onChange={(e) => setWorkersDeployed(e.target.value)} className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground" placeholder="e.g. 15" />
                 </div>
               </div>
@@ -550,14 +552,14 @@ export default function DPRPage() {
                 <div className="flex justify-between items-center">
                   <div>
                     <label className="text-muted font-bold block text-[11px]">Material Consumed Today</label>
-                    <p className="text-[10px] text-muted">Decrements warehouse stock and releases indent reservations</p>
+                    <p className="text-[10px] text-muted">Saving the report takes these off this site&apos;s stock</p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setMaterialsConsumed([...materialsConsumed, { material_name: "", quantity: "", unit: "" }])}
                     className="px-2 py-1 bg-primary/10 hover:bg-primary/20 text-primary font-bold rounded text-[10px] inline-flex items-center gap-1 transition-all cursor-pointer"
                   >
-                    <Icon name="add" className="w-3 h-3" /> + Add Material
+                    <Icon name="add" className="w-3 h-3" /> Add Material
                   </button>
                 </div>
 

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.database import get_db
-from app.auth import get_current_user, verify_project_access, get_company_membership, require_permission
+from app.auth import get_current_user, verify_project_access, get_company_membership, require_permission, project_ids_for_user
 from app.models import (
     WorkOrder, WorkOrderAmendment, SubcontractorPerformance,
     WorkOrderItem, Bill, TransactionDeduction, User,
@@ -25,8 +25,9 @@ router = APIRouter(
 
 # --- Schemas ---
 class AmendmentCreateRequest(BaseModel):
+    # Ignored: the amendment is always signed by the person saving it.
     amended_by: Optional[str] = None
-    amended_fields: dict = Field(..., example={"rate": 1200.0, "quantity": 500.0})
+    amended_fields: dict = Field(..., example={"estimated_work_amount": 1250000.0})
     reason: Optional[str] = None
 
 
@@ -35,6 +36,7 @@ class AmendmentResponse(BaseModel):
     wo_id: UUID
     amendment_number: int
     amended_fields: dict
+    previous_values: Optional[dict] = None
     amended_by: Optional[str] = None
     amended_at: datetime
     reason: Optional[str] = None
@@ -82,12 +84,20 @@ class ComparativeItem(BaseModel):
 AMENDABLE_WO_FIELDS = {"estimated_work_amount", "terms"}
 
 
-@router.get("/work-orders/{wo_id}/amendments", response_model=List[AmendmentResponse])
-def get_amendments(wo_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def _amendable_wo(db: Session, wo_id: UUID, current_user: User) -> WorkOrder:
     wo = db.query(WorkOrder).filter(WorkOrder.id == wo_id).first()
     if not wo:
         raise HTTPException(status_code=404, detail="Work order not found")
     get_company_membership(db, current_user, wo.company_id)
+    allowed = project_ids_for_user(db, current_user, wo.company_id)
+    if allowed is not None and wo.project_id not in allowed:
+        raise HTTPException(status_code=403, detail="You do not have access to this project")
+    return wo
+
+
+@router.get("/work-orders/{wo_id}/amendments", response_model=List[AmendmentResponse])
+def get_amendments(wo_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _amendable_wo(db, wo_id, current_user)
     amendments = db.query(WorkOrderAmendment).filter(
         WorkOrderAmendment.wo_id == wo_id
     ).order_by(WorkOrderAmendment.amendment_number.desc()).all()
@@ -96,20 +106,50 @@ def get_amendments(wo_id: UUID, db: Session = Depends(get_db), current_user: Use
 
 @router.post("/work-orders/{wo_id}/amendments", response_model=AmendmentResponse, status_code=201)
 def create_amendment(wo_id: UUID, req: AmendmentCreateRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    wo = db.query(WorkOrder).filter(WorkOrder.id == wo_id).first()
-    if not wo:
-        raise HTTPException(status_code=404, detail="Work Order not found")
+    """A change to a work order after it was issued, kept as a numbered record
+    of what it was, what it became, who changed it and why. Once a bill is
+    raised against a work order this is the only way to change its value."""
+    wo = _amendable_wo(db, wo_id, current_user)
     require_permission(db, current_user, wo.company_id, "subcontractor:edit")
+    if wo.status == "cancelled":
+        raise HTTPException(status_code=409, detail="This work order is cancelled and cannot be changed")
+
+    reason = (req.reason or "").strip()
+    if not reason:
+        raise HTTPException(status_code=422, detail="Say why the work order is changing")
 
     unknown = set(req.amended_fields) - AMENDABLE_WO_FIELDS
     if unknown:
-        raise HTTPException(status_code=422, detail=f"Fields cannot be amended: {sorted(unknown)}")
+        raise HTTPException(status_code=422, detail="Only the work order value and terms can be changed here")
+    if not req.amended_fields:
+        raise HTTPException(status_code=422, detail="Change the value or the terms")
+
+    previous = {}
     if "estimated_work_amount" in req.amended_fields:
         amount = req.amended_fields["estimated_work_amount"]
         if not isinstance(amount, (int, float)) or isinstance(amount, bool) or amount < 0:
-            raise HTTPException(status_code=422, detail="estimated_work_amount must be a non-negative number")
-    if "terms" in req.amended_fields and not isinstance(req.amended_fields["terms"], str):
-        raise HTTPException(status_code=422, detail="terms must be a string")
+            raise HTTPException(status_code=422, detail="Enter the new work order value as a number, zero or more")
+        amount = round(float(amount), 2)
+        billed = float(
+            db.query(func.coalesce(func.sum(Bill.subtotal), 0))
+            .filter(Bill.wo_id == wo.id, Bill.invoice_type == "subcon", Bill.status != "Cancelled")
+            .scalar() or 0.0
+        )
+        if amount + 0.005 < billed:
+            raise HTTPException(
+                status_code=422,
+                detail=f"₹{billed:,.2f} is already billed against this work order. The new value cannot be lower than that.",
+            )
+        previous["estimated_work_amount"] = float(wo.estimated_work_amount or 0.0)
+        req.amended_fields["estimated_work_amount"] = amount
+    if "terms" in req.amended_fields:
+        if not isinstance(req.amended_fields["terms"], str):
+            raise HTTPException(status_code=422, detail="Terms must be text")
+        previous["terms"] = wo.terms or ""
+
+    changed = {k: v for k, v in req.amended_fields.items() if previous.get(k) != v}
+    if not changed:
+        raise HTTPException(status_code=422, detail="Nothing changed: the new value and terms are the same as now")
 
     last = db.query(WorkOrderAmendment).filter(
         WorkOrderAmendment.wo_id == wo_id
@@ -120,11 +160,12 @@ def create_amendment(wo_id: UUID, req: AmendmentCreateRequest, db: Session = Dep
     amendment = WorkOrderAmendment(
         wo_id=wo_id,
         amendment_number=next_number,
-        amended_fields=req.amended_fields,
-        amended_by=current_user.name or str(current_user.id),
-        reason=req.reason
+        amended_fields=changed,
+        previous_values={k: previous[k] for k in changed},
+        amended_by=current_user.name or current_user.email or str(current_user.id),
+        reason=reason,
     )
-    for field, value in req.amended_fields.items():
+    for field, value in changed.items():
         setattr(wo, field, value)
     db.add(amendment)
     db.commit()

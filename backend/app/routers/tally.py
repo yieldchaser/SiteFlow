@@ -1081,6 +1081,50 @@ def mark_synced(req: MarkSyncedRequest, db: Session = Depends(get_db), current_u
     }
 
 
+@router.get("/synced")
+def synced_records(company_id: uuid.UUID, db: Session = Depends(get_db), _: None = Depends(verify_company_access)):
+    """The latest bills and payments marked as imported into Tally, so a wrong
+    mark can be undone by picking the record. The screen used to ask for the
+    record's internal ID, which nobody can see."""
+    from app.party_names import resolve_party_name
+    names: dict = {}
+
+    def party(pid):
+        if pid not in names:
+            names[pid] = resolve_party_name(db, pid, fallback="")
+        return names[pid]
+
+    bills = (
+        db.query(Bill)
+        .filter(Bill.company_id == company_id, Bill.tally_synced == True, Bill.status != "Cancelled")
+        .order_by(Bill.invoice_date.desc())
+        .limit(100)
+        .all()
+    )
+    payments = (
+        db.query(Payment)
+        .filter(Payment.company_id == company_id, Payment.tally_synced == True)
+        .order_by(Payment.payment_date.desc())
+        .limit(100)
+        .all()
+    )
+    out = [
+        {
+            "kind": "bill", "id": str(b.id), "number": b.invoice_number, "party": party(b.party_company_user_id),
+            "date": b.invoice_date, "amount": float(b.total_payable or 0), "type": b.invoice_type,
+        }
+        for b in bills
+    ] + [
+        {
+            "kind": "payment", "id": str(p.id), "number": p.reference_number or "", "party": party(p.party_company_user_id),
+            "date": p.payment_date, "amount": float(p.amount or 0), "type": p.payment_type,
+        }
+        for p in payments
+    ]
+    out.sort(key=lambda r: r["date"], reverse=True)
+    return out
+
+
 @router.post("/unmark-synced")
 def unmark_synced(req: MarkSyncedRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Undo a mark-synced so vouchers re-enter the export queue (e.g. a mark before the Tally import actually succeeded)."""
