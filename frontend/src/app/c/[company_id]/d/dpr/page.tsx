@@ -197,7 +197,7 @@ export default function DPRPage() {
     if (!projectId || !companyId) return;
     try {
       const [matRes, invRes] = await Promise.all([
-        fetch(`${getApiHost()}/apis/v3/library/materials?company_id=${companyId}`, { headers: authHeaders() }),
+        fetch(`${getApiHost()}/apis/v3/library/materials/${companyId}`, { headers: authHeaders() }),
         fetch(`${getApiHost()}/apis/v3/procurement/inventory?project_id=${projectId}`, { headers: authHeaders() }),
       ]);
       if (matRes.ok) {

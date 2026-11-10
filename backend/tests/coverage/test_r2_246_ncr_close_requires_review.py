@@ -103,3 +103,20 @@ def test_ncr_cannot_be_born_overdue(client, db, make_tenant, auth_headers):
         f"NCR-R246C-{uuid.uuid4().hex[:6]}", due_date="2099-01-01T00:00:00Z",
     )
     assert future.status_code == 201
+
+
+def test_ncr_close_needs_what_was_done(client, db, make_tenant, auth_headers):
+    """The screen closed every NCR with the same made-up "Resolved and verified
+    on-site." It now asks; the server refuses a blank resolution."""
+    import pathlib
+    comp, user, team = make_tenant(company_name="R246D", user_name="U246D")
+    hdr = auth_headers(user, comp)
+    project = _mk_project(db, comp, 4)
+    r = _raise_ncr(client, comp, project, hdr, f"NCR-R246D-{uuid.uuid4().hex[:6]}")
+    ncr_id = r.json()["id"]
+    assert client.patch(f"/apis/v3/quality/ncr/{ncr_id}/review", headers=hdr).status_code == 200
+    blank = client.patch(f"/apis/v3/quality/ncr/{ncr_id}/close", json={"resolution_notes": "   "}, headers=hdr)
+    assert blank.status_code == 422, blank.text
+    front = pathlib.Path(__file__).resolve().parents[3] / "frontend" / "src" / "app" / "c"
+    for f in front.rglob("quality/page.tsx"):
+        assert "Resolved and verified on-site." not in f.read_text(encoding="utf-8"), f

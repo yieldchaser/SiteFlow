@@ -23,7 +23,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from app.database import get_db
 from app.auth import get_current_user, verify_company_access, verify_project_access, get_company_membership, require_permission
 from app.models import (
@@ -539,7 +539,17 @@ def ncr_under_review(ncr_id: uuid.UUID, db: Session = Depends(get_db), current_u
 
 
 class NCRCloseRequest(BaseModel):
-    resolution_notes: str
+    # What was done to fix it. Blank is refused: a closed NCR with no record
+    # of the fix is not closed.
+    resolution_notes: str = Field(..., min_length=1)
+
+    @field_validator("resolution_notes")
+    @classmethod
+    def _not_blank(cls, v):
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("Write what was done to fix it")
+        return v
 
 
 @router.patch("/ncr/{ncr_id}/close", response_model=NCRResponse)

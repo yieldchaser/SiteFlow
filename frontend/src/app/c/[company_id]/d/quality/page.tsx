@@ -391,7 +391,18 @@ isCode: cl.is_code_reference || "—",
   const moveNCR = async (id: string, newStatus: "under_review" | "closed") => {
     try {
       const action = newStatus === "under_review" ? "review" : "close";
-      const body = newStatus === "closed" ? JSON.stringify({ resolution_notes: "Resolved and verified on-site." }) : undefined;
+      // Closing records what was done. It used to save "Resolved and verified
+      // on-site." for every NCR, whatever had actually happened.
+      let body: string | undefined;
+      if (newStatus === "closed") {
+        const notes = window.prompt("What was done to fix this? This is saved with the closed NCR.");
+        if (notes === null) return;
+        if (!notes.trim()) {
+          alert("Write what was done to fix it before closing.");
+          return;
+        }
+        body = JSON.stringify({ resolution_notes: notes.trim() });
+      }
       const res = await fetch(`${getApiHost()}/apis/v3/quality/ncr/${id}/${action}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },

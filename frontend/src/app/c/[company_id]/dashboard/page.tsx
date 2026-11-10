@@ -99,8 +99,10 @@ export default function DashboardPage() {
   const companyId = params?.company_id as string;
 
   const [activeProject, setActiveProject] = useState("d0000000-0000-0000-0000-000000000001");
-  const [tallySyncStatus, setTallySyncStatus] = useState("Not synced yet");
-  const [isSyncing, setIsSyncing] = useState(false);
+  // Last time vouchers were imported into Tally (Tally page: download, import,
+  // mark done). The header button used to call an automatic sync the server
+  // removed, so it always said "Sync Failed".
+  const [tallyLastSync, setTallyLastSync] = useState<string | null | undefined>(undefined);
   const [activeTab] = useState("overview");
   const [overviewTab, setOverviewTab] = useState<"operational" | "financial">("operational");
   const [operationalData, setOperationalData] = useState<any>(null);
@@ -388,25 +390,17 @@ export default function DashboardPage() {
   const activeProjectStatus = normalizeText(activeProjDetails.status) || "—";
   const formatMoney = (value: number) => `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
-  const handleSyncTally = async () => {
-    setIsSyncing(true);
-    try {
-      const apiHost = getApiHost();
-      const res = await fetch(`${apiHost}/apis/v3/tally/sync?company_id=${companyId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(authHeaders() || {}) }
-      });
-      if (res.ok) {
-        setTallySyncStatus("Synced");
-      } else {
-        setTallySyncStatus("Sync Failed");
-      }
-    } catch (e) {
-      setTallySyncStatus("Sync Error");
-    } finally {
-      setIsSyncing(false);
-    }
-  };
+  useEffect(() => {
+    if (!companyId) return;
+    fetch(`${getApiHost()}/apis/v3/tally/sync-logs?company_id=${companyId}`, { headers: authHeaders() })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((logs: { marked_synced_at?: string | null }[]) => {
+        const done = (Array.isArray(logs) ? logs : []).map((l) => l.marked_synced_at).filter(Boolean) as string[];
+        done.sort();
+        setTallyLastSync(done.length ? done[done.length - 1] : null);
+      })
+      .catch(() => setTallyLastSync(null));
+  }, [companyId]);
 
   // Helper calculations for Company Party Balance half-donut chart
   const polarToCartesian = (cx: number, cy: number, r: number, angleInDegrees: number) => {
@@ -480,29 +474,16 @@ export default function DashboardPage() {
           subtitle="Real-time KPI overview, financial ledger metrics and physical progress"
         >
           <div className="flex items-center gap-3">
-            {/* Tally Connection status dot */}
-            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-elevated border border-border-custom text-xs text-muted">
-              <span className={`h-2 w-2 rounded-full ${tallySyncStatus === "Synced" ? "bg-success" : "bg-muted"}`} />
-              <span>Tally: {tallySyncStatus}</span>
-            </div>
-
-            <button
-              onClick={handleSyncTally}
-              disabled={isSyncing}
-              className="flex items-center justify-center gap-1.5 rounded-lg bg-secondary/15 hover:bg-secondary/25 border border-secondary/20 px-3.5 py-1.5 text-xs font-semibold text-secondary transition-all cursor-pointer"
+            <a
+              href={`/c/${companyId}/d/integrations/tally`}
+              className="flex items-center gap-2 px-3 py-1 rounded-full bg-elevated border border-border-custom text-xs text-muted hover:text-foreground"
+              title="Open Tally to download vouchers and import them"
             >
-              {isSyncing ? (
-                <>
-                  <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  Syncing Ledgers...
-                </>
-              ) : (
-                "Trigger Sync"
-              )}
-            </button>
+              <span className={`h-2 w-2 rounded-full ${tallyLastSync ? "bg-success" : "bg-muted"}`} />
+              <span>
+                Tally: {tallyLastSync === undefined ? "..." : tallyLastSync ? `last imported ${formatDate(tallyLastSync)}` : "not imported yet"}
+              </span>
+            </a>
           </div>
         </PageHeader>
 
