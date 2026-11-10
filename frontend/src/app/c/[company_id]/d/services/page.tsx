@@ -32,7 +32,7 @@ export default function ServicesPage() {
     {
       icon: "wrench",
       title: "Customisation Request",
-      desc: "Use this form to request onsite customizations. Our team will review your needs and schedule the service accordingly.",
+      desc: "Email us what you would like changed for your company. We will go through it with you and plan the work.",
     },
     {
       icon: "headphone",

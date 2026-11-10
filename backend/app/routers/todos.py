@@ -95,7 +95,9 @@ def _spawn_next_occurrence(db: Session, t: models.Todo) -> Optional[models.Todo]
     if t.repeat_type not in ("daily", "weekly", "monthly"):
         return None
     now = datetime.now(timezone.utc)
-    nxt = t.due_date if t.due_date is not None else now
+    # From the start of today when there is no due date, so the next date is
+    # the same however many times it is ticked today.
+    nxt = t.due_date if t.due_date is not None else now.replace(hour=0, minute=0, second=0, microsecond=0)
     for _ in range(10000):
         if t.repeat_type == "daily":
             nxt = nxt + timedelta(days=1)
@@ -105,6 +107,17 @@ def _spawn_next_occurrence(db: Session, t: models.Todo) -> Optional[models.Todo]
             nxt = _add_one_month(nxt)
         comparable = nxt if nxt.tzinfo is not None else nxt.replace(tzinfo=timezone.utc)
         if comparable > now:
+            # Ticked, unticked and ticked again: the next one already exists.
+            already = db.query(models.Todo).filter(
+                models.Todo.company_id == t.company_id,
+                models.Todo.project_id == t.project_id,
+                models.Todo.title == t.title,
+                models.Todo.repeat_type == t.repeat_type,
+                models.Todo.due_date == nxt,
+                models.Todo.id != t.id,
+            ).first()
+            if already:
+                return already
             spawned = models.Todo(
                 company_id=t.company_id,
                 project_id=t.project_id,

@@ -143,7 +143,8 @@ export default function DeleteLogsPage() {
         setToast("Delete log purged successfully.");
         setLogs((prev) => prev.filter((l) => l.id !== log.id));
       } else {
-        setToast("Failed to purge delete log.");
+        const body = await res.json().catch(() => ({}));
+        setToast(typeof body?.detail === "string" ? body.detail : "Failed to purge delete log.");
       }
     } catch {
       setToast("Failed to purge delete log.");

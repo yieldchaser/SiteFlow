@@ -372,6 +372,7 @@ export default function LibraryHubPage() {
   }, [activeTab, companyId, accessToken, partyTypeFilter]);
 
   const handleDeleteItem = async (itemId: string) => {
+    if (!confirm("Delete this item from the library?")) return;
     try {
       const endpoint = getEndpoint(activeTab);
       const res = await fetch(`${apiHost}/apis/v3/library/${endpoint}/${itemId}`, {

@@ -158,7 +158,7 @@ class RateCreate(BaseModel):
     category: Optional[str] = Field(None, max_length=100)
     unit_cost: float = Field(0.0, ge=0)
     markup_value: float = 0.0
-    markup_type: str = Field("percent", max_length=10)
+    markup_type: str = Field("percent", pattern="^(percent|flat)$")
     unit_sale_price: float = Field(0.0, ge=0)
     note: Optional[str] = None
     cost_code: Optional[str] = Field(None, max_length=100)
@@ -172,7 +172,7 @@ class RateUpdate(BaseModel):
     category: Optional[str] = Field(None, max_length=100)
     unit_cost: Optional[float] = Field(None, ge=0)
     markup_value: Optional[float] = None
-    markup_type: Optional[str] = Field(None, max_length=10)
+    markup_type: Optional[str] = Field(None, pattern="^(percent|flat)$")
     unit_sale_price: Optional[float] = Field(None, ge=0)
     note: Optional[str] = None
     cost_code: Optional[str] = Field(None, max_length=100)
@@ -586,6 +586,33 @@ def reveal_party_aadhaar(
     return {"aadhaar_number": party.aadhaar_number}
 
 
+def _refuse_if_party_in_use(db: Session, party: models.LibraryParty) -> None:
+    """A party with bills, payments, orders or an open balance is not deleted:
+    deleting took its project balances with it, and left those documents
+    under a name nobody could find in the library any more."""
+    m = models
+    team_ids = [tid for (tid,) in db.query(m.CompanyTeam.id).filter(
+        m.CompanyTeam.company_id == party.company_id, m.CompanyTeam.library_party_id == party.id).all()]
+    used = {}
+    if team_ids:
+        used = {
+            "bill": db.query(m.Bill).filter(m.Bill.party_company_user_id.in_(team_ids)).count(),
+            "payment": db.query(m.Payment).filter(m.Payment.party_company_user_id.in_(team_ids)).count(),
+            "purchase order": db.query(m.PurchaseOrder).filter(m.PurchaseOrder.vendor_id.in_(team_ids)).count(),
+            "work order": db.query(m.WorkOrder).filter(m.WorkOrder.subcontractor_id.in_(team_ids)).count(),
+        }
+    open_balance = db.query(m.ProjectParty).filter(
+        m.ProjectParty.party_id == party.id,
+        (m.ProjectParty.advance_paid != 0) | (m.ProjectParty.to_pay != 0),
+    ).count()
+    if open_balance:
+        used["project with money still open"] = open_balance
+    used = {k: v for k, v in used.items() if v}
+    if used:
+        what = ", ".join(f"{n} {label}{'' if n == 1 or label.startswith('project') else 's'}" for label, n in used.items())
+        raise HTTPException(status_code=409, detail=f"{party.name} has {what}. Keep the party so those records stay linked to it.")
+
+
 @router.delete("/parties/{party_id}")
 def delete_library_party(party_id: uuid.UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     party = db.query(models.LibraryParty).filter(models.LibraryParty.id == party_id).first()
@@ -593,6 +620,7 @@ def delete_library_party(party_id: uuid.UUID, db: Session = Depends(get_db), cur
         raise HTTPException(status_code=404, detail="Party not found")
     get_company_membership(db, current_user, party.company_id)
     require_permission(db, current_user, party.company_id, "data:delete")
+    _refuse_if_party_in_use(db, party)
     # 5B.5 Delete stored objects with delete_object
     if party.aadhaar_file and supabase_storage.is_storage_configured():
         supabase_storage.delete_object(supabase_storage.BUCKET_KYC_DOCUMENTS, party.aadhaar_file)
@@ -647,6 +675,82 @@ def delete_library_asset_type(item_id: uuid.UUID, db: Session = Depends(get_db),
 
 
 # ─── COST CODES ───
+# Records keep the cost code as text (BOQ items, payments, payroll details,
+# workforce and rate cards, quotation lines). So a code that is deleted or
+# renamed must not leave them pointing at a code that no longer exists: every
+# later edit of such a record is refused as "unknown cost code".
+
+def _cost_code_usage(db: Session, company_id: uuid.UUID, code: str) -> dict:
+    m = models
+    counts = {
+        "BOQ item": db.query(m.BOQItem).join(m.Project, m.Project.id == m.BOQItem.project_id)
+            .filter(m.Project.company_id == company_id, m.BOQItem.cost_code == code).count(),
+        "payment": db.query(m.Payment).filter(m.Payment.company_id == company_id, m.Payment.cost_code == code).count(),
+        "payroll detail": db.query(m.PayrollProfile).filter(m.PayrollProfile.company_id == company_id, m.PayrollProfile.cost_code == code).count(),
+        "workforce": db.query(m.LibraryWorkforce).filter(m.LibraryWorkforce.company_id == company_id, m.LibraryWorkforce.cost_code == code).count(),
+        "rate card item": db.query(m.LibraryRate).filter(m.LibraryRate.company_id == company_id, m.LibraryRate.cost_code == code).count(),
+        "quotation line": db.query(m.CRMQuotationItem).join(m.CRMQuotation, m.CRMQuotation.id == m.CRMQuotationItem.quotation_id)
+            .join(m.CRMLead, m.CRMLead.id == m.CRMQuotation.lead_id)
+            .filter(m.CRMLead.company_id == company_id, m.CRMQuotationItem.cost_code == code).count(),
+    }
+    return {k: v for k, v in counts.items() if v}
+
+
+def _describe_usage(usage: dict) -> str:
+    return ", ".join(f"{n} {label}{'' if n == 1 else 's'}" for label, n in usage.items())
+
+
+def _rename_cost_code_everywhere(db: Session, company_id: uuid.UUID, old: str, new: str) -> None:
+    m = models
+    project_ids = [pid for (pid,) in db.query(m.Project.id).filter(m.Project.company_id == company_id).all()]
+    if project_ids:
+        db.query(m.BOQItem).filter(m.BOQItem.project_id.in_(project_ids), m.BOQItem.cost_code == old).update(
+            {m.BOQItem.cost_code: new}, synchronize_session=False)
+    for model in (m.Payment, m.PayrollProfile, m.LibraryWorkforce, m.LibraryRate):
+        db.query(model).filter(model.company_id == company_id, model.cost_code == old).update(
+            {model.cost_code: new}, synchronize_session=False)
+    quote_ids = [qid for (qid,) in db.query(m.CRMQuotation.id).join(m.CRMLead, m.CRMLead.id == m.CRMQuotation.lead_id)
+                 .filter(m.CRMLead.company_id == company_id).all()]
+    if quote_ids:
+        db.query(m.CRMQuotationItem).filter(m.CRMQuotationItem.quotation_id.in_(quote_ids),
+                                            m.CRMQuotationItem.cost_code == old).update(
+            {m.CRMQuotationItem.cost_code: new}, synchronize_session=False)
+
+
+def _check_code_free(db: Session, company_id: uuid.UUID, code: str, item_id: Optional[uuid.UUID] = None) -> None:
+    q = db.query(models.LibraryCostCode).filter(models.LibraryCostCode.company_id == company_id,
+                                                models.LibraryCostCode.code == code)
+    if item_id:
+        q = q.filter(models.LibraryCostCode.id != item_id)
+    clash = q.first()
+    if clash:
+        raise HTTPException(status_code=409, detail=f"Cost code {code} already exists ({clash.name}).")
+
+
+def _check_parent(db: Session, company_id: uuid.UUID, parent_id: Optional[uuid.UUID], item_id: Optional[uuid.UUID] = None) -> None:
+    """The parent must be one of this company's codes, and a code cannot sit under itself."""
+    seen = set()
+    current = parent_id
+    while current:
+        if item_id and current == item_id:
+            raise HTTPException(status_code=422, detail="A cost code cannot sit under itself or one of its own sub codes.")
+        if current in seen:
+            break
+        seen.add(current)
+        node = db.query(models.LibraryCostCode).filter(models.LibraryCostCode.id == current,
+                                                       models.LibraryCostCode.company_id == company_id).first()
+        if not node:
+            raise HTTPException(status_code=422, detail="Pick a parent cost code from this company's list.")
+        current = node.parent_id
+
+
+def _clean_text(value: Optional[str], what: str) -> str:
+    v = (value or "").strip()
+    if not v:
+        raise HTTPException(status_code=422, detail=f"Enter the {what}.")
+    return v
+
+
 @router.get("/cost-codes/{company_id}")
 def get_library_cost_codes(company_id: uuid.UUID, db: Session = Depends(get_db), _: None = Depends(verify_company_access)):
     return db.query(models.LibraryCostCode).filter(models.LibraryCostCode.company_id == company_id).all()
@@ -655,12 +759,16 @@ def get_library_cost_codes(company_id: uuid.UUID, db: Session = Depends(get_db),
 def create_library_cost_code(payload: CostCodeCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     get_company_membership(db, current_user, payload.company_id)
     require_permission(db, current_user, payload.company_id, "library:edit")
+    code = _clean_text(payload.code, "cost code")
+    name = _clean_text(payload.name, "cost code name")
+    _check_code_free(db, payload.company_id, code)
+    _check_parent(db, payload.company_id, payload.parent_id)
     item = models.LibraryCostCode(
         company_id=payload.company_id,
-        code=payload.code,
-        sub_cost_code=payload.sub_cost_code,
+        code=code,
+        sub_cost_code=(payload.sub_cost_code or "").strip() or None,
         parent_id=payload.parent_id,
-        name=payload.name,
+        name=name,
         budget_amount=payload.budget_amount,
     )
     db.add(item)
@@ -675,7 +783,20 @@ def update_library_cost_code(item_id: uuid.UUID, payload: CostCodeUpdate, db: Se
         raise HTTPException(status_code=404, detail="Cost code not found")
     get_company_membership(db, current_user, item.company_id)
     require_permission(db, current_user, item.company_id, "library:edit")
-    for k, v in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    if "code" in data:
+        data["code"] = _clean_text(data["code"], "cost code")
+        if data["code"] != item.code:
+            _check_code_free(db, item.company_id, data["code"], item.id)
+            # Records using the old code move with it.
+            _rename_cost_code_everywhere(db, item.company_id, item.code, data["code"])
+    if "name" in data:
+        data["name"] = _clean_text(data["name"], "cost code name")
+    if "parent_id" in data:
+        _check_parent(db, item.company_id, data["parent_id"], item.id)
+    if "budget_amount" in data and data["budget_amount"] is None:
+        data.pop("budget_amount")
+    for k, v in data.items():
         setattr(item, k, v)
     db.commit()
     db.refresh(item)
@@ -688,6 +809,13 @@ def delete_library_cost_code(item_id: uuid.UUID, db: Session = Depends(get_db), 
         raise HTTPException(status_code=404, detail="Cost code not found")
     get_company_membership(db, current_user, item.company_id)
     require_permission(db, current_user, item.company_id, "data:delete")
+    # Sub codes used to vanish with their parent without a word.
+    children = db.query(models.LibraryCostCode).filter(models.LibraryCostCode.parent_id == item.id).count()
+    if children:
+        raise HTTPException(status_code=409, detail=f"Cost code {item.code} has {children} sub code{'' if children == 1 else 's'} under it. Move or delete them first.")
+    usage = _cost_code_usage(db, item.company_id, item.code)
+    if usage:
+        raise HTTPException(status_code=409, detail=f"Cost code {item.code} is used on {_describe_usage(usage)}. Move those to another code first, or keep this one.")
     from app.routers.delete_logs import log_deletion
     log_deletion(db, item.company_id, "cost_code", item.id, f"Cost Code: {item.name}", deleted_by=current_user.name)
     db.delete(item)
@@ -914,6 +1042,17 @@ def delete_library_material(item_id: uuid.UUID, db: Session = Depends(get_db), c
 
 
 # ─── RATES ───
+def _sale_price(unit_cost, markup_value, markup_type) -> float:
+    """Sale price is always cost plus markup. It was taken as sent, so a cost
+    changed later left the old sale price standing."""
+    cost = float(unit_cost or 0)
+    markup = float(markup_value or 0)
+    price = cost * (1 + markup / 100) if (markup_type or "percent") == "percent" else cost + markup
+    if price < 0:
+        raise HTTPException(status_code=422, detail="The markup takes the sale price below zero.")
+    return round(price, 2)
+
+
 @router.get("/rates/{company_id}")
 def get_library_rates(company_id: uuid.UUID, db: Session = Depends(get_db), _: None = Depends(verify_company_access)):
     return db.query(models.LibraryRate).filter(models.LibraryRate.company_id == company_id).all()
@@ -935,7 +1074,7 @@ def create_library_rate(payload: RateCreate, db: Session = Depends(get_db), curr
         unit_cost=payload.unit_cost,
         markup_value=payload.markup_value,
         markup_type=payload.markup_type,
-        unit_sale_price=payload.unit_sale_price,
+        unit_sale_price=_sale_price(payload.unit_cost, payload.markup_value, payload.markup_type),
         note=payload.note,
         cost_code=payload.cost_code,
         hsn_sac=payload.hsn_sac
@@ -955,7 +1094,10 @@ def update_library_rate(item_id: uuid.UUID, payload: RateUpdate, db: Session = D
     if payload.cost_code:
         assert_cost_codes_known(db, item.company_id, codes=[payload.cost_code], status_code=422)
     for k, v in payload.model_dump(exclude_unset=True).items():
+        if k == "unit_sale_price":
+            continue
         setattr(item, k, v)
+    item.unit_sale_price = _sale_price(item.unit_cost, item.markup_value, item.markup_type)
     db.commit()
     db.refresh(item)
     return item
