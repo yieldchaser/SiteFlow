@@ -5,7 +5,6 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import PageShell from "@/components/layout/PageShell";
 import PageHeader from "@/components/PageHeader";
-import { EmptyState } from "@/components/ui/EmptyState";
 import Icon from "@/components/marketing/Icon";
 
 // Custom fields are extra boxes a company adds to its own forms, for example
@@ -227,13 +226,6 @@ export default function CustomFieldsPage() {
                 </div>
               )}
 
-              {fields.length === 0 && (
-                <EmptyState
-                  title="No custom fields yet"
-                  description="Add a field when your forms need a box they do not have, for example a client PO number on sales invoices."
-                  action={{ label: "New Field", onClick: () => openNew() }}
-                />
-              )}
             </div>
           )}
 

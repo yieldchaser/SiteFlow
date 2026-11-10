@@ -360,7 +360,7 @@ export default function ChatPage() {
     }
   };
 
-  const handleUpdateMemberRole = async (userId: string, newRole: "admin" | "member") => {
+  const handleUpdateMemberRole = async (userId: string, newRole: "admin" | "member" | "viewer") => {
     if (!activeGroup) return;
     try {
       const res = await fetch(
@@ -1181,17 +1181,18 @@ export default function ChatPage() {
                               {m.name || `User ${m.user_id.slice(0, 8)}`}
                               {(m as ChatMember & { is_me?: boolean }).is_me && <span className="text-muted font-medium"> (you)</span>}
                             </div>
-                            <div className="text-[9px] text-muted capitalize font-medium">{m.role === "admin" ? "Group Admin" : "Member"}</div>
+                            <div className="text-[9px] text-muted capitalize font-medium">{m.role === "admin" ? "Group Admin" : m.role === "viewer" ? "Viewer (read only)" : "Member"}</div>
                           </div>
                         </div>
                         {isAdmin && !(m as ChatMember & { is_me?: boolean }).is_me && (
                         <div className="flex items-center gap-2">
                           <select
                             value={m.role}
-                            onChange={(e) => handleUpdateMemberRole(m.user_id, e.target.value as "admin" | "member")}
+                            onChange={(e) => handleUpdateMemberRole(m.user_id, e.target.value as "admin" | "member" | "viewer")}
                             className="bg-elevated border border-border-custom text-[10px] rounded px-1.5 py-0.5 text-foreground cursor-pointer"
                           >
                             <option value="member">Member</option>
+                            <option value="viewer">Viewer (read only)</option>
                             <option value="admin">Admin</option>
                           </select>
                           {m.role !== "admin" && (
@@ -1241,7 +1242,7 @@ export default function ChatPage() {
                   className="w-full bg-elevated border border-border-custom rounded-lg px-4 py-2 text-xs text-foreground focus:outline-none focus:border-primary"
                 >
                   <option value="">Select a team member</option>
-                  {teamOptions.map((m) => (
+                  {teamOptions.filter((t) => !members.some((mm) => mm.user_id === t.id)).map((m) => (
                     <option key={m.id} value={m.id}>{m.name}</option>
                   ))}
                 </select>
@@ -1258,7 +1259,7 @@ export default function ChatPage() {
                   className="w-full bg-elevated border border-border-custom rounded-lg px-4 py-2 text-xs text-foreground focus:outline-none focus:border-primary"
                 >
                   <option value="member">Member</option>
-                  <option value="viewer">Viewer / Auditor</option>
+                  <option value="viewer">Viewer (read only)</option>
                 </select>
               </div>
 

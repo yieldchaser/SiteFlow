@@ -7,7 +7,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from app.database import get_db
-from app.auth import get_current_user, verify_project_access, get_company_membership
+from app.auth import get_current_user, verify_project_access, get_company_membership, verify_project_in_company, allowed_project_ids
 from app.models import ChatGroup, ChatMessage, ChatGroupMember, User, CompanyTeam, ProjectFile
 
 router = APIRouter(prefix="/chat", tags=["Chat & MOM"], dependencies=[Depends(get_current_user)])
@@ -181,6 +181,14 @@ def create_group(payload: ChatGroupCreate, db: Session = Depends(get_db), curren
     creator = company_team_for(db, payload.company_id, current_user)
     if creator is None:
         raise HTTPException(status_code=403, detail="Not a member of this company team")
+    # The project must be this company's, and one the creator can open.
+    verify_project_in_company(db, payload.project_id, payload.company_id)
+    allowed = allowed_project_ids(db, creator)
+    if allowed is not None and payload.project_id not in allowed:
+        raise HTTPException(status_code=403, detail="You do not have access to this project")
+    payload.name = (payload.name or "").strip()
+    if not payload.name:
+        raise HTTPException(status_code=422, detail="Give the group a name")
     data = payload.model_dump()
     data.pop("created_by", None)
     if data.get("icon_url"):
@@ -323,10 +331,12 @@ def mark_group_as_read(
 @router.post("/messages", response_model=ChatMessageResponse, status_code=status.HTTP_201_CREATED)
 def send_message(payload: ChatMessageCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     group = db.query(ChatGroup).filter(ChatGroup.id == payload.group_id).first()
-    if not group:
+    if not group or group.is_archived:
         raise HTTPException(status_code=404, detail="Chat group not found")
     get_company_membership(db, current_user, group.company_id)
-    verify_group_membership(db, current_user, group.id)
+    membership = verify_group_membership(db, current_user, group.id)
+    if membership.role == "viewer":
+        raise HTTPException(status_code=403, detail="Viewers can read this group but not send messages")
     if not (payload.message_text or "").strip() and not payload.image_urls:
         raise HTTPException(status_code=400, detail="Write a message or attach a photo")
     data = payload.model_dump()
@@ -448,6 +458,20 @@ def add_member(group_id: uuid.UUID, payload: ChatGroupMemberCreate, db: Session 
             )
     else:
         require_group_admin(db, current_user, group.id)
+    # The person must be a member of this company with a login, able to open
+    # the group's project, and not already in the group.
+    person = db.query(CompanyTeam).filter(
+        CompanyTeam.id == payload.user_id, CompanyTeam.company_id == group.company_id
+    ).first()
+    if person is None or person.user_id is None:
+        raise HTTPException(status_code=400, detail="Pick someone from your team")
+    allowed = allowed_project_ids(db, person)
+    if allowed is not None and group.project_id not in allowed:
+        raise HTTPException(status_code=400, detail="This person does not have access to this project. Give them access in Team settings first.")
+    if db.query(ChatGroupMember.id).filter(
+        ChatGroupMember.group_id == group.id, ChatGroupMember.user_id == payload.user_id
+    ).first():
+        raise HTTPException(status_code=409, detail="Already in this group")
     member = ChatGroupMember(**payload.model_dump())
     db.add(member)
     db.commit()
