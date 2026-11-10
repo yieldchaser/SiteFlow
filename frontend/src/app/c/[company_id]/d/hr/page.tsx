@@ -287,6 +287,21 @@ export default function HRPayrollPage() {
   // Workforce Configuration Drawers
   const [showWorkforceDrawer, setShowWorkforceDrawer] = useState(false);
   const [showLibraryDrawer, setShowLibraryDrawer] = useState(false);
+  // The company's own workforce types and rates (Library > Workforce). The
+  // drawer used to show two typed-in examples whose Select did nothing.
+  const [libWorkforces, setLibWorkforces] = useState<{ id: string; name: string; rate_type?: string | null; salary_per_shift?: number | null; shift_hours?: number | null }[] | null>(null);
+  const [libSearch, setLibSearch] = useState("");
+  const openWorkforceLibrary = async () => {
+    setShowLibraryDrawer(true);
+    setLibSearch("");
+    setLibWorkforces(null);
+    try {
+      const res = await fetch(`${getApiHost()}/apis/v3/library/workforces/${companyId}`, { headers: authHeaders() });
+      setLibWorkforces(res.ok ? await res.json() : []);
+    } catch {
+      setLibWorkforces([]);
+    }
+  };
   const [showDetailsDrawer, setShowDetailsDrawer] = useState(false);
   const [selectedEmpDetail, setSelectedEmpDetail] = useState<any>(null);
   // Every field here is what payroll actually reads. The old drawer saved a
@@ -1307,7 +1322,7 @@ export default function HRPayrollPage() {
                     </button>
                   ))}
                 </div>
-                <button onClick={() => setShowLibraryDrawer(true)}
+                <button onClick={openWorkforceLibrary}
                   className="px-3 py-1.5 rounded-lg border border-border-custom text-muted text-xs font-bold hover:text-foreground hover:bg-elevated transition-all cursor-pointer">
                   Workforce Library
                 </button>
@@ -2573,7 +2588,9 @@ export default function HRPayrollPage() {
               <div className="mb-4">
                 <input
                   type="text"
-                  placeholder="Search Workforce..."
+                  value={libSearch}
+                  onChange={(e) => setLibSearch(e.target.value)}
+                  placeholder="Search workforce types"
                   className="w-full bg-background border border-border-custom rounded-lg px-3 py-2 text-xs text-foreground focus:outline-none focus:border-primary"
                 />
               </div>
@@ -2589,21 +2606,29 @@ export default function HRPayrollPage() {
               </button>
 
               <div className="space-y-2 text-xs">
-                <div className="p-3 bg-background border border-border-custom rounded-lg flex items-center justify-between">
-                  <div>
-                    <p className="font-semibold text-foreground">Mason</p>
-                    <p className="text-[10px] text-muted">Daily Rate · ₹750/shift</p>
-                  </div>
-                  <span className="text-xs text-primary font-bold cursor-pointer hover:underline" onClick={() => { setShowLibraryDrawer(false); triggerLocalToast("Mason selected from Library"); }}>Select</span>
-                </div>
-                <div className="p-3 bg-background border border-border-custom rounded-lg flex items-center justify-between">
-                  <div>
-                    <p className="font-semibold text-foreground">Electrician</p>
-                    <p className="text-[10px] text-muted">Hourly Rate · ₹120/hr</p>
-                  </div>
-                  <span className="text-xs text-primary font-bold cursor-pointer hover:underline" onClick={() => { setShowLibraryDrawer(false); triggerLocalToast("Electrician selected from Library"); }}>Select</span>
-                </div>
+                {libWorkforces === null ? (
+                  <p className="text-muted">Loading...</p>
+                ) : libWorkforces.length === 0 ? (
+                  <p className="text-muted">No workforce types yet. Add one above, for example Mason with a daily rate.</p>
+                ) : (
+                  libWorkforces
+                    .filter((w) => w.name.toLowerCase().includes(libSearch.trim().toLowerCase()))
+                    .map((w) => (
+                      <div key={w.id} className="p-3 bg-background border border-border-custom rounded-lg">
+                        <p className="font-semibold text-foreground">{w.name}</p>
+                        <p className="text-[10px] text-muted">
+                          {w.salary_per_shift != null
+                            ? `₹${Number(w.salary_per_shift).toLocaleString("en-IN")} per ${/hour/i.test(w.rate_type || "") ? "hour" : "shift"}${w.shift_hours ? ` · ${w.shift_hours} hour shift` : ""}`
+                            : "No rate set"}
+                        </p>
+                      </div>
+                    ))
+                )}
               </div>
+              <p className="text-[11px] text-muted mt-4">
+                Change or remove these under{" "}
+                <a href={`/c/${companyId}/d/library?tab=workforce`} className="text-primary underline">Library &gt; Workforce</a>.
+              </p>
             </div>
 
             <button onClick={() => setShowLibraryDrawer(false)} className="w-full py-2.5 rounded-lg border border-border-custom text-muted hover:text-foreground text-xs mt-6">Close</button>
