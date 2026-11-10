@@ -100,6 +100,9 @@ export default function TallyIntegrationPage() {
   const [unmarking, setUnmarking] = useState(false);
   // Bills and payments already marked as imported, so a wrong mark can be
   // undone by picking the record (the box used to ask for its internal ID).
+  // Nothing is queued until Tally is set up, so an empty queue must not read
+  // as "all synced" (it did, for a company that had never connected Tally).
+  const [tallyConnected, setTallyConnected] = useState<boolean | null>(null);
   const [syncedRecords, setSyncedRecords] = useState<
     { kind: "bill" | "payment"; id: string; number: string; party: string; date: string; amount: number; type: string }[]
   >([]);
@@ -153,11 +156,16 @@ export default function TallyIntegrationPage() {
     if (!companyId) return;
     setSyncLoading(true);
     try {
-      const [logRes, pendingRes, syncedRes] = await Promise.all([
+      const [logRes, pendingRes, syncedRes, connRes] = await Promise.all([
         fetch(`${getApiHost()}/apis/v3/tally/sync-logs?company_id=${companyId}`, { headers: authHeaders() }),
         fetch(`${getApiHost()}/apis/v3/tally/pending?company_id=${companyId}`, { headers: authHeaders() }),
         fetch(`${getApiHost()}/apis/v3/tally/synced?company_id=${companyId}`, { headers: authHeaders() }),
+        fetch(`${getApiHost()}/apis/v3/tally/connections?company_id=${companyId}`, { headers: authHeaders() }),
       ]);
+      if (connRes.ok) {
+        const c = await connRes.json();
+        setTallyConnected(!!(c && c.id));
+      }
       if (syncedRes.ok) {
         const data = await syncedRes.json();
         setSyncedRecords(Array.isArray(data) ? data : []);
@@ -825,7 +833,14 @@ export default function TallyIntegrationPage() {
 
               {pendingVouchers.length === 0 ? (
                 <div className="text-xs text-muted text-center py-6 bg-elevated/30 rounded-lg">
-                  All vouchers are up-to-date and synced with Tally.
+                  {tallyConnected === false ? (
+                    <>
+                      Tally is not set up for this company yet, so nothing is queued. Set it up under{" "}
+                      <a href={`/c/${companyId}/d/finance`} className="text-primary underline">Finance</a> &gt; Tally Sync.
+                    </>
+                  ) : (
+                    "Nothing waiting. Every bill and payment in the sync period is already marked as imported."
+                  )}
                 </div>
               ) : (
                 <div className="border border-border-custom rounded-lg overflow-hidden max-h-64 overflow-y-auto">

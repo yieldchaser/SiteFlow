@@ -106,3 +106,9 @@ def test_tally_lists_imported_records_to_put_back(client, db, make_tenant, auth_
     src = (FRONT / "d" / "integrations" / "tally" / "page.tsx").read_text(encoding="utf-8")
     assert "UUID" not in src
     assert "/apis/v3/tally/synced?company_id=" in src
+
+
+def test_empty_tally_queue_does_not_claim_all_synced_when_tally_is_not_set_up():
+    src = (FRONT / "d" / "integrations" / "tally" / "page.tsx").read_text(encoding="utf-8")
+    assert "All vouchers are up-to-date and synced with Tally." not in src
+    assert "tallyConnected === false" in src and "Tally is not set up for this company yet" in src
