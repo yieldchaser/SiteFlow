@@ -1,5 +1,5 @@
 from uuid import UUID
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -9,7 +9,7 @@ from app.auth import get_current_user, verify_project_access, get_company_member
 from app.models import (
     WorkOrder, WorkOrderAmendment, SubcontractorPerformance,
     WorkOrderItem, Bill, TransactionDeduction, User,
-    Project, Task,
+    Project, Task, NCR,
 )
 from app.bill_scope import _active_bills
 from app.party_names import resolve_party_name
@@ -43,40 +43,6 @@ class AmendmentResponse(BaseModel):
 
     class Config:
         from_attributes = True
-
-
-class ScorecardResponse(BaseModel):
-    id: UUID
-    company_id: UUID
-    project_id: UUID
-    subcontractor_id: UUID
-    subcontractor_name: str = "Unknown"
-    period_start: datetime
-    period_end: datetime
-    on_time_pct: float
-    billing_accuracy_pct: float
-    quality_score: float
-    tasks_completed: int
-    tasks_delayed: int
-    total_billed: float
-    disputes_count: int
-    notes: Optional[str] = None
-
-    class Config:
-        from_attributes = True
-
-
-class ComparativeItem(BaseModel):
-    subcontractor_id: UUID
-    subcontractor_name: str = "Unknown"
-    scorecard_count: int
-    avg_on_time_pct: float
-    avg_billing_accuracy_pct: float
-    avg_quality_score: float
-    total_tasks_completed: int
-    total_tasks_delayed: int
-    total_billed: float
-    total_disputes: int
 
 
 # --- Work Order Amendments ---
@@ -182,263 +148,125 @@ def _resolve_subcontractor_name(db: Session, subcontractor_id: UUID) -> str:
     return resolve_party_name(db, subcontractor_id)
 
 
-@router.get("/scorecards/{project_id}", response_model=List[ScorecardResponse])
-def get_scorecards(project_id: UUID, db: Session = Depends(get_db), _: None = Depends(verify_project_access)):
-    scorecards = db.query(SubcontractorPerformance).filter(
-        SubcontractorPerformance.project_id == project_id
-    ).all()
-    return [
-        ScorecardResponse(
-            id=sc.id,
-            company_id=sc.company_id,
-            project_id=sc.project_id,
-            subcontractor_id=sc.subcontractor_id,
-            subcontractor_name=_resolve_subcontractor_name(db, sc.subcontractor_id),
-            period_start=sc.period_start,
-            period_end=sc.period_end,
-            on_time_pct=float(sc.on_time_pct),
-            billing_accuracy_pct=float(sc.billing_accuracy_pct),
-            quality_score=float(sc.quality_score),
-            tasks_completed=sc.tasks_completed,
-            tasks_delayed=sc.tasks_delayed,
-            total_billed=float(sc.total_billed),
-            disputes_count=sc.disputes_count,
-            notes=sc.notes,
-        )
-        for sc in scorecards
-    ]
-
-
-@router.get("/scorecards/{project_id}/comparative", response_model=List[ComparativeItem])
-def get_comparative(project_id: UUID, db: Session = Depends(get_db), _: None = Depends(verify_project_access)):
-    scorecards = db.query(SubcontractorPerformance).filter(
-        SubcontractorPerformance.project_id == project_id
-    ).all()
-
-    grouped = {}
-    for sc in scorecards:
-        sub_id = str(sc.subcontractor_id)
-        if sub_id not in grouped:
-            grouped[sub_id] = {
-                "subcontractor_id": sc.subcontractor_id,
-                "subcontractor_name": _resolve_subcontractor_name(db, sc.subcontractor_id),
-                "scorecard_count": 0,
-                "sum_on_time": 0.0,
-                "sum_billing_accuracy": 0.0,
-                "sum_quality": 0.0,
-                "total_tasks_completed": 0,
-                "total_tasks_delayed": 0,
-                "total_billed": 0.0,
-                "total_disputes": 0,
-            }
-        g = grouped[sub_id]
-        g["scorecard_count"] += 1
-        g["sum_on_time"] += float(sc.on_time_pct)
-        g["sum_billing_accuracy"] += float(sc.billing_accuracy_pct)
-        g["sum_quality"] += float(sc.quality_score)
-        g["total_tasks_completed"] += sc.tasks_completed
-        g["total_tasks_delayed"] += sc.tasks_delayed
-        g["total_billed"] += float(sc.total_billed)
-        g["total_disputes"] += sc.disputes_count
-
-    result = []
-    for g in grouped.values():
-        count = g["scorecard_count"]
-        result.append(ComparativeItem(
-            subcontractor_id=g["subcontractor_id"],
-            subcontractor_name=g["subcontractor_name"],
-            scorecard_count=count,
-            avg_on_time_pct=round(g["sum_on_time"] / count, 2) if count else 0.0,
-            avg_billing_accuracy_pct=round(g["sum_billing_accuracy"] / count, 2) if count else 0.0,
-            avg_quality_score=round(g["sum_quality"] / count, 2) if count else 0.0,
-            total_tasks_completed=g["total_tasks_completed"],
-            total_tasks_delayed=g["total_tasks_delayed"],
-            total_billed=round(g["total_billed"], 2),
-            total_disputes=g["total_disputes"],
-        ))
-    return result
-
-
-# --- Auto-calculation of scorecards (real data, zero fabrication) ---
+# --- Subcontractor performance, worked out live ---
 #
-# Derivation logic (all from existing DB rows for project_id + subcontractor_id + period):
-#   tasks_completed : Task rows linked to this subcontractor's WorkOrders (via WorkOrderItem)
-#                     whose end_date falls in the period AND status == "completed".
-#   tasks_delayed   : same-linked tasks in the period that are not completed and are past
-#                     their end_date (or explicitly status == "delayed").
-#   total_billed    : sum(Bill.subtotal) (work value) for invoice_type == "subcon" billed to this
-#                     subcontractor (party_company_user_id) within the period.
-#   disputes_count  : count(WorkOrderAmendment) raised on this subcontractor's WorkOrders
-#                     within the period (amendments are the only dispute-like signal present).
-#   on_time_pct     : settlement rate of the subcontractor's bills in the period
-#                     (settled = status in Paid/Partially Paid, or not yet past due_date).
-#                     0.0 when there are no subcon bills - absence of evidence is not a perfect score.
-#   billing_accuracy_pct : measured-vs-quoted where both signals exist (sum of
-#                     WorkOrder.estimated_work_amount vs Bill.subtotal), penalised by absolute
-#                     deviation from the quote; 0.0 when either signal is missing - never a constant.
-#   quality_score   : derived from real disputes proxy: max(0, 100 - 5 * disputes_count).
-#                     An empty period (no completed tasks AND nothing billed) scores 0 across every
-#                     metric instead of reading as flawless.
+# Facts, not invented 0-100 scores. The old scorecard called "on-time %" the
+# share of the subcontractor's bills WE had paid, compared one month's bills
+# against the whole work order value as "billing accuracy" (a normal monthly
+# bill scored about 10%), took 5 quality points off per work order amendment
+# (usually a scope change) while ignoring the NCRs raised against them, and
+# counted tasks not yet due as delayed. It was also saved every time the page
+# was opened.
+#
+# For a period (dates in India time), per subcontractor with a work order on
+# the project:
+#   tasks_finished   tasks on their work orders, completed, finishing in the period
+#   finished_on_time of those with an original plan, finished on or before it
+#   running_late     not completed, end date in the period and already passed
+#   ncrs_raised      NCRs on this project naming them, raised in the period
+#   ncrs_open        of those, not closed yet
+#   billed           their subcontractor bills dated in the period (work value)
+#   billed_to_date   all their bills on this project, against wo_value
+#   amendments       work order amendments in the period
 
-def _compute_subcon_metrics(db: Session, project_id: UUID, subcontractor_id: UUID,
-                            period_start: datetime, period_end: datetime):
-    wos = db.query(WorkOrder).filter(
-        WorkOrder.project_id == project_id,
-        WorkOrder.subcontractor_id == subcontractor_id,
-    ).all()
-    wo_ids = [w.id for w in wos]
-
-    tasks_completed = 0
-    tasks_delayed = 0
-    if wo_ids:
-        wo_items = db.query(WorkOrderItem).filter(WorkOrderItem.wo_id.in_(wo_ids)).all()
-        task_ids = [wi.task_id for wi in wo_items if wi.task_id]
-        if task_ids:
-            tasks = db.query(Task).filter(
-                Task.id.in_(task_ids),
-                Task.end_date >= period_start,
-                Task.end_date <= period_end,
-            ).all()
-            for t in tasks:
-                if t.status == "completed":
-                    tasks_completed += 1
-                elif t.status == "delayed" or (t.progress is not None and float(t.progress) < 100 and t.end_date < period_end):
-                    tasks_delayed += 1
-
-    bills = _active_bills(db, project_id, ["subcon"]).filter(
-        Bill.party_company_user_id == subcontractor_id,
-        Bill.invoice_date >= period_start,
-        Bill.invoice_date <= period_end,
-    ).all()
-    total_billed = float(sum(float(b.subtotal) for b in bills))
-
-    settled = 0
-    for b in bills:
-        if b.status in ("Paid", "Partially Paid"):
-            settled += 1
-    on_time_pct = round((settled / len(bills)) * 100, 2) if bills else 0.0
-
-    disputes_count = 0
-    if wo_ids:
-        disputes_count = db.query(WorkOrderAmendment).filter(
-            WorkOrderAmendment.wo_id.in_(wo_ids),
-            WorkOrderAmendment.amended_at >= period_start,
-            WorkOrderAmendment.amended_at <= period_end,
-        ).count()
-
-    quoted_total = sum(float(w.estimated_work_amount or 0.0) for w in wos)
-    if quoted_total > 0 and bills:
-        deviation = abs(total_billed - quoted_total) / quoted_total
-        billing_accuracy_pct = round(max(0.0, 100.0 * (1.0 - deviation)), 2)
-    else:
-        billing_accuracy_pct = 0.0
-    quality_score = max(0.0, 100.0 - 5.0 * disputes_count)
-
-    if tasks_completed == 0 and total_billed == 0:
-        on_time_pct = 0.0
-        billing_accuracy_pct = 0.0
-        quality_score = 0.0
-
-    return {
-        "tasks_completed": tasks_completed,
-        "tasks_delayed": tasks_delayed,
-        "total_billed": round(total_billed, 2),
-        "on_time_pct": on_time_pct,
-        "billing_accuracy_pct": billing_accuracy_pct,
-        "quality_score": round(quality_score, 2),
-        "disputes_count": disputes_count,
-    }
+IST = timedelta(minutes=330)
 
 
-def recompute_subcontractor_performance(db: Session, project_id: UUID, company_id: UUID,
-                                        subcontractor_id: UUID, period_start: datetime,
-                                        period_end: datetime) -> SubcontractorPerformance:
-    metrics = _compute_subcon_metrics(db, project_id, subcontractor_id, period_start, period_end)
-    existing = db.query(SubcontractorPerformance).filter(
-        SubcontractorPerformance.project_id == project_id,
-        SubcontractorPerformance.subcontractor_id == subcontractor_id,
-        SubcontractorPerformance.period_start == period_start,
-        SubcontractorPerformance.period_end == period_end,
-    ).first()
-    if existing:
-        row = existing
-    else:
-        row = SubcontractorPerformance(
-            company_id=company_id,
-            project_id=project_id,
-            subcontractor_id=subcontractor_id,
-            period_start=period_start,
-            period_end=period_end,
-        )
-        db.add(row)
-    row.on_time_pct = metrics["on_time_pct"]
-    row.billing_accuracy_pct = metrics["billing_accuracy_pct"]
-    row.quality_score = metrics["quality_score"]
-    row.tasks_completed = metrics["tasks_completed"]
-    row.tasks_delayed = metrics["tasks_delayed"]
-    row.total_billed = metrics["total_billed"]
-    row.disputes_count = metrics["disputes_count"]
-    db.flush()
-    return row
+def _local_day(dt) -> Optional[date]:
+    if dt is None:
+        return None
+    if isinstance(dt, datetime):
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return (dt + IST).date()
+    return dt
 
 
-class RecomputeResponse(BaseModel):
-    project_id: UUID
-    subcontractor_id: Optional[UUID] = None
-    period_start: datetime
-    period_end: datetime
-    scorecards: List[ScorecardResponse]
+class SubconPerformanceRow(BaseModel):
+    subcontractor_id: UUID
+    subcontractor_name: str
+    work_orders: int
+    wo_value: float
+    tasks_finished: int
+    tasks_judged: int
+    finished_on_time: int
+    running_late: int
+    ncrs_raised: int
+    ncrs_open: int
+    billed: float
+    billed_to_date: float
+    amendments: int
 
 
-@router.post("/scorecards/recompute", response_model=RecomputeResponse)
-def recompute_scorecards(
+@router.get("/performance/{project_id}", response_model=List[SubconPerformanceRow])
+def subcon_performance(
     project_id: UUID,
-    period_start: datetime,
-    period_end: datetime,
-    subcontractor_id: Optional[UUID] = None,
+    start: Optional[date] = None,
+    end: Optional[date] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    _: None = Depends(verify_project_access),
 ):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    verify_project_access(project_id, current_user, db)
-    require_permission(db, current_user, project.company_id, "subcontractor:edit")
+    today = _local_day(datetime.now(timezone.utc))
+    # Nothing after today can have happened yet.
+    end = min(end, today) if end else today
+    if start and start > end:
+        raise HTTPException(status_code=422, detail="The start date is after the end date")
 
-    if subcontractor_id:
-        subs = [subcontractor_id]
-    else:
-        subs = [r.subcontractor_id for r in db.query(WorkOrder.subcontractor_id)
-                .filter(WorkOrder.project_id == project_id).distinct().all()]
+    def in_period(d: Optional[date]) -> bool:
+        return d is not None and (start is None or d >= start) and d <= end
 
-    rows = []
-    for sid in subs:
-        row = recompute_subcontractor_performance(db, project_id, project.company_id, sid, period_start, period_end)
-        rows.append(ScorecardResponse(
-            id=row.id,
-            company_id=row.company_id,
-            project_id=row.project_id,
-            subcontractor_id=row.subcontractor_id,
-            subcontractor_name=_resolve_subcontractor_name(db, row.subcontractor_id),
-            period_start=row.period_start,
-            period_end=row.period_end,
-            on_time_pct=float(row.on_time_pct),
-            billing_accuracy_pct=float(row.billing_accuracy_pct),
-            quality_score=float(row.quality_score),
-            tasks_completed=row.tasks_completed,
-            tasks_delayed=row.tasks_delayed,
-            total_billed=float(row.total_billed),
-            disputes_count=row.disputes_count,
-            notes=row.notes,
+    wos = db.query(WorkOrder).filter(WorkOrder.project_id == project_id).all()
+    by_sub: dict = {}
+    for w in wos:
+        by_sub.setdefault(w.subcontractor_id, []).append(w)
+
+    ncrs = db.query(NCR).filter(NCR.project_id == project_id).all()
+    bills = _active_bills(db, project_id, ["subcon"]).all()
+
+    out = []
+    for sub_id, sub_wos in by_sub.items():
+        wo_ids = [w.id for w in sub_wos]
+        live_wos = [w for w in sub_wos if w.status != "cancelled"]
+        task_ids = {
+            wi.task_id for wi in db.query(WorkOrderItem).filter(WorkOrderItem.wo_id.in_(wo_ids)).all() if wi.task_id
+        }
+        tasks = db.query(Task).filter(Task.id.in_(task_ids)).all() if task_ids else []
+        finished = judged = on_time = late = 0
+        for t in tasks:
+            t_end = _local_day(t.end_date)
+            if not in_period(t_end):
+                continue
+            if t.status == "completed":
+                finished += 1
+                base = _local_day(getattr(t, "baseline_end", None))
+                if base is not None:
+                    judged += 1
+                    if t_end <= base:
+                        on_time += 1
+            elif t_end < today:
+                late += 1
+
+        sub_ncrs = [n for n in ncrs if n.vendor_id == sub_id and in_period(_local_day(n.created_at))]
+        sub_bills = [b for b in bills if b.party_company_user_id == sub_id]
+        amend = db.query(WorkOrderAmendment).filter(WorkOrderAmendment.wo_id.in_(wo_ids)).all()
+
+        out.append(SubconPerformanceRow(
+            subcontractor_id=sub_id,
+            subcontractor_name=_resolve_subcontractor_name(db, sub_id),
+            work_orders=len(live_wos),
+            wo_value=round(sum(float(w.estimated_work_amount or 0) for w in live_wos), 2),
+            tasks_finished=finished,
+            tasks_judged=judged,
+            finished_on_time=on_time,
+            running_late=late,
+            ncrs_raised=len(sub_ncrs),
+            ncrs_open=sum(1 for n in sub_ncrs if (n.status or "").lower() != "closed"),
+            billed=round(sum(float(b.subtotal or 0) for b in sub_bills if in_period(_local_day(b.invoice_date))), 2),
+            billed_to_date=round(sum(float(b.subtotal or 0) for b in sub_bills), 2),
+            amendments=sum(1 for a in amend if in_period(_local_day(a.amended_at))),
         ))
-    db.commit()
-    return RecomputeResponse(
-        project_id=project_id,
-        subcontractor_id=subcontractor_id,
-        period_start=period_start,
-        period_end=period_end,
-        scorecards=rows,
-    )
+    out.sort(key=lambda r: r.subcontractor_name.lower())
+    return out
 
 
 @router.delete("/performance/{record_id}", status_code=status.HTTP_204_NO_CONTENT)

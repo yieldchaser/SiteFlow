@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.auth import get_current_user, verify_project_in_company, verify_project_access, get_company_membership, require_permission
 from app.models import (
-    WorkOrder, SubcontractorPerformance,
+    WorkOrder,
     BOCWRecord, MusterRoll, Bill, User, Project,
     AttendanceLog, SubcontractorAttendance, PayrollRun, PayrollLineItem, StaffEmployee
 )
@@ -35,26 +35,6 @@ def _resolve_contractor_name(db: Session, contractor_id: Optional[UUID]) -> str:
 
 
 # --- Schemas ---
-class ReliabilityResponse(BaseModel):
-    id: UUID
-    company_id: UUID
-    project_id: UUID
-    contractor_id: UUID
-    contractor_name: str = "Unknown"
-    period_start: datetime
-    period_end: datetime
-    on_time_pct: float
-    billing_accuracy_pct: float
-    quality_score: float
-    tasks_completed: int
-    tasks_delayed: int
-    total_billed: float
-    disputes_count: int
-
-    class Config:
-        from_attributes = True
-
-
 class BOCWResponse(BaseModel):
     id: UUID
     company_id: UUID
@@ -123,33 +103,8 @@ class MusterRollCreate(BaseModel):
     notes: Optional[str] = None
 
 
-# --- Contractor Reliability ---
-
-@router.get("/reliability/{project_id}", response_model=List[ReliabilityResponse])
-def get_reliability(project_id: UUID, db: Session = Depends(get_db), _: None = Depends(verify_project_access)):
-    scorecards = db.query(SubcontractorPerformance).filter(
-        SubcontractorPerformance.project_id == project_id
-    ).all()
-
-    result = []
-    for sc in scorecards:
-        result.append(ReliabilityResponse(
-            id=sc.id,
-            company_id=sc.company_id,
-            project_id=sc.project_id,
-            contractor_id=sc.subcontractor_id,
-            contractor_name=_resolve_contractor_name(db, sc.subcontractor_id),
-            period_start=sc.period_start,
-            period_end=sc.period_end,
-            on_time_pct=float(sc.on_time_pct),
-            billing_accuracy_pct=float(sc.billing_accuracy_pct),
-            quality_score=float(sc.quality_score),
-            tasks_completed=sc.tasks_completed,
-            tasks_delayed=sc.tasks_delayed,
-            total_billed=float(sc.total_billed),
-            disputes_count=sc.disputes_count,
-        ))
-    return result
+# Contractor reliability moved to GET /subcon/performance/{project_id}, worked
+# out live from tasks, NCRs and bills (the stored scores it read were wrong).
 
 
 # --- BOCW Records ---

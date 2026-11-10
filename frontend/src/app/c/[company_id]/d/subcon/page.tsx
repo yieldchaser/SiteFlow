@@ -7,6 +7,7 @@ import { useProject } from "@/context/ProjectContext";
 import { getApiHost, readErrorDetail, detailToMessage} from "@/lib/api";
 import { authHeaders, formatLabel, todayLocalISO, toLocalISODate, formatDate } from "@/lib/siteflow";
 import Icon from "@/components/marketing/Icon";
+import SubconPerformance from "@/components/SubconPerformance";
 import { isMissingOrDemoTenant, redirectToLogin } from "@/lib/company-guard";
 import PageShell from "@/components/layout/PageShell";
 import PageHeader from "@/components/PageHeader";
@@ -76,22 +77,6 @@ interface AttendanceLog {
   created_at: string;
 }
 
-interface Scorecard {
-  id: string;
-  company_id: string;
-  project_id: string;
-  subcontractor_id: string;
-  subcontractor_name: string;
-  period_start: string;
-  period_end: string;
-  on_time_pct: number;
-  billing_accuracy_pct: number;
-  quality_score: number;
-  tasks_completed: number;
-  tasks_delayed: number;
-  total_billed: number;
-  disputes_count: number;
-}
 
 export default function SubconPage() {
   const params = useParams();
@@ -130,8 +115,6 @@ export default function SubconPage() {
   });
 
   // Performance state
-  const [scorecards, setScorecards] = useState<Scorecard[]>([]);
-  const [scorecardsLoading, setScorecardsLoading] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [toastMessage, setToastMessage] = useState("");
@@ -340,53 +323,12 @@ export default function SubconPage() {
     }
   };
 
-  const fetchScorecards = async () => {
-    if (!projectId) return;
-    setScorecardsLoading(true);
-    try {
-      const res = await fetch(`${getApiHost()}/apis/v3/subcon/scorecards/${projectId}`, { headers: authHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        setScorecards(Array.isArray(data) ? data : []);
-      } else {
-        setScorecards([]);
-      }
-    } catch (e) {
-      console.error("Failed to load scorecards", e);
-      setScorecards([]);
-    } finally {
-      setScorecardsLoading(false);
-    }
-  };
-
-  const handleDeletePerformance = async (recordId: string) => {
-    if (!confirm("Are you sure you want to delete this performance scorecard?")) return;
-    try {
-      const res = await fetch(`${getApiHost()}/apis/v3/subcon/performance/${recordId}`, {
-        method: "DELETE",
-        headers: authHeaders(),
-      });
-      if (res.ok) {
-        showToast("Performance scorecard deleted successfully");
-        fetchScorecards();
-      } else {
-        const err = await readErrorDetail(res);
-        alert(err || "Failed to delete scorecard");
-      }
-    } catch (e) {
-      console.error("Delete scorecard error", e);
-      alert("Failed to delete scorecard. Check your connection.");
-    }
-  };
-
   useEffect(() => {
     fetchSubconData();
     fetchCompanyTerms();
     fetchProjectScopes();
     if (activeTab === "attendance") {
       fetchAttendance(attendanceDate);
-    } else if (activeTab === "performance") {
-      fetchScorecards();
     }
   }, [projectId, companyId, activeTab]);
 
@@ -622,7 +564,7 @@ export default function SubconPage() {
     <div className="flex-1 flex flex-col overflow-hidden font-sans">
       <PageHeader
         title="Subcontractor Management"
-        subtitle="Work orders, daily roll call attendance, and subcontractor performance scorecards"
+        subtitle="Work orders, daily attendance and how each subcontractor is performing"
       >
         <div className="flex items-center gap-2">
           {activeTab === "work_orders" && (
@@ -649,7 +591,7 @@ export default function SubconPage() {
           tabs={[
             { id: "work_orders", label: "Work Orders", icon: <Icon name="briefcase" className="w-3.5 h-3.5" /> },
             { id: "attendance", label: "Daily Attendance", icon: <Icon name="calendar" className="w-3.5 h-3.5" /> },
-            { id: "performance", label: "Performance Scorecards", icon: <Icon name="star" className="w-3.5 h-3.5" /> },
+            { id: "performance", label: "Performance", icon: <Icon name="star" className="w-3.5 h-3.5" /> },
           ]}
           activeTab={activeTab}
           onChange={(t) => setActiveTab(t as any)}
@@ -907,93 +849,10 @@ export default function SubconPage() {
           </div>
         )}
 
-        {/* ── PERFORMANCE SCORECARDS TAB ── */}
+        {/* ── PERFORMANCE TAB ── */}
         {activeTab === "performance" && (
-          <div className="flex-1 flex flex-col h-full overflow-hidden p-6 space-y-4">
-            <div className="flex items-center justify-between flex-wrap gap-3 bg-card border border-border-custom rounded-xl p-4">
-              <div>
-                <h3 className="text-xs font-bold text-foreground uppercase tracking-wider">Subcontractor Performance Evaluations</h3>
-                <p className="text-[10px] text-muted">Quality scores, on-time task delivery ratios, and billing accuracy evaluations</p>
-              </div>
-              <button
-                type="button"
-                onClick={fetchScorecards}
-                className="px-3 py-1.5 bg-elevated hover:bg-card border border-border-custom text-foreground rounded text-xs font-semibold cursor-pointer inline-flex items-center gap-1"
-              >
-                <Icon name="refresh" className="w-3.5 h-3.5" /> Refresh
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto bg-card border border-border-custom rounded-xl overflow-hidden">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-elevated border-b border-border-custom text-muted text-[10px] uppercase font-bold tracking-wider">
-                  <tr>
-                    <th className="px-4 py-3">Subcontractor</th>
-                    <th className="px-4 py-3">Evaluation Period</th>
-                    <th className="px-4 py-3 text-right">Quality Score</th>
-                    <th className="px-4 py-3 text-right">On-Time %</th>
-                    <th className="px-4 py-3 text-right">Billing Accuracy</th>
-                    <th className="px-4 py-3 text-right">Tasks (Done/Delayed)</th>
-                    <th className="px-4 py-3 text-right">Total Billed</th>
-                    <th className="px-4 py-3 text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border-custom/40">
-                  {scorecardsLoading ? (
-                    <tr>
-                      <td colSpan={8} className="p-6 text-center text-muted">
-                        Loading performance scorecards...
-                      </td>
-                    </tr>
-                  ) : scorecards.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="p-8">
-                        <EmptyState
-                          title="No performance scorecards generated"
-                          description="Scorecards will be automatically computed and evaluated against project task delivery."
-                        />
-                      </td>
-                    </tr>
-                  ) : (
-                    scorecards.map((sc) => (
-                      <tr key={sc.id} className="hover:bg-elevated/40 transition-colors">
-                        <td className="px-4 py-3 font-semibold text-foreground">{sc.subcontractor_name || "Subcontractor"}</td>
-                        <td className="px-4 py-3 text-muted">
-                          {sc.period_start ? formatDate(sc.period_start) : ""} → {sc.period_end ? formatDate(sc.period_end) : ""}
-                        </td>
-                        <td className="px-4 py-3 text-right font-sans font-bold text-foreground">
-                          <span className="bg-primary/10 border border-primary/20 text-primary px-2 py-0.5 rounded">
-                            {sc.quality_score.toFixed(1)} / 5.0
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right font-sans font-bold text-success">
-                          {Math.round(sc.on_time_pct)}%
-                        </td>
-                        <td className="px-4 py-3 text-right font-sans font-bold text-foreground">
-                          {Math.round(sc.billing_accuracy_pct)}%
-                        </td>
-                        <td className="px-4 py-3 text-right font-sans text-muted">
-                          {sc.tasks_completed} done / {sc.tasks_delayed} delayed
-                        </td>
-                        <td className="px-4 py-3 text-right font-sans font-bold text-foreground">
-                          {fmt(sc.total_billed)}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => handleDeletePerformance(sc.id)}
-                            className="px-2 py-1 bg-elevated hover:bg-danger/10 border border-border-custom text-muted hover:text-danger rounded text-[10px] font-semibold cursor-pointer"
-                            title="Delete scorecard"
-                          >
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+          <div className="flex-1 overflow-y-auto p-6">
+            <SubconPerformance projectId={projectId} />
           </div>
         )}
 

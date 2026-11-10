@@ -8,23 +8,10 @@ import { authHeaders, todayLocalISO, formatDate, downloadWithAuth } from "@/lib/
 import SegmentedTabs from "@/components/ui/Tabs";
 import PageShell from "@/components/layout/PageShell";
 import PageHeader from "@/components/PageHeader";
+import SubconPerformance from "@/components/SubconPerformance";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 
-interface ReliabilityScore {
-  id: string;
-  contractor_id: string;
-  contractor_name: string;
-  period_start: string;
-  period_end: string;
-  on_time_pct: number;
-  billing_accuracy_pct: number;
-  quality_score: number;
-  tasks_completed: number;
-  tasks_delayed: number;
-  total_billed: number;
-  disputes_count: number;
-}
 
 interface BOCWRecord {
   id: string;
@@ -56,7 +43,6 @@ export default function LabourPage() {
   const projectId = activeProjectId;
 
   const [activeTab, setActiveTab] = useState<"reliability" | "bocw" | "muster">("reliability");
-  const [reliability, setReliability] = useState<ReliabilityScore[]>([]);
   const [bocw, setBocw] = useState<BOCWRecord[]>([]);
   const [muster, setMuster] = useState<MusterRollEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,12 +72,10 @@ export default function LabourPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [relRes, bocwRes, mRes] = await Promise.all([
-        fetch(`${getApiHost()}/apis/v3/labour/reliability/${projectId}`, { headers: authHeaders() }),
+      const [bocwRes, mRes] = await Promise.all([
         fetch(`${getApiHost()}/apis/v3/labour/bocw/${projectId}`, { headers: authHeaders() }),
         fetch(`${getApiHost()}/apis/v3/labour/muster-roll/${projectId}`, { headers: authHeaders() }),
       ]);
-      if (relRes.ok) setReliability(await relRes.json());
       if (bocwRes.ok) setBocw(await bocwRes.json());
       if (mRes.ok) setMuster(await mRes.json());
     } catch (e) { console.error(e); }
@@ -180,7 +164,7 @@ export default function LabourPage() {
       <div className="flex-1 flex flex-col overflow-hidden relative font-sans">
         <PageHeader
           title="Labour Management"
-          subtitle="Contractor reliability · BOCW compliance · Muster rolls"
+          subtitle="Subcontractor performance · BOCW records · Muster roll"
         >
           <div className="flex items-center gap-2">
             {activeTab === "muster" && <button onClick={() => setShowMusterModal(true)} className="px-3.5 py-1.5 rounded-md bg-primary text-xs font-bold text-white hover:opacity-90 cursor-pointer">+ Add Muster</button>}
@@ -192,7 +176,7 @@ export default function LabourPage() {
         <div className="px-6 py-2 border-b border-border-custom bg-card shrink-0 overflow-x-auto">
           <SegmentedTabs
             tabs={[
-              { id: "reliability", label: "Reliability Scores" },
+              { id: "reliability", label: "Subcontractor Performance" },
               { id: "bocw", label: "BOCW Records" },
               { id: "muster", label: "Muster Roll" },
             ]}
@@ -205,69 +189,7 @@ export default function LabourPage() {
           <PageShell width="wide">
             {loading && <TableSkeleton rows={4} cols={5} />}
 
-          {activeTab === "reliability" && (
-            <div className="space-y-4">
-              {reliability.map((r) => {
-                const reliabilityScore = ((r.on_time_pct + r.billing_accuracy_pct + r.quality_score) / 3).toFixed(1);
-                // Colour by the value itself: 33% on time used to show green.
-                const tone = (v: number) => (v >= 80 ? "text-success" : v >= 60 ? "text-warning" : "text-danger");
-                const scoreColor = tone(Number(reliabilityScore));
-                // A period with no completed work and nothing billed scores zero on
-                // every measure; that is "no data", not a failing contractor.
-                const empty = r.tasks_completed === 0 && r.total_billed === 0;
-                if (empty) {
-                  return (
-                    <div key={r.id} className="bg-card border border-border-custom rounded-lg p-5 flex items-start justify-between">
-                      <div>
-                        <h3 className="text-sm font-bold text-foreground">{r.contractor_name}</h3>
-                        <p className="text-[10px] text-muted">{formatDate(r.period_start)} – {formatDate(r.period_end)}</p>
-                      </div>
-                      <p className="text-xs text-muted text-right">No work or bills in this period,<br />so there is nothing to score yet.</p>
-                    </div>
-                  );
-                }
-                return (
-                  <div key={r.id} className="bg-card border border-border-custom rounded-lg p-5 rounded-lg border border-border-custom">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h3 className="text-sm font-bold text-foreground">{r.contractor_name}</h3>
-                        <p className="text-[10px] text-muted">{formatDate(r.period_start)} – {formatDate(r.period_end)}</p>
-                      </div>
-                      <div className="text-right">
-                        <span className={`text-3xl font-extrabold ${scoreColor}`}>{reliabilityScore}%</span>
-                        <p className="text-[10px] text-muted">Reliability</p>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
-                      <div className="bg-elevated rounded-md p-3 text-center">
-                        <span className="text-[10px] text-muted block" title="Share of this firm's bills in the period that are paid in full or in part">Bills Settled</span>
-                        <span className={`text-sm font-bold ${tone(r.on_time_pct)}`}>{r.on_time_pct.toFixed(1)}%</span>
-                      </div>
-                      <div className="bg-elevated rounded-md p-3 text-center">
-                        <span className="text-[10px] text-muted block">Billing Accuracy</span>
-                        <span className={`text-sm font-bold ${tone(r.billing_accuracy_pct)}`}>{r.billing_accuracy_pct.toFixed(1)}%</span>
-                      </div>
-                      <div className="bg-elevated rounded-md p-3 text-center">
-                        <span className="text-[10px] text-muted block">Quality</span>
-                        <span className={`text-sm font-bold ${tone(r.quality_score)}`}>{r.quality_score.toFixed(1)}%</span>
-                      </div>
-                      <div className="bg-elevated rounded-md p-3 text-center">
-                        <span className="text-[10px] text-muted block">Disputes</span>
-                        <span className={`text-sm font-bold ${r.disputes_count > 0 ? "text-warning" : "text-foreground"}`}>{r.disputes_count}</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-              {reliability.length === 0 && (
-                <EmptyState
-                  title="No reliability data yet"
-                  description="Scores come from each subcontractor's work orders, bills and disputes. Calculate them on the Scorecards page for the period you want."
-                  action={{ label: "Open Scorecards", href: `/c/${companyId}/d/subcon/scorecards` }}
-                />
-              )}
-            </div>
-          )}
+          {activeTab === "reliability" && <SubconPerformance projectId={projectId} />}
 
           {activeTab === "bocw" && (
             <div className="bg-card border border-border-custom rounded-lg overflow-hidden">

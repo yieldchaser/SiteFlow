@@ -1,4 +1,4 @@
-"""Prompt 7 / D1 + D2 + D5 backend tests: subcon recompute, BOCW create, cost_code import."""
+"""Prompt 7 / D1 + D2 + D5 backend tests: BOCW create, cost_code import."""
 import datetime
 import io
 import uuid
@@ -29,45 +29,6 @@ def _subcontractor(db, company):
     db.add(team)
     db.commit()
     return team
-
-
-def test_recompute_creates_real_scorecard(client, db, make_tenant, auth_headers):
-    comp, user, _ = make_tenant(company_name="A", user_name="UA", mobile="+919888770001")
-    proj = _project(db, comp)
-    sub = _subcontractor(db, comp)
-    hdr = auth_headers(user, comp)
-
-    db.add(models.WorkOrder(
-        id=uuid.uuid4(), company_id=comp.id, project_id=proj.id,
-        subcontractor_id=sub.id, wo_number="WO1",
-        wo_date=datetime.datetime(2026, 7, 5),
-    ))
-    db.add(models.Bill(
-        id=uuid.uuid4(), company_id=comp.id, project_id=proj.id,
-        party_company_user_id=sub.id, invoice_number="SUB-1",
-        invoice_date=datetime.datetime(2026, 7, 10),
-        invoice_type="subcon", subtotal=1000.0, total_payable=1180.0,
-        paid_amount=1180.0, status="Paid",
-    ))
-    db.commit()
-
-    period_start = "2026-07-01T00:00:00"
-    period_end = "2026-07-31T23:59:59"
-    r = client.post(
-        f"/apis/v3/subcon/scorecards/recompute?project_id={proj.id}"
-        f"&period_start={period_start}&period_end={period_end}",
-        headers=hdr,
-    )
-    assert r.status_code == 200, r.text
-    cards = r.json()["scorecards"]
-    assert len(cards) >= 1
-    card = next(c for c in cards if c["subcontractor_id"] == str(sub.id))
-    # Real derivation: total_billed is the work value billed (subtotal, before
-    # GST and deductions), so it compares with the work order.
-    assert float(card["total_billed"]) == 1000.0
-    assert isinstance(card["tasks_completed"], int)
-    assert isinstance(card["disputes_count"], int)
-    assert 0 <= float(card["on_time_pct"]) <= 100
 
 
 def test_create_bocw_appears_in_list(client, db, make_tenant, auth_headers):
