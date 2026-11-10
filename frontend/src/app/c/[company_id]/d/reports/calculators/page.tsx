@@ -19,6 +19,7 @@ import {
   calcTwoWaySlabFrontend,
   calcWaterproofing,
   concreteVolumeM3,
+  PAINT_COVERAGE_SQFT_PER_LITRE,
   rmcNetVolumeM3,
 } from "@/lib/calc-shared";
 
@@ -1286,10 +1287,12 @@ export default function CalculatorsPage() {
                         }}
                         className="w-full bg-input border border-border-custom rounded-lg px-3 py-2 text-foreground"
                       >
-                        <option value="economy">Economy Emulsion (115 sqft/L)</option>
-                        <option value="premium">Premium Emulsion (140 sqft/L)</option>
-                        <option value="luxury">Luxury / Sheen (155 sqft/L)</option>
-                        <option value="texture">Texture Paint (80 sqft/L)</option>
+                        {/* Coverage read from the same table the sum uses; the Premium label
+                            said 140 while the sum used 135. */}
+                        <option value="economy">Economy Emulsion ({PAINT_COVERAGE_SQFT_PER_LITRE.economy} sqft/L)</option>
+                        <option value="premium">Premium Emulsion ({PAINT_COVERAGE_SQFT_PER_LITRE.premium} sqft/L)</option>
+                        <option value="luxury">Luxury / Sheen ({PAINT_COVERAGE_SQFT_PER_LITRE.luxury} sqft/L)</option>
+                        <option value="texture">Texture Paint ({PAINT_COVERAGE_SQFT_PER_LITRE.texture} sqft/L)</option>
                       </select>
                     </div>
                     <div className="space-y-1">
@@ -1457,8 +1460,8 @@ export default function CalculatorsPage() {
                         className="w-full bg-input border border-border-custom rounded-lg px-3 py-2 text-foreground"
                       >
                         <option value="1:3">1:3 (Ceilings / Wet areas)</option>
-                        <option value="1:4">1:4 (Internal plaster standard)</option>
-                        <option value="1:6">1:6 (External/Rough plaster)</option>
+                        <option value="1:4">1:4 (External walls)</option>
+                        <option value="1:6">1:6 (Internal walls)</option>
                       </select>
                     </div>
                   </>
@@ -2034,7 +2037,7 @@ export default function CalculatorsPage() {
                     <>
                       <div>• Dry-to-Wet volume expansion factor for plaster: 1.33 (cement:sand mix, accounting for sand bulk + cement void).</div>
                       <div>• Standard plaster thickness: 12 mm internal walls, 15–20 mm external walls (per IS 1661).</div>
-                      <div>• Nominal mix ratio 1:4 (cement:sand) for internal plaster; 1:6 for external plaster.</div>
+                      <div>• Usual mix (cement:sand): 1:4 for external walls, which face rain; 1:6 for internal walls; 1:3 for ceilings.</div>
                     </>
                   ) : (
                     <>

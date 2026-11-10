@@ -896,7 +896,8 @@ def test_pin_R2_472_chat_url_allowlist():
 
 def test_pin_R2_486_calculators_paint_coverage_no_mode():
     src = _read_frontend("src/app/c/[company_id]/d/reports/calculators/page.tsx")
-    assert "115 sqft/L" in src, "R2-486 paint coverage label regressed"
+    # Coverage shown in each label, read from the table the sum uses.
+    assert "{PAINT_COVERAGE_SQFT_PER_LITRE.economy} sqft/L" in src, "R2-486 paint coverage label regressed"
     assert "paintMode" not in src, "R2-486 paintMode reintroduced"
 
 
