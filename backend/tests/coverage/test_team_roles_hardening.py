@@ -153,22 +153,6 @@ def test_cannot_remove_owner_self_or_admin_without_full_access(client, db, make_
     assert client.delete(f"/apis/v3/settings/team/{admin_team.id}", headers=hdr).status_code == 403
 
 
-def test_client_role_cannot_mark_face_attendance(client, db, make_tenant, auth_headers):
-    company, _owner, _m, _mt, _a, _s = _company_with_manager(db, make_tenant)
-    client_role = _role(db, company, "Client", dict(DEFAULT_ROLE_PRESETS["Client"]))
-    db.commit()
-    viewer, _ = _member(db, company, client_role, "Client Kolte")
-    project = models.Project(id=uuid.uuid4(), company_id=company.id, name="Tower", code="TW1")
-    db.add(project)
-    db.commit()
-    r = client.post(
-        "/apis/v3/face/punch",
-        headers=auth_headers(viewer, company),
-        json={"company_id": str(company.id), "project_id": str(project.id), "employee_id": str(uuid.uuid4()),
-              "punch_type": "in", "face_verified": True, "confidence_score": 0.9},
-    )
-    assert r.status_code == 403, r.text
-
 
 def test_supervisor_preset_sees_site_work_not_money():
     sup = DEFAULT_ROLE_PRESETS["Supervisor"]

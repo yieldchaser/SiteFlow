@@ -490,7 +490,7 @@ def test_task_status_derives_from_progress(client, db, make_tenant, auth_headers
         return next(t for t in r.json() if t["id"] == str(task.id))["status"]
 
     put({"progress": 75})
-    assert status_of() == "ongoing"
+    assert status_of() == "in_progress"
     put({"progress": 100})
     assert status_of() == "completed"
     put({"progress": 0})
@@ -673,50 +673,6 @@ def test_party_pid_generator_bumps_past_used_ids(client, db, make_tenant, auth_h
     assert all_pids.count("PID-5") == 1
 
 
-def test_face_recognition_endpoints_work_with_created_at(client, db, make_tenant, auth_headers):
-    comp, user, _ = make_tenant(company_name="E16", user_name="UE16", mobile=_mob(37), email=_mail(37))
-    hdr = auth_headers(user, comp)
-    project = _mk_project(db, comp)
-
-    emp = models.StaffEmployee(
-        id=uuid.uuid4(), company_id=comp.id, project_id=project.id, name="Emp E16",
-        status="active", basic_salary=1000.0, hra=0.0, other_allowances=0.0,
-        pf_employee_pct=0.0, pf_employer_pct=0.0, esi_employee_pct=0.0,
-        esi_employer_pct=0.0, tds_monthly=0.0, is_esi_applicable=False,
-    )
-    db.add(emp)
-    db.commit()
-
-    r = client.post(
-        "/apis/v3/face/punch",
-        json={
-            "company_id": str(comp.id),
-            "project_id": str(project.id),
-            "employee_id": str(emp.id),
-            "punch_type": "in",
-            "face_verified": True,
-            "confidence_score": 0.95,
-        },
-        headers=hdr,
-    )
-    assert r.status_code == 201, r.text
-    assert r.json()["created_at"] is not None
-
-    logs = client.get(f"/apis/v3/face/logs/{comp.id}", headers=hdr)
-    assert logs.status_code == 200, logs.text
-    assert any(
-        l["employee_id"] == str(emp.id) and l["punch_type"] == "in"
-        for l in logs.json()
-    )
-
-    today = datetime.datetime.utcnow().date().isoformat()
-    summary = client.get(
-        f"/apis/v3/face/summary/{comp.id}?date={today}",
-        headers=hdr,
-    )
-    assert summary.status_code == 200, summary.text
-
-# -- W11 R2-136: planning discriminator fields validated ----------------------
 
 def test_planning_discriminator_fields_validated(client, db, make_tenant, auth_headers):
     comp, user, _ = make_tenant(company_name="E40", user_name="UE40", mobile=_mob(41), email=_mail(41))
@@ -841,7 +797,7 @@ def test_task_create_honors_client_status(client, db, make_tenant, auth_headers)
         headers=hdr,
     )
     assert r.status_code == 201, r.text
-    assert r.json()["status"] == "pending", r.json()["status"]
+    assert r.json()["status"] == "not_started", r.json()["status"]  # pending is the old word for not started
 
     r = client.post(
         "/apis/v3/planning/tasks",

@@ -273,8 +273,8 @@ const REPORT_METADATA: Record<string, ReportMeta> = {
   "staff-punch-report": {
     title: "Staff Punch Report",
     hasDownload: true,
-    filters: [{ label: "Punch Date", type: "date" }, { label: "Project Name", type: "select", options: ["All"] }, { label: "Punch Type", type: "select", options: ["All"] }, { label: "Face Verified", type: "select", options: ["All"] }],
-    columns: ['Punch Time', 'Employee Code', 'Employee Name', 'Project Name', 'Punch Type', 'Face Verified', 'Confidence Score', 'Geofence Status', 'Latitude', 'Longitude']
+    filters: [{ label: "Project Name", type: "select", options: ["All"] }, { label: "Checked By", type: "select", options: ["All"] }],
+    columns: ['Punch Time', 'Employee Code', 'Employee Name', 'Project Name', 'Terminal', 'Checked By']
   },
   "attendance-salary": {
     title: "Attendance & Salary Report",

@@ -12,7 +12,9 @@ from app.models import PayrollLineItem, PayrollRun, StaffEmployee
 
 def for_project(query, project_id):
     """Narrow a PayrollLineItem query, already joined to PayrollRun, to one project."""
-    return query.join(StaffEmployee, StaffEmployee.id == PayrollLineItem.employee_id).filter(
+    # Outer join: a line on a project's own run counts even if the staff record
+    # is gone; only company-wide runs need the staff member's posting.
+    return query.outerjoin(StaffEmployee, StaffEmployee.id == PayrollLineItem.employee_id).filter(
         or_(
             PayrollRun.project_id == project_id,
             and_(PayrollRun.project_id.is_(None), StaffEmployee.project_id == project_id),

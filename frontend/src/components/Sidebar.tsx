@@ -200,7 +200,7 @@ export default function Sidebar() {
         },
         {
           id: "face-recognition",
-          label: "Face Recognition",
+          label: "Face Attendance",
           href: `/c/${companyId}/d/face-recognition`,
           iconName: "qr_code",
           permission: "attendance:view",

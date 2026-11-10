@@ -761,10 +761,6 @@ def test_pin_R2_535_vendor_performance_po_normalization():
     assert "func.lower(func.trim(PurchaseOrder.po_number))" in src, "R2-535 vendor PO number normalization regressed"
 
 
-def test_pin_R2_553_face_confidence_score_bounds():
-    src = _read("app/routers/face_recognition.py")
-    assert "Field(None, ge=0, le=1)" in src, "R2-553 face confidence score bounds regressed"
-
 
 def test_pin_R2_555_library_schema_name_max_length():
     src = _read("app/routers/library.py")

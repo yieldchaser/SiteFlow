@@ -3688,25 +3688,40 @@ def _rep_staff_muster_roll(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]
 
 
 def _rep_staff_punch_report(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
+    """Every punch the site terminals sent, in site time, with how the person
+    was checked. It used to read face_recognition_logs, which nothing wrote,
+    and show a confidence score, map position and geofence nobody recorded."""
+    from app.models import BiometricDevice, BiometricPunch
     try:
-        q = db.query(FaceRecognitionLog).filter(FaceRecognitionLog.company_id == cid)
+        dq = db.query(BiometricDevice).filter(BiometricDevice.company_id == cid)
         if pid:
-            q = q.filter(FaceRecognitionLog.project_id == pid)
+            dq = dq.filter(BiometricDevice.project_id == pid)
+        devices = {d.id: d for d in dq.all()}
+        if not devices:
+            return []
+        punches = (
+            db.query(BiometricPunch)
+            .filter(BiometricPunch.company_id == cid, BiometricPunch.device_id.in_(list(devices)))
+            .order_by(BiometricPunch.punch_time.desc())
+            .limit(5000)
+            .all()
+        )
+        emp_ids = {p.employee_id for p in punches if p.employee_id}
+        staff_by_id = {e.id: e for e in db.query(StaffEmployee).filter(StaffEmployee.id.in_(emp_ids)).all()} if emp_ids else {}
+        sites = {pr.id: pr.name for pr in db.query(Project).filter(Project.id.in_({d.project_id for d in devices.values()})).all()}
         rows = []
-        for f in q.order_by(FaceRecognitionLog.created_at.desc()).all():
-            emp = _get(db, StaffEmployee, f.employee_id) if f.employee_id else None
-            proj = _get(db, Project, f.project_id) if f.project_id else None
+        for p in punches:
+            d = devices[p.device_id]
+            e = staff_by_id[p.employee_id] if p.employee_id in staff_by_id else None
+            pt = p.punch_time if p.punch_time.tzinfo else p.punch_time.replace(tzinfo=timezone.utc)
+            local = pt + timedelta(minutes=d.tz_offset_minutes if d.tz_offset_minutes is not None else 330)
             rows.append({
-                "Punch Time": _clean(f.created_at),
-                "Employee Code": emp.employee_code if emp else "",
-                "Employee Name": emp.name if emp else "",
-                "Project Name": proj.name if proj else "",
-                "Punch Type": f.punch_type,
-                "Face Verified": "Yes" if f.face_verified else "No",
-                "Confidence Score": _clean(f.confidence_score or 0),
-                "Geofence Status": "Inside" if f.is_within_geofence else "Outside",
-                "Latitude": _clean(f.lat or 0),
-                "Longitude": _clean(f.lng or 0),
+                "Punch Time": local.strftime("%d-%m-%Y %H:%M"),
+                "Employee Code": e.employee_code if e else "",
+                "Employee Name": e.name if e else f"Not linked (terminal ID {p.device_pin})",
+                "Project Name": sites.get(d.project_id, ""),
+                "Terminal": d.name,
+                "Checked By": p.verify_mode or "",
             })
         return rows
     except Exception:

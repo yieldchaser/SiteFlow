@@ -1,47 +1,44 @@
+"""Face attendance: the punches a site's face terminal recorded.
+
+Face attendance on Indian sites is done by face-scan terminals (ZKTeco and
+similar). The terminal matches the face itself and pushes each punch to
+/iclock (biometric.py), saying how the person was checked; those punches
+already become attendance and payroll. This screen lists the ones checked by
+face.
+
+Before, this router read face_recognition_logs, a table nothing in the product
+wrote: there was no camera, no face matching and no caller of its POST /punch,
+which took "face_verified" and a confidence score on the client's word. The
+screen could only ever be empty, and the endpoint would have stored any
+"verified" claim as evidence. Both are gone.
+"""
 import uuid
+from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field
-from collections import defaultdict
+
+from app.auth import get_current_user, verify_company_access
 from app.database import get_db
-from app.auth import get_current_user, verify_company_access, get_company_membership, verify_project_in_company, require_permission
-# R2-751: face_punch now takes the current user, so the model is needed here.
-from app.models import FaceRecognitionLog, StaffEmployee, User
+from app.models import BiometricDevice, BiometricPunch, Project, StaffEmployee
 
 router = APIRouter(prefix="/face", tags=["Face Recognition Attendance"], dependencies=[Depends(get_current_user)])
 
-
-class FacePunchRequest(BaseModel):
-    company_id: uuid.UUID
-    project_id: uuid.UUID
-    employee_id: uuid.UUID
-    punch_type: str
-    face_verified: bool
-    confidence_score: Optional[float] = Field(None, ge=0, le=1)
-    image_url: Optional[str] = None
-    lat: Optional[float] = Field(None, ge=-90, le=90)
-    lng: Optional[float] = Field(None, ge=-180, le=180)
-    is_within_geofence: bool = False
+FACE = "Face"  # biometric.VERIFY_MODES["15"]
 
 
-class FacePunchResponse(BaseModel):
+class FacePunch(BaseModel):
     id: uuid.UUID
-    company_id: uuid.UUID
-    project_id: uuid.UUID
-    employee_id: uuid.UUID
-    punch_type: str
-    face_verified: bool
-    confidence_score: Optional[float]
-    image_url: Optional[str]
-    lat: Optional[float]
-    lng: Optional[float]
-    is_within_geofence: bool
-    created_at: Optional[datetime]
-
-    class Config:
-        from_attributes = True
+    punch_time: datetime
+    employee_id: Optional[uuid.UUID] = None
+    employee_name: Optional[str] = None
+    employee_code: Optional[str] = None
+    device_pin: str
+    device_name: str
+    site_name: str
 
 
 class EmployeeRef(BaseModel):
@@ -58,49 +55,57 @@ class DailySummary(BaseModel):
     attendance_date: str
     employee_id: uuid.UUID
     employee_name: str
-    punch_in: Optional[str] = None
-    punch_out: Optional[str] = None
-    confidence_in: Optional[float] = None
-    confidence_out: Optional[float] = None
-    is_within_geofence_in: bool = False
-    is_within_geofence_out: bool = False
+    employee_code: Optional[str] = None
+    first_punch: str
+    last_punch: Optional[str] = None
+    punches: int
+    site_name: str
 
 
-@router.post("/punch", response_model=FacePunchResponse, status_code=status.HTTP_201_CREATED)
-def face_punch(
-    payload: FacePunchRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    # R2-751: this was the only endpoint in the router with no company check --
-    # the three read paths all use verify_company_access, so this was an
-    # omission on the one write rather than a module convention. The router is
-    # authenticated but not authorized: any authenticated user of any tenant
-    # could POST a punch naming another tenant's company_id and project_id,
-    # which was then visible to the victim through the guarded GET /face/logs.
-    #
-    # A face-recognition log is presented as biometric evidence of presence, so
-    # an injected row is evidence-shaped. The direct payroll impact is currently
-    # limited only by R2-593 (face punches never become an AttendanceLog) --
-    # two findings cancelling each other's severity by accident. Fixing R2-593
-    # without this would connect an unguarded cross-tenant write to payroll.
-    get_company_membership(db, current_user, payload.company_id)
-    require_permission(db, current_user, payload.company_id, "attendance:edit")
-    verify_project_in_company(db, payload.project_id, payload.company_id)
-
-    log = FaceRecognitionLog(**payload.model_dump())
-    db.add(log)
-    db.commit()
-    db.refresh(log)
-    return log
-
-
-@router.get("/logs/{company_id}", response_model=List[FacePunchResponse])
-def list_logs(company_id: uuid.UUID, project_id: Optional[uuid.UUID] = None, db: Session = Depends(get_db), _: None = Depends(verify_company_access)):
-    query = db.query(FaceRecognitionLog).filter(FaceRecognitionLog.company_id == company_id)
+def _devices(db: Session, company_id: uuid.UUID, project_id: Optional[uuid.UUID]):
+    q = db.query(BiometricDevice).filter(BiometricDevice.company_id == company_id)
     if project_id:
-        query = query.filter(FaceRecognitionLog.project_id == project_id)
-    return query.order_by(FaceRecognitionLog.created_at.desc().nulls_last()).limit(200).all()
+        q = q.filter(BiometricDevice.project_id == project_id)
+    return {d.id: d for d in q.all()}
+
+
+def _face_punches(db: Session, company_id: uuid.UUID, devices: dict, start=None, end=None, limit=None):
+    if not devices:
+        return []
+    q = db.query(BiometricPunch).filter(
+        BiometricPunch.company_id == company_id,
+        BiometricPunch.device_id.in_(list(devices)),
+        BiometricPunch.verify_mode == FACE,
+    )
+    if start is not None:
+        q = q.filter(BiometricPunch.punch_time >= start, BiometricPunch.punch_time < end)
+    q = q.order_by(BiometricPunch.punch_time.desc() if limit else BiometricPunch.punch_time.asc())
+    return q.limit(limit).all() if limit else q.all()
+
+
+def _lookups(db: Session, rows, devices):
+    emp_ids = {r.employee_id for r in rows if r.employee_id}
+    emps = {e.id: e for e in db.query(StaffEmployee).filter(StaffEmployee.id.in_(emp_ids)).all()} if emp_ids else {}
+    proj_ids = {d.project_id for d in devices.values()}
+    sites = {p.id: p.name for p in db.query(Project).filter(Project.id.in_(proj_ids)).all()} if proj_ids else {}
+    return emps, sites
+
+
+@router.get("/logs/{company_id}", response_model=List[FacePunch])
+def list_logs(company_id: uuid.UUID, project_id: Optional[uuid.UUID] = None, db: Session = Depends(get_db), _: None = Depends(verify_company_access)):
+    devices = _devices(db, company_id, project_id)
+    rows = _face_punches(db, company_id, devices, limit=200)
+    emps, sites = _lookups(db, rows, devices)
+    out = []
+    for r in rows:
+        d = devices[r.device_id]
+        e = emps.get(r.employee_id)
+        out.append(FacePunch(
+            id=r.id, punch_time=r.punch_time, employee_id=r.employee_id,
+            employee_name=e.name if e else None, employee_code=e.employee_code if e else None,
+            device_pin=r.device_pin, device_name=d.name, site_name=sites.get(d.project_id, ""),
+        ))
+    return out
 
 
 @router.get("/employees/{company_id}", response_model=List[EmployeeRef])
@@ -113,47 +118,43 @@ def list_employees(company_id: uuid.UUID, project_id: Optional[uuid.UUID] = None
 
 @router.get("/summary/{company_id}", response_model=List[DailySummary])
 def daily_summary(company_id: uuid.UUID, date: str = Query(...), project_id: Optional[uuid.UUID] = None, db: Session = Depends(get_db), _: None = Depends(verify_company_access)):
+    """First and last face punch per person on a day, in the site's own time
+    (the terminal's clock offset, India by default). The day used to be cut at
+    midnight UTC, so a 5 AM punch landed on the previous day."""
     try:
-        target_date = datetime.strptime(date, "%Y-%m-%d")
+        day = datetime.strptime(date, "%Y-%m-%d")
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+        raise HTTPException(status_code=400, detail="Pick a date")
+    devices = _devices(db, company_id, project_id)
+    if not devices:
+        return []
+    offsets = {d.tz_offset_minutes if d.tz_offset_minutes is not None else 330 for d in devices.values()}
+    # Wide UTC window covering the local day at every device's offset.
+    start = (day - timedelta(minutes=max(offsets))).replace(tzinfo=timezone.utc)
+    end = (day + timedelta(days=1) - timedelta(minutes=min(offsets))).replace(tzinfo=timezone.utc)
+    rows = _face_punches(db, company_id, devices, start=start, end=end)
+    emps, sites = _lookups(db, rows, devices)
 
-    next_date = target_date + timedelta(days=1)
-    query = db.query(FaceRecognitionLog).filter(
-        FaceRecognitionLog.company_id == company_id,
-        FaceRecognitionLog.created_at >= target_date,
-        FaceRecognitionLog.created_at < next_date,
-    )
-    if project_id:
-        query = query.filter(FaceRecognitionLog.project_id == project_id)
-
-    logs = query.order_by(FaceRecognitionLog.created_at.asc().nulls_last()).all()
-    summary = defaultdict(lambda: {"in": None, "out": None, "name": ""})
-    for log in logs:
-        key = str(log.employee_id)
-        emp = db.query(StaffEmployee).filter(StaffEmployee.id == log.employee_id).first()
-        if emp:
-            summary[key]["name"] = emp.name
-        if log.punch_type == "in" and summary[key]["in"] is None:
-            summary[key]["in"] = log.created_at.strftime("%H:%M")
-            summary[key]["confidence_in"] = float(log.confidence_score) if log.confidence_score else None
-            summary[key]["is_within_geofence_in"] = log.is_within_geofence
-        elif log.punch_type == "out" and summary[key]["out"] is None:
-            summary[key]["out"] = log.created_at.strftime("%H:%M")
-            summary[key]["confidence_out"] = float(log.confidence_score) if log.confidence_score else None
-            summary[key]["is_within_geofence_out"] = log.is_within_geofence
-
-    result = []
-    for emp_id, data in summary.items():
-        result.append(DailySummary(
-            attendance_date=date,
-            employee_id=uuid.UUID(emp_id),
-            employee_name=data["name"] or "Unknown",
-            punch_in=data["in"],
-            punch_out=data["out"],
-            confidence_in=data.get("confidence_in"),
-            confidence_out=data.get("confidence_out"),
-            is_within_geofence_in=data.get("is_within_geofence_in", False),
-            is_within_geofence_out=data.get("is_within_geofence_out", False),
+    per = OrderedDict()
+    for r in rows:
+        if not r.employee_id:
+            continue  # terminal user ID not linked to an employee yet
+        d = devices[r.device_id]
+        pt = r.punch_time if r.punch_time.tzinfo else r.punch_time.replace(tzinfo=timezone.utc)
+        local = pt + timedelta(minutes=d.tz_offset_minutes if d.tz_offset_minutes is not None else 330)
+        if local.date() != day.date():
+            continue
+        s = per.setdefault(r.employee_id, {"first": local, "last": local, "n": 0, "site": sites.get(d.project_id, "")})
+        s["last"] = local
+        s["n"] += 1
+    out = []
+    for emp_id, s in per.items():
+        e = emps.get(emp_id)
+        out.append(DailySummary(
+            attendance_date=date, employee_id=emp_id,
+            employee_name=e.name if e else "Unknown", employee_code=e.employee_code if e else None,
+            first_punch=s["first"].strftime("%H:%M"),
+            last_punch=s["last"].strftime("%H:%M") if s["n"] > 1 else None,
+            punches=s["n"], site_name=s["site"],
         ))
-    return result
+    return out

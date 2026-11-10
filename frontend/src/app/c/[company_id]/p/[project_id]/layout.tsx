@@ -38,7 +38,7 @@ const MORE_TABS = [
   { label: "Daily Progress", path: "/d/dpr", withProject: true },
   { label: "Depreciation", path: "/d/depreciation", withProject: true },
   { label: "Drawings", path: "/d/drawings", withProject: true },
-  { label: "Face Recognition", path: "/d/face-recognition", withProject: true },
+  { label: "Face Attendance", path: "/d/face-recognition", withProject: true },
   { label: "Finance", path: "/d/finance", withProject: true },
   { label: "HR & Payroll", path: "/d/hr", withProject: true },
   { label: "Labour", path: "/d/labour", withProject: true },
