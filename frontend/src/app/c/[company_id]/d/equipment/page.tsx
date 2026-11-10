@@ -3,7 +3,7 @@ import { EQUIPMENT_CATEGORIES, isCompanyAsset } from "@/lib/equipmentCategories"
 import CompanyAssets from "@/components/CompanyAssets";
 import Badge, { type BadgeTone } from "@/components/ui/Badge";
 import {  getApiHost , readErrorDetail, detailToMessage} from "@/lib/api";
-import { authHeaders, downloadWithAuth, formatDate, formatLabel, toLocalISODate } from "@/lib/siteflow";
+import { authHeaders, downloadWithAuth, formatDate, formatLabel, toLocalISODate, todayLocalISO } from "@/lib/siteflow";
 
 import React, { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
@@ -432,14 +432,14 @@ export default function EquipmentTrackingPage() {
               {activeTab === "fleet" && (
                 <div className="space-y-6">
                   {/* Overdue Maintenance Banner Alert */}
-                  {maintenanceLogs.filter(m => m.completed_date === null && new Date(m.scheduled_date) < new Date()).length > 0 && (
+                  {maintenanceLogs.filter(m => m.completed_date === null && toLocalISODate(m.scheduled_date) < todayLocalISO()).length > 0 && (
                     <div className="p-4 bg-danger/10 border border-danger/20 text-danger rounded-lg flex items-start gap-3 text-xs">
                       <Icon name="warning" className="w-5 h-5 shrink-0" />
                       <div>
                         <strong className="font-extrabold block text-foreground">Overdue Maintenance Alert!</strong>
                         <p className="text-muted mt-0.5">The following machinery requires immediate servicing to prevent site safety incidents:</p>
                         <ul className="list-disc pl-5 mt-1.5 space-y-1 font-sans text-[10px]">
-                          {maintenanceLogs.filter(m => m.completed_date === null && new Date(m.scheduled_date) < new Date()).map(m => {
+                          {maintenanceLogs.filter(m => m.completed_date === null && toLocalISODate(m.scheduled_date) < todayLocalISO()).map(m => {
                             const eq = fleet.find(e => e.id === m.equipment_id);
                             return (
                               <li key={m.id}>
@@ -465,7 +465,7 @@ export default function EquipmentTrackingPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {fleet.map((eq) => {
                       const activeDep = deployments.find(d => d.equipment_id === eq.id && d.end_date === null);
-                      const isOverdue = maintenanceLogs.some(m => m.equipment_id === eq.id && m.completed_date === null && new Date(m.scheduled_date) < new Date());
+                      const isOverdue = maintenanceLogs.some(m => m.equipment_id === eq.id && m.completed_date === null && toLocalISODate(m.scheduled_date) < todayLocalISO());
                       return (
                         <div key={eq.id} className="bg-card border border-border-custom rounded-lg p-5 flex flex-col justify-between space-y-4">
                           <div>
@@ -714,7 +714,7 @@ export default function EquipmentTrackingPage() {
                           </tr>
                         ) : maintenanceLogs.map((log) => {
                           const eq = fleet.find(e => e.id === log.equipment_id);
-                          const isOverdue = log.completed_date === null && new Date(log.scheduled_date) < new Date();
+                          const isOverdue = log.completed_date === null && toLocalISODate(log.scheduled_date) < todayLocalISO();
                           return (
                             <tr key={log.id} className="border-b border-white/[0.03] hover:bg-elevated transition-all">
                               <td className="px-5 py-3">

@@ -3,7 +3,7 @@ import { EQUIPMENT_CATEGORIES, isCompanyAsset } from "@/lib/equipmentCategories"
 import CompanyAssets from "@/components/CompanyAssets";
 import Badge, { type BadgeTone } from "@/components/ui/Badge";
 import {  getApiHost , readErrorDetail, detailToMessage} from "@/lib/api";
-import { authHeaders, downloadWithAuth, formatDate, formatLabel, toLocalISODate } from "@/lib/siteflow";
+import { authHeaders, downloadWithAuth, formatDate, formatLabel, toLocalISODate, todayLocalISO } from "@/lib/siteflow";
 
 import React, { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
@@ -361,7 +361,7 @@ export default function EquipmentTrackingPage() {
   // Overdue servicing for the machines shown here. The banner listed every
   // machine in the company, including ones working on other sites.
   const projectFleetIds = new Set(projectFleet.map(eq => eq.id));
-  const overdueHere = maintenanceLogs.filter(m => m.completed_date === null && new Date(m.scheduled_date) < new Date() && projectFleetIds.has(m.equipment_id));
+  const overdueHere = maintenanceLogs.filter(m => m.completed_date === null && toLocalISODate(m.scheduled_date) < todayLocalISO() && projectFleetIds.has(m.equipment_id));
   const timelineEvents = [
     ...deployments.map(d => {
       const eq = fleet.find(e => e.id === d.equipment_id);
@@ -481,7 +481,7 @@ export default function EquipmentTrackingPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {projectFleet.map((eq) => {
                       const activeDep = deployments.find(d => d.equipment_id === eq.id && d.end_date === null);
-                      const isOverdue = maintenanceLogs.some(m => m.equipment_id === eq.id && m.completed_date === null && new Date(m.scheduled_date) < new Date());
+                      const isOverdue = maintenanceLogs.some(m => m.equipment_id === eq.id && m.completed_date === null && toLocalISODate(m.scheduled_date) < todayLocalISO());
                       return (
                         <div key={eq.id} className="bg-card border border-border-custom rounded-lg p-5 flex flex-col justify-between space-y-4">
                           <div>
@@ -733,7 +733,7 @@ export default function EquipmentTrackingPage() {
                           </tr>
                         ) : maintenanceLogs.map((log) => {
                           const eq = fleet.find(e => e.id === log.equipment_id);
-                          const isOverdue = log.completed_date === null && new Date(log.scheduled_date) < new Date();
+                          const isOverdue = log.completed_date === null && toLocalISODate(log.scheduled_date) < todayLocalISO();
                           return (
                             <tr key={log.id} className="border-b border-border-custom hover:bg-elevated transition-all">
                               <td className="px-5 py-3">
