@@ -86,7 +86,9 @@ export default function BiometricDevicesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId]);
 
+  // A success clears an old error, so the red banner never sits above a green one.
   const flash = (msg: string) => {
+    setError("");
     setNotice(msg);
     setTimeout(() => setNotice(""), 4000);
   };

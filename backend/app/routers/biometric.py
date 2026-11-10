@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user, get_company_membership, require_permission, verify_company_access, verify_project_in_company
 from app.database import get_db
 from app.models import AttendanceLog, BiometricDevice, BiometricPunch, StaffEmployee, User
-from app.routers.hr import _aware_utc
+from app.routers.hr import _aware_utc, shift_hours_for
 
 adms_router = APIRouter(prefix="/iclock", tags=["Biometric device push (ADMS)"])
 router = APIRouter(prefix="/biometric", tags=["Biometric Attendance"], dependencies=[Depends(get_current_user)])
@@ -108,7 +108,7 @@ def _apply_to_attendance(db: Session, device: BiometricDevice, employee_id: uuid
     if punch_out:
         hours = (punch_out - punch_in).total_seconds() / 3600
         log.hours_worked = Decimal(str(round(hours, 2)))
-        log.overtime_hours = Decimal(str(round(max(0.0, hours - 8.0), 2)))
+        log.overtime_hours = Decimal(str(round(max(0.0, hours - shift_hours_for(db, employee_id)), 2)))
     else:
         log.hours_worked = None
         log.overtime_hours = Decimal("0")

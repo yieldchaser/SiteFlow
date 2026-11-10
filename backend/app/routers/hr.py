@@ -695,8 +695,8 @@ def punch(payload: PunchRequest, db: Session = Depends(get_db), current_user: Us
             if delta < 0:
                 raise HTTPException(status_code=400, detail="punch_out time cannot be earlier than punch_in time.")
             log.hours_worked = Decimal(str(round(delta, 2)))
-            # Overtime = hours beyond 8
-            ot = max(0.0, delta - 8.0)
+            # Overtime = hours beyond this employee's shift
+            ot = max(0.0, delta - shift_hours_for(db, log.employee_id))
             log.overtime_hours = Decimal(str(round(ot, 2)))
 
         db.commit()
@@ -1055,7 +1055,16 @@ def _employee_working_days(emp, payroll_month: str, company_weekly_off, holidays
     return _working_days_in_month(payroll_month, off or [], holidays=mine)
 
 
-def _compute_payslip(emp: StaffEmployee, days_present: float, days_in_month: int, overtime_hours: float = 0.0, pf_wage_ceiling: float = 15000.0, overtime_rate: float = 0.0, pt_state: Optional[str] = None, pay_month: int = 0) -> dict:
+def shift_hours_for(db: Session, employee_id) -> float:
+    """The working day set on the employee's payroll details (default 8 hours).
+    Overtime is time past this, not past a fixed 8: a 10-hour site shift is
+    not 2 hours of overtime every day."""
+    prof = db.query(PayrollProfile).filter(PayrollProfile.employee_id == employee_id).first()
+    hours = float(prof.shift_hours) if prof and prof.shift_hours is not None else 8.0
+    return hours if hours > 0 else 8.0
+
+
+def _compute_payslip(emp: StaffEmployee, days_present: float, days_in_month: int, overtime_hours: float = 0.0, pf_wage_ceiling: float = 15000.0, overtime_rate: float = 0.0, pt_state: Optional[str] = None, pay_month: int = 0, shift_hours: float = 8.0) -> dict:
     """
     Compute one employee's payslip.
 
@@ -1085,7 +1094,8 @@ def _compute_payslip(emp: StaffEmployee, days_present: float, days_in_month: int
     if overtime_rate and float(overtime_rate) > 0:
         ot_rate = float(overtime_rate)
     else:
-        ot_rate = (float(emp.basic_salary) / days_in_month / 8.0) * 1.5 if days_in_month > 0 else 0.0
+        day_hours = float(shift_hours) if shift_hours and float(shift_hours) > 0 else 8.0
+        ot_rate = (float(emp.basic_salary) / days_in_month / day_hours) * 1.5 if days_in_month > 0 else 0.0
     ot_amount = round(float(overtime_hours) * ot_rate, 2)
 
     gross = round(full_gross * ratio, 2) + ot_amount
@@ -1342,6 +1352,7 @@ def run_payroll(payload: PayrollRunCreate, db: Session = Depends(get_db), curren
             emp, days_present, effective_days_in_month, float(total_ot), pf_wage_ceiling=effective_ceiling,
             overtime_rate=float(profile.overtime_rate or 0) if profile else 0.0,
             pt_state=getattr(company, "pt_state", None), pay_month=month,
+            shift_hours=float(profile.shift_hours) if profile and profile.shift_hours else 8.0,
         )
         calc["attendance_source"] = attendance_source
         # Separate string field before Decimal conversion so it stays verbatim.
