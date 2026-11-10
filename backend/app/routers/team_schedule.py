@@ -8,7 +8,7 @@ from pydantic import BaseModel, field_validator
 
 from app.config import settings
 from app.database import get_db
-from app.auth import get_current_user, verify_project_in_company, verify_company_access, get_company_membership, require_permission
+from app.auth import get_current_user, verify_project_in_company, verify_company_access, get_company_membership, require_permission, project_ids_for_user, scope_projects
 from app import models
 from app.models import User
 
@@ -134,6 +134,29 @@ def _compute_duration(start: Optional[datetime], end: Optional[datetime]) -> Opt
     return int(round(seconds / 60))
 
 
+def _party_in_company(db: Session, party_id: UUID, company_id: UUID) -> models.LibraryParty:
+    """The person must be in this company's library; a party from another
+    company would put that company's name on our timesheet."""
+    party = db.query(models.LibraryParty).filter(
+        models.LibraryParty.id == party_id, models.LibraryParty.company_id == company_id
+    ).first()
+    if not party:
+        raise HTTPException(status_code=400, detail="Pick a person from your company's party list")
+    return party
+
+
+def _row_for_user(db: Session, timesheet_id: UUID, user: User) -> models.TeamScheduleTimesheet:
+    """A timesheet on a project this person cannot open is treated as not there."""
+    row = db.query(models.TeamScheduleTimesheet).filter(models.TeamScheduleTimesheet.id == timesheet_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Timesheet not found")
+    get_company_membership(db, user, row.company_id)
+    allowed = project_ids_for_user(db, user, row.company_id)
+    if allowed is not None and row.project_id not in allowed:
+        raise HTTPException(status_code=404, detail="Timesheet not found")
+    return row
+
+
 # ─── Endpoints ─────────────────────────────────────────────────────────────────
 @router.get("/timesheets", response_model=List[TimesheetResponse])
 def list_timesheets(
@@ -145,9 +168,11 @@ def list_timesheets(
     search: Optional[str] = None,
     db: Session = Depends(get_db),
     _: None = Depends(verify_company_access),
+    current_user: User = Depends(get_current_user),
 ):
-    q = db.query(models.TeamScheduleTimesheet).filter(
-        models.TeamScheduleTimesheet.company_id == company_id
+    q = scope_projects(
+        db.query(models.TeamScheduleTimesheet).filter(models.TeamScheduleTimesheet.company_id == company_id),
+        db, current_user, company_id, column=models.TeamScheduleTimesheet.project_id,
     )
     if party_id:
         q = q.filter(models.TeamScheduleTimesheet.party_id == party_id)
@@ -174,11 +199,10 @@ def create_timesheet(payload: TimesheetCreate, db: Session = Depends(get_db), cu
         verify_project_in_company(db, payload.project_id, payload.company_id)
     require_permission(db, current_user, payload.company_id, "attendance:edit")
     if payload.start_time and payload.end_time and payload.end_time <= payload.start_time:
-        raise HTTPException(status_code=422, detail="end_time must be after start_time; for a night shift send the true end date")
+        raise HTTPException(status_code=422, detail="End time must be after start time. For a night shift, the end is on the next day.")
     party_name = None
     if payload.party_id:
-        party = db.query(models.LibraryParty).filter(models.LibraryParty.id == payload.party_id).first()
-        party_name = party.name if party else None
+        party_name = _party_in_company(db, payload.party_id, payload.company_id).name
 
     row = models.TeamScheduleTimesheet(
         company_id=payload.company_id,
@@ -201,23 +225,13 @@ def create_timesheet(payload: TimesheetCreate, db: Session = Depends(get_db), cu
 
 @router.get("/timesheets/{timesheet_id}", response_model=TimesheetResponse)
 def get_timesheet(timesheet_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    row = db.query(models.TeamScheduleTimesheet).filter(
-        models.TeamScheduleTimesheet.id == timesheet_id
-    ).first()
-    if not row:
-        raise HTTPException(status_code=404, detail="Timesheet not found")
-    get_company_membership(db, current_user, row.company_id)
+    row = _row_for_user(db, timesheet_id, current_user)
     return _serialize(row, db)
 
 
 @router.put("/timesheets/{timesheet_id}", response_model=TimesheetResponse)
 def update_timesheet(timesheet_id: UUID, payload: TimesheetUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    row = db.query(models.TeamScheduleTimesheet).filter(
-        models.TeamScheduleTimesheet.id == timesheet_id
-    ).first()
-    if not row:
-        raise HTTPException(status_code=404, detail="Timesheet not found")
-    get_company_membership(db, current_user, row.company_id)
+    row = _row_for_user(db, timesheet_id, current_user)
     require_permission(db, current_user, row.company_id, "attendance:edit")
 
     if payload.project_id is not None:
@@ -225,9 +239,9 @@ def update_timesheet(timesheet_id: UUID, payload: TimesheetUpdate, db: Session =
         row.project_id = payload.project_id
 
     if payload.party_id is not None:
-        party = db.query(models.LibraryParty).filter(models.LibraryParty.id == payload.party_id).first()
+        party = _party_in_company(db, payload.party_id, row.company_id)
         row.party_id = payload.party_id
-        row.party_name = party.name if party else None
+        row.party_name = party.name
 
     if payload.entry_date is not None:
         row.entry_date = payload.entry_date
@@ -235,7 +249,7 @@ def update_timesheet(timesheet_id: UUID, payload: TimesheetUpdate, db: Session =
     st = payload.start_time if payload.start_time is not None else row.start_time
     et = payload.end_time if payload.end_time is not None else row.end_time
     if st and et and et <= st:
-        raise HTTPException(status_code=422, detail="end_time must be after start_time; for a night shift send the true end date")
+        raise HTTPException(status_code=422, detail="End time must be after start time. For a night shift, the end is on the next day.")
 
     if payload.start_time is not None:
         row.start_time = payload.start_time
@@ -258,12 +272,7 @@ def update_timesheet(timesheet_id: UUID, payload: TimesheetUpdate, db: Session =
 
 @router.delete("/timesheets/{timesheet_id}", status_code=status.HTTP_200_OK)
 def delete_timesheet(timesheet_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    row = db.query(models.TeamScheduleTimesheet).filter(
-        models.TeamScheduleTimesheet.id == timesheet_id
-    ).first()
-    if not row:
-        raise HTTPException(status_code=404, detail="Timesheet not found")
-    get_company_membership(db, current_user, row.company_id)
+    row = _row_for_user(db, timesheet_id, current_user)
     require_permission(db, current_user, row.company_id, "data:delete")
     from app.routers.delete_logs import log_deletion
     log_deletion(db, row.company_id, "timesheet", row.id, f"Timesheet: {row.party_name or row.id}", party_name=row.party_name, deleted_by=current_user.name)

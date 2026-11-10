@@ -77,6 +77,20 @@ const safeHref = (url: string | null): string | null => {
   return null;
 };
 
+// This browser's offset as "+05:30", so a typed date means that day here,
+// not the day in London.
+const localOffset = () => {
+  const offMin = -new Date().getTimezoneOffset();
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  return `${offMin < 0 ? "-" : "+"}${pad2(Math.floor(Math.abs(offMin) / 60))}:${pad2(Math.abs(offMin) % 60)}`;
+};
+// The day after an ISO date (YYYY-MM-DD), for a shift that ends after midnight.
+const nextDayISO = (iso: string) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  const n = new Date(Date.UTC(y, m - 1, d + 1));
+  return n.toISOString().slice(0, 10);
+};
+
 const fmtDate = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const fmtDateNice = (iso: string) => formatDate(iso);
@@ -258,8 +272,8 @@ export default function TeamSchedulePage() {
     try {
       const q = new URLSearchParams({ company_id: companyId });
       if (tsPartyFilter) q.set("party_id", tsPartyFilter);
-      if (tsDateFrom) q.set("date_from", `${tsDateFrom}T00:00:00Z`);
-      if (tsDateTo) q.set("date_to", `${tsDateTo}T23:59:59Z`);
+      if (tsDateFrom) q.set("date_from", `${tsDateFrom}T00:00:00${localOffset()}`);
+      if (tsDateTo) q.set("date_to", `${tsDateTo}T23:59:59${localOffset()}`);
       if (tsSearch) q.set("search", tsSearch);
       const [tsRes, pRes] = await Promise.all([
         fetch(getApi(`/team-schedule/timesheets?${q.toString()}`), { headers: authHeaders() }),
@@ -558,6 +572,21 @@ ${tasksXml}
   };
 
   // ── New Timesheet handlers ──
+  // Both "New Timesheet" buttons start from the same clean form.
+  const openNewTimesheet = () => {
+    setTsDate(todayLocalISO());
+    setTsProjectId(projects[0]?.id || "");
+    setTsPartyQuery("");
+    setTsPartyId(null);
+    setTsPartyName("");
+    setTsStart("09:00");
+    setTsEnd("17:00");
+    setTsRemarks("");
+    setTsFileUrl(null);
+    setTsFileName(null);
+    setTsFormError(null);
+    setTsDrawerOpen(true);
+  };
   const partyMatches = useMemo(() => {
     if (!tsPartyQuery.trim()) return parties.slice(0, 20);
     const q = tsPartyQuery.toLowerCase();
@@ -626,12 +655,16 @@ ${tasksXml}
       setTsFormError("Select a project and a party to save the timesheet.");
       return;
     }
+    if (tsStart === tsEnd) {
+      setTsFormError("Start and end time are the same.");
+      return;
+    }
     setTsFormError(null);
     setTsSaving(true);
     try {
-      const offMin = -new Date().getTimezoneOffset();
-      const pad2 = (n: number) => String(n).padStart(2, "0");
-      const tz = `${offMin < 0 ? "-" : "+"}${pad2(Math.floor(Math.abs(offMin) / 60))}:${pad2(Math.abs(offMin) % 60)}`;
+      const tz = localOffset();
+      // A night shift (say 20:00 to 06:00) ends on the next day.
+      const endDate = tsEnd <= tsStart ? nextDayISO(tsDate) : tsDate;
       const res = await fetch(getApi("/team-schedule/timesheets"), {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
@@ -641,7 +674,7 @@ ${tasksXml}
           project_id: tsProjectId,
           entry_date: `${tsDate}T00:00:00${tz}`,
           start_time: `${tsDate}T${tsStart}:00${tz}`,
-          end_time: `${tsDate}T${tsEnd}:00${tz}`,
+          end_time: `${endDate}T${tsEnd}:00${tz}`,
           remarks: tsRemarks || null,
           file_url: tsFileUrl,
           file_name: tsFileName,
@@ -672,7 +705,9 @@ ${tasksXml}
     }
   };
 
-  const handleDeleteTimesheet = async (id: string) => {
+  const handleDeleteTimesheet = async (ts: TimesheetRow) => {
+    const id = ts.id;
+    if (!confirm(`Delete the timesheet for ${ts.party_name || "this person"} on ${fmtDateNice(ts.entry_date)}?`)) return;
     try {
       const res = await fetch(getApi(`/team-schedule/timesheets/${id}`), {
         method: "DELETE",
@@ -693,7 +728,7 @@ ${tasksXml}
     <div className="flex-1 flex flex-col overflow-hidden">
       <PageHeader
         title="Team Schedule"
-        subtitle="Company-wide task rollup across all projects and party-linked time logs."
+        subtitle="Every project's tasks on one timeline, and the hours your people logged."
       >
         <SegmentedTabs
           tabs={[
@@ -933,20 +968,7 @@ ${tasksXml}
             />
 
             <button
-              onClick={() => {
-                setTsDate(todayLocalISO());
-                setTsProjectId(projects[0]?.id || "");
-                setTsPartyQuery("");
-                setTsPartyId(null);
-                setTsPartyName("");
-                setTsStart("09:00");
-                setTsEnd("17:00");
-                setTsRemarks("");
-                setTsFileUrl(null);
-                setTsFileName(null);
-                setTsFormError(null);
-                setTsDrawerOpen(true);
-              }}
+              onClick={openNewTimesheet}
               className="px-4 py-1.5 bg-primary hover:bg-primary-hover text-white rounded-md text-xs font-medium transition-all cursor-pointer"
             >
               + New Timesheet
@@ -963,10 +985,7 @@ ${tasksXml}
                   description="Log employee work hours, daily activities, and task allocations."
                   action={{
                     label: "+ Add Timesheet",
-                    onClick: () => {
-                      setTsFormError(null);
-                      setTsDrawerOpen(true);
-                    },
+                    onClick: openNewTimesheet,
                   }}
                 />
               </div>
@@ -986,7 +1005,7 @@ ${tasksXml}
                   {timesheets.map((ts) => (
                     <tr key={ts.id} className="hover:bg-background/25 transition-all">
                       <td className="px-5 py-3 text-foreground whitespace-nowrap">{fmtDateNice(ts.entry_date)}</td>
-                      <td className="px-5 py-3 font-bold text-white">{ts.party_name || "—"}</td>
+                      <td className="px-5 py-3 font-bold text-foreground">{ts.party_name || "—"}</td>
                       <td className="px-5 py-3 text-muted whitespace-nowrap">
                         {fmtTime(ts.start_time)} – {fmtTime(ts.end_time)}
                         {safeHref(ts.file_url) && (
@@ -999,7 +1018,7 @@ ${tasksXml}
                       <td className="px-5 py-3 text-muted">{ts.project_name || "—"}</td>
                       <td className="px-5 py-3 text-right">
                         <button
-                          onClick={() => handleDeleteTimesheet(ts.id)}
+                          onClick={() => handleDeleteTimesheet(ts)}
                           className="text-muted hover:text-danger text-[11px] cursor-pointer"
                         >
                           Delete
@@ -1143,7 +1162,7 @@ ${tasksXml}
                         const [sh, sm] = tsStart.split(":").map(Number);
                         const [eh, em] = tsEnd.split(":").map(Number);
                         let diff = eh * 60 + em - (sh * 60 + sm);
-                        if (diff < 0) diff += 24 * 60;
+                        if (diff < 0) diff += 24 * 60; // ends the next day
                         return diff;
                       })()
                     )}
