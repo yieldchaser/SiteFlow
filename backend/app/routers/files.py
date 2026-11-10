@@ -44,6 +44,12 @@ ALLOWED_CONTENT_TYPES = {
     "application/x-7z-compressed",
     "application/gzip",
     "application/x-tar",
+    # Voice notes recorded in the browser (Chrome/Edge webm, Firefox ogg,
+    # Safari mp4) and phone recordings (mp3).
+    "audio/webm",
+    "audio/ogg",
+    "audio/mp4",
+    "audio/mpeg",
 }
 
 
@@ -61,6 +67,14 @@ def _sniff_content_type(data: bytes) -> Optional[str]:
         return "image/gif"
     if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
         return "image/webp"
+    if head.startswith(b"\x1a\x45\xdf\xa3"):
+        return "audio/webm"
+    if head.startswith(b"OggS"):
+        return "audio/ogg"
+    if head[4:8] == b"ftyp":
+        return "audio/mp4"
+    if head.startswith(b"ID3") or head[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
+        return "audio/mpeg"
     if head.startswith(b"PK\x03\x04"):
         return "application/zip"
     if head.startswith(b"Rar!\x1a\x07"):

@@ -1,3 +1,4 @@
+import re
 from uuid import UUID, uuid4
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
@@ -790,6 +791,17 @@ class CommentCreate(BaseModel):
     message_text: Optional[str] = None
     media_url: Optional[str] = None
     voice_note_url: Optional[str] = None
+
+    @field_validator("voice_note_url")
+    @classmethod
+    def _voice_note_is_an_uploaded_file(cls, v):
+        # The old button saved a made-up web address and no audio. A voice note
+        # must now be a file uploaded to the project's Files.
+        if v in (None, ""):
+            return None
+        if not re.fullmatch(r"/apis/v3/files/file/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", v):
+            raise ValueError("A voice note must be a recording uploaded to this project")
+        return v
     progress_qty_added: Optional[float] = None
 
 class CommentResponse(BaseModel):
@@ -898,6 +910,12 @@ def create_task_comment(task_id: UUID, payload: CommentCreate, db: Session = Dep
         raise HTTPException(status_code=404, detail="Project not found")
     membership = get_company_membership(db, current_user, project.company_id)
     require_permission(db, current_user, project.company_id, "planning:edit")
+    if payload.voice_note_url:
+        from app.models import ProjectFile
+        fid = UUID(payload.voice_note_url.rsplit("/", 1)[-1])
+        pf = db.query(ProjectFile).filter(ProjectFile.id == fid).first()
+        if not pf or pf.project_id != task.project_id or not (pf.content_type or "").startswith("audio/"):
+            raise HTTPException(status_code=422, detail="The voice note was not found in this project's files")
 
     # Actor fields are server-owned: the feed records who is actually
     # authenticated (the caller's company_team row and account name), never a

@@ -2,7 +2,7 @@
 import {  getApiHost , readErrorDetail } from "@/lib/api";
 import { authHeaders, formatLabel, toLocalISODate, todayLocalISO } from "@/lib/siteflow";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { useProject } from "@/context/ProjectContext";
 import Icon, { type IconName } from "@/components/marketing/Icon";
@@ -237,9 +237,14 @@ export default function GanttSchedulerPage() {
   const [takeoffW, setTakeoffW] = useState<number>(1);
   const [takeoffH, setTakeoffH] = useState<number>(1);
 
-  // Voice recording states
+  // Voice notes: recorded with the microphone, uploaded to the project's
+  // Files, and played back from there.
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchTasks = async () => {
     try {
@@ -624,22 +629,88 @@ export default function GanttSchedulerPage() {
     }
   }, [useTakeoff, takeoffN, takeoffL, takeoffW, takeoffH]);
 
-  // Simulate Voice note recording
-  const startRecording = () => {
+  const MAX_VOICE_SECONDS = 120;
+
+  const stopRecording = () => {
+    if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+    recordTimerRef.current = null;
+    const r = recorderRef.current;
+    if (r && r.state !== "inactive") r.stop();
+  };
+
+  const startRecording = async () => {
+    if (!selectedTask || !projectId) return;
+    setError("");
+    if (typeof window === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setError("This browser cannot record voice notes. Type the note instead.");
+      return;
+    }
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setError("Microphone access was not allowed. Allow the microphone for this site and try again.");
+      return;
+    }
+    const recorder = new MediaRecorder(stream);
+    const chunks: Blob[] = [];
+    const task = selectedTask;
+    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+    recorder.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      setIsRecording(false);
+      if (chunks.length === 0) return;
+      const type = recorder.mimeType || "audio/webm";
+      const ext = type.includes("ogg") ? "ogg" : type.includes("mp4") ? "m4a" : "webm";
+      const blob = new Blob(chunks, { type });
+      const fd = new FormData();
+      fd.append("project_id", projectId);
+      fd.append("file", blob, `Voice note - ${task.name} - ${todayLocalISO()}.${ext}`);
+      setVoiceBusy(true);
+      try {
+        const up = await fetch(`${getApiHost()}/apis/v3/files/upload`, { method: "POST", headers: { ...(authHeaders() || {}) }, body: fd });
+        if (!up.ok) {
+          setError((await readErrorDetail(up)) || "The voice note could not be uploaded.");
+          return;
+        }
+        const meta = await up.json();
+        await handleSaveComment(`/apis/v3/files/file/${meta.id}`);
+      } finally {
+        setVoiceBusy(false);
+      }
+    };
+    recorderRef.current = recorder;
+    recorder.start();
     setIsRecording(true);
     setRecordingSeconds(0);
-    const interval = setInterval(() => {
-      setRecordingSeconds(prev => {
-        if (prev >= 4) {
-          clearInterval(interval);
-          setIsRecording(false);
-          // Auto save voice comment
-          handleSaveComment("https://siteflow-voice-records.s3.amazonaws.com/rec-0051.mp3");
-          return 0;
-        }
+    recordTimerRef.current = setInterval(() => {
+      setRecordingSeconds((prev) => {
+        if (prev + 1 >= MAX_VOICE_SECONDS) stopRecording();
         return prev + 1;
       });
     }, 1000);
+  };
+
+  // Stop the microphone if the panel closes or the page is left mid-recording.
+  useEffect(() => () => stopRecording(), [selectedTask?.id]);
+
+  const playVoiceNote = async (commentId: string, url: string) => {
+    setPlayingId(commentId);
+    try {
+      const res = await fetch(`${getApiHost()}${url}`, { headers: authHeaders() });
+      if (!res.ok) {
+        setError("This voice note could not be loaded.");
+        setPlayingId(null);
+        return;
+      }
+      const src = URL.createObjectURL(await res.blob());
+      const audio = new Audio(src);
+      audio.onended = () => { URL.revokeObjectURL(src); setPlayingId(null); };
+      await audio.play();
+    } catch {
+      setError("This voice note could not be played.");
+      setPlayingId(null);
+    }
   };
 
   return (
@@ -913,7 +984,7 @@ export default function GanttSchedulerPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-xs font-bold text-foreground">Current Dates vs Original Plan</h3>
-                  <p className="text-[10px] text-muted mt-0.5">How far each task is ahead of or behind its planned dates</p>
+                  <p className="text-[10px] text-muted mt-0.5">How many days each task will finish early or late against its original plan. A task not finished by its end date counts as late up to today.</p>
                 </div>
                 <button
                   onClick={handleSetBaseline}
@@ -926,9 +997,14 @@ export default function GanttSchedulerPage() {
               </div>
 
               {tasks.map(t => {
-                const bStart = t.baseline_start ? new Date(t.baseline_start).getTime() : null;
-                const pStart = new Date(t.start_date).getTime();
-                const diffDays = bStart ? Math.round((pStart - bStart) / (1000 * 60 * 60 * 24)) : 0;
+                // Compare finish dates, day by day in India time. A task not
+                // finished by its end date is late up to today, whatever its
+                // dates say; comparing start dates called such a task on time.
+                const planEnd = t.baseline_end ? toLocalISODate(t.baseline_end) : null;
+                const curEnd = toLocalISODate(t.end_date);
+                const today = todayLocalISO();
+                const finish = t.status !== "completed" && curEnd < today ? today : curEnd;
+                const diffDays = planEnd ? Math.round((Date.parse(finish) - Date.parse(planEnd)) / 86400000) : 0;
                 return (
                   <div key={t.id} className="bg-input border border-border-custom rounded-md p-4 flex items-center justify-between">
                     <div>
@@ -937,21 +1013,21 @@ export default function GanttSchedulerPage() {
                         {t.is_critical && <span className="text-[8px] bg-danger/10 border border-danger/20 text-danger px-1.5 py-0.5 rounded font-bold">CRITICAL</span>}
                       </div>
                       <div className="text-[10px] text-muted mt-1 space-x-3 font-sans">
-                        <span>Planned: {fmtDate(t.start_date)} → {fmtDate(t.end_date)}</span>
+                        <span>Now: {fmtDate(t.start_date)} → {fmtDate(t.end_date)}</span>
                         {t.baseline_start && (
-                          <span className="text-muted">Baseline: {fmtDate(t.baseline_start)} → {fmtDate(t.baseline_end)}</span>
+                          <span className="text-muted">Original plan: {fmtDate(t.baseline_start)} → {fmtDate(t.baseline_end)}</span>
                         )}
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
                       <div>
-                        {bStart ? (
+                        {planEnd ? (
                           diffDays === 0 ? (
-                            <span className="text-[10px] text-success font-bold font-sans">ON TARGET</span>
+                            <span className="text-[10px] text-success font-bold font-sans">{t.status === "completed" ? "FINISHED ON TIME" : "ON TIME"}</span>
                           ) : diffDays > 0 ? (
-                            <span className="text-[10px] text-danger font-bold font-sans">+{diffDays}d DELAY</span>
+                            <span className="text-[10px] text-danger font-bold font-sans">{diffDays} {diffDays === 1 ? "DAY" : "DAYS"} LATE</span>
                           ) : (
-                            <span className="text-[10px] text-info font-bold font-sans">{diffDays}d AHEAD</span>
+                            <span className="text-[10px] text-info font-bold font-sans">{-diffDays} {diffDays === -1 ? "DAY" : "DAYS"} EARLY</span>
                           )
                         ) : (
                           <span className="text-[9px] text-muted italic">No original plan saved</span>
@@ -1348,7 +1424,7 @@ export default function GanttSchedulerPage() {
               
               {/* 1. Subtask checklist */}
               <div className="space-y-3">
-                <h3 className="text-xs font-bold text-muted uppercase tracking-wider">Subtask Checklist</h3>
+                <h3 className="text-xs font-bold text-muted uppercase tracking-wider">Checklist</h3>
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -1384,8 +1460,8 @@ export default function GanttSchedulerPage() {
                   ))}
                   {todos.length === 0 && (
                     <EmptyState
-                      title="No sub-task checklist items"
-                      description="Break down this activity into actionable field checklist items."
+                      title="No checklist items yet"
+                      description="Add the small steps for this task, then tick them off as they are done."
                     />
                   )}
                 </div>
@@ -1394,7 +1470,7 @@ export default function GanttSchedulerPage() {
               {/* 2. Progress posting with evaluated inputs (like 2+3+6) */}
               <div className="space-y-3 border-t border-border-custom pt-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-muted uppercase tracking-wider">Progress entry & Measurement Book</h3>
+                  <h3 className="text-xs font-bold text-muted uppercase tracking-wider">Progress (Measurement Book)</h3>
                   <div className="flex items-center gap-2">
                     <input
                       type="checkbox"
@@ -1404,7 +1480,7 @@ export default function GanttSchedulerPage() {
                       className="accent-primary h-3.5 w-3.5 rounded cursor-pointer"
                     />
                     <label htmlFor="useTakeoffCheck" className="text-xs text-muted select-none cursor-pointer">
-                      Use Takeoff (N x L x W x H)
+                      Work out from size (Nos x L x W x H)
                     </label>
                   </div>
                 </div>
@@ -1475,19 +1551,18 @@ export default function GanttSchedulerPage() {
               {/* 3. Feed activity Timeline */}
               <div className="space-y-3 border-t border-border-custom pt-4">
                 <div className="flex justify-between items-center">
-                  <h3 className="text-xs font-bold text-muted uppercase tracking-wider font-sans">Task Activity Chat Feed</h3>
+                  <h3 className="text-xs font-bold text-muted uppercase tracking-wider font-sans">Updates</h3>
                   
-                  {/* Microphone simulated trigger */}
                   <button
-                    onClick={startRecording}
-                    disabled={isRecording}
+                    onClick={isRecording ? stopRecording : startRecording}
+                    disabled={voiceBusy}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[10px] transition-all font-semibold ${
                       isRecording
                         ? "bg-danger/10 text-danger border-danger/20 font-bold"
                         : "bg-elevated border-border-custom text-muted hover:text-foreground"
                     }`}
                   >
-                    <Icon name="microphone" className="w-3.5 h-3.5" /> {isRecording ? `Recording (${4 - recordingSeconds}s)...` : "Audio Memo"}
+                    <Icon name="microphone" className="w-3.5 h-3.5" /> {voiceBusy ? "Saving voice note..." : isRecording ? `Stop and save (${Math.floor(recordingSeconds / 60)}:${String(recordingSeconds % 60).padStart(2, "0")})` : "Record Voice Note"}
                   </button>
                 </div>
 
@@ -1496,22 +1571,26 @@ export default function GanttSchedulerPage() {
                     <div key={comm.id} className="p-3 rounded-lg bg-input border border-border-custom space-y-1.5">
                       <div className="flex justify-between items-center text-[9px] text-muted">
                         <strong className="text-muted font-bold">{comm.user_name}</strong>
-                        <span>{new Date(comm.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        <span>{new Date(comm.created_at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
                       </div>
                       <p className="text-muted text-xs">{comm.message_text}</p>
                       
-                      {comm.voice_note_url && (
-                        <div className="flex items-center gap-2 p-1.5 rounded bg-elevated border border-border-custom text-[9px] text-muted font-sans">
-                          <span className="inline-flex items-center gap-1"><Icon name="speaker" className="w-3 h-3" /> Audio Note:</span>
-                          <span className="text-primary underline cursor-pointer truncate max-w-[150px]">{comm.voice_note_url}</span>
-                        </div>
+                      {comm.voice_note_url?.startsWith("/apis/v3/files/file/") && (
+                        <button
+                          type="button"
+                          onClick={() => playVoiceNote(comm.id, comm.voice_note_url as string)}
+                          disabled={playingId === comm.id}
+                          className="flex items-center gap-1.5 px-2 py-1 rounded bg-elevated border border-border-custom text-[10px] text-primary font-semibold"
+                        >
+                          <Icon name="speaker" className="w-3 h-3" /> {playingId === comm.id ? "Playing..." : "Play voice note"}
+                        </button>
                       )}
                     </div>
                   ))}
                   {comments.length === 0 && (
                     <EmptyState
                       title="No activity updates posted yet"
-                      description="Post progress notes, site observations, or record voice memos for this task."
+                      description="Post progress notes, site observations or voice notes for this task."
                     />
                   )}
                 </div>
