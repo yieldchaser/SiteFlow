@@ -12,6 +12,7 @@ import Icon, { type IconName } from "@/components/marketing/Icon";
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ProjectDash = {
   id: string;
+  is_office?: boolean;
   company_id: string;
   name: string;
   code?: string | null;
@@ -294,6 +295,8 @@ export default function ProjectDashboardPage() {
   const [docs, setDocs] = useState<BOQDoc[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [budget, setBudget] = useState<ProjectBudget | null>(null);
+  // The head office has no BOQ, progress or sales: its page shows its costs.
+  const [officePl, setOfficePl] = useState<{ head: string; actual: number }[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [drill, setDrill] = useState<DrillData | null>(null);
@@ -319,6 +322,10 @@ export default function ProjectDashboardPage() {
       ]);
       const pData = pRes.ok ? await pRes.json() : null;
       if (pData) setProject(pData);
+      if (pData?.is_office) {
+        const plRes = await fetch(getApi(`/finance/pl?project_id=${projectId}`), { headers: authHeaders() });
+        setOfficePl(plRes.ok ? await plRes.json() : null);
+      }
       if (docRes.ok) setDocs(await docRes.json());
       if (billsRes.ok) setBills(await billsRes.json());
       if (budgetRes.ok) setBudget(await budgetRes.json());
@@ -563,6 +570,46 @@ export default function ProjectDashboardPage() {
       <div className="flex-1 overflow-y-auto">
         <PageShell width="wide">
 
+      {project.is_office ? (
+        <>
+          <div className="rounded-xl border border-border-custom bg-card p-5 sm:p-6 shadow-sm space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold bg-primary/10 text-primary">Head office</span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-elevated text-muted px-2.5 py-1 text-xs font-medium">
+                <Icon name="task_alt" className="w-3.5 h-3.5" />
+                {project.todo_pending ?? 0} pending to-do{(project.todo_pending ?? 0) === 1 ? "" : "s"}
+              </span>
+            </div>
+            <p className="text-sm text-muted">
+              Office staff, rent and admin costs are kept here. This is not a site, so there is no BOQ, schedule,
+              progress or sales. Its costs come off the sites&apos; profit on the company dashboard as head office costs.
+            </p>
+          </div>
+          {seesMoney && (
+            <div>
+              <SectionTitle title="Head office costs" hint="Till date, before GST" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                {(() => {
+                  const heads = (officePl || []).filter((h) => h.head !== "Revenue (Billed)");
+                  const amt = (name: string) => heads.find((h) => h.head === name)?.actual || 0;
+                  const total = heads.reduce((t, h) => t + (Number(h.actual) || 0), 0);
+                  const other = amt("Material Cost") + amt("Subcontractor Cost") + amt("Plant & Machinery");
+                  return [
+                    { label: "Total cost", icon: "outbox" as IconName, value: total, sub: "Everything below together" },
+                    { label: "Salaries", icon: "group" as IconName, value: amt("Labour Cost"), sub: "Finalised payroll, with employer PF and ESI" },
+                    { label: "Office expenses", icon: "receipt" as IconName, value: amt("Overhead"), sub: "Rent, utilities and other expense bills" },
+                    { label: "Purchases and equipment", icon: "inventory" as IconName, value: other, sub: `To pay ${compactINR(payables)}` },
+                  ].map((c) => (
+                    <KpiCard key={c.label} label={c.label} icon={c.icon} value={fmtINR(c.value, currencyDecimalPlaces)} sub={c.sub}
+                      onClick={() => { window.location.href = `/c/${companyId}/d/finance?project=${projectId}`; }} />
+                  ));
+                })()}
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        <>
       {/* Hero: progress, schedule pace, status */}
       <div className="rounded-xl border border-border-custom bg-card p-5 sm:p-6 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-center gap-6">
@@ -837,6 +884,9 @@ export default function ProjectDashboardPage() {
               )}
             </div>
           </div>
+        </>
+      )}
+
         </>
       )}
 
