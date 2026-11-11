@@ -286,19 +286,26 @@ def _validate_location(value: Optional[str]) -> Optional[str]:
     """
     if value is None:
         return None
+    # People paste coordinates as they find them: in quotes (copied from an
+    # example), in brackets, with degree signs, or with a space instead of a
+    # comma. Keep only the two numbers.
     raw = str(value).strip()
+    for ch in "'\"`()[]{}°‘’“”":
+        raw = raw.replace(ch, " ")
+    raw = raw.strip()
     if not raw:
         return None
-    parts = raw.split(",")
+    hint = "Site coordinates should be latitude, longitude, for example 19.0760, 72.8777 (from Google Maps)."
+    parts = [x for x in (raw.split(",") if "," in raw else raw.split()) if x.strip()]
     if len(parts) != 2:
-        raise ValueError("location must be 'latitude,longitude', for example '19.0760,72.8777'")
+        raise ValueError(hint)
     try:
         lat = float(parts[0].strip())
         lng = float(parts[1].strip())
     except ValueError:
-        raise ValueError("location must be 'latitude,longitude' with numeric values")
+        raise ValueError(hint)
     if not (-90.0 <= lat <= 90.0) or not (-180.0 <= lng <= 180.0):
-        raise ValueError("location out of range: latitude -90..90, longitude -180..180")
+        raise ValueError("Site coordinates are out of range: latitude is -90 to 90, longitude -180 to 180.")
     return f"{lat},{lng}"
 
 

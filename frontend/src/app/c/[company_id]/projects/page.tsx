@@ -684,7 +684,11 @@ function CreateProjectModal({
       } else {
         // Never close on failure. This used to call onClose(), which threw away
         // everything the user had typed and told them nothing at all.
-        setFormError(await readErrorDetail(res));
+        const err = await readErrorDetail(res);
+        setFormError(err);
+        // The coordinates box is on step 1. Shown on step 3, the error sat under
+        // a company's own "Location" custom field, and people fixed that instead.
+        if (/^site coordinates/i.test(err)) setStep(1);
       }
     } finally {
       setSaving(false);

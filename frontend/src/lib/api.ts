@@ -27,6 +27,17 @@ export const getApiHost = (): string => {
  * Same normalisation as readErrorDetail, for the many call sites that have
  * already parsed the body for other reasons and only hold `body.detail`.
  */
+// Plain names for request fields, so an error reads "Site coordinates: ..."
+// rather than "location: ...". A message that already names its field is
+// shown as it is.
+const FIELD_LABELS: Record<string, string> = { location: "Site coordinates" };
+
+function withField(field: string, msg: string): string {
+  if (!field || !msg) return msg;
+  const label = FIELD_LABELS[field] || field;
+  return msg.toLowerCase().startsWith(label.toLowerCase()) ? msg : `${label}: ${msg}`;
+}
+
 export function detailToMessage(detail: unknown, fallback: string): string {
   if (typeof detail === "string" && detail) return detail;
   if (Array.isArray(detail)) {
@@ -40,7 +51,7 @@ export function detailToMessage(detail: unknown, fallback: string): string {
           : "";
         // Pydantic prefixes a check's own message with "Value error, ".
         const msg = (row.msg || "").replace(/^Value error, /, "");
-        return field && msg ? `${field}: ${msg}` : msg;
+        return withField(field, msg);
       })
       .filter(Boolean);
     if (parts.length) return parts.join("; ");
@@ -65,7 +76,7 @@ export async function readErrorDetail(res: Response): Promise<string> {
             : "";
           // Pydantic prefixes a check's own message with "Value error, ".
           const msg = (row.msg || "").replace(/^Value error, /, "");
-          return field && msg ? `${field}: ${msg}` : msg;
+          return withField(field, msg);
         })
         .filter(Boolean);
       if (parts.length) return parts.join("; ");

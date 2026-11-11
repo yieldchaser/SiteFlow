@@ -237,3 +237,17 @@ def test_punch_outside_the_geofence_is_not_verified(client, db, make_tenant, aut
     assert r.json()["location_verified"] is False, (
         "a punch 350 km from site was recorded as GPS-verified"
     )
+
+
+def test_coordinates_pasted_with_quotes_or_brackets_are_accepted(client, db, make_tenant, auth_headers):
+    """VCPL typed '18.651125,72.868279' with the quotes, copied from the error
+    message's own example, and the project could not be saved."""
+    comp, user, _ = make_tenant(company_name=f"R750Q {uuid.uuid4().hex[:6]}", user_name="R750Q")
+    hdr = auth_headers(user, comp)
+    for i, typed in enumerate(("'18.651125,72.868279'", "(18.651125, 72.868279)", "18.651125 72.868279",
+                               "18.651125°, 72.868279°")):
+        r = _create_project(client, hdr, comp.id, f"R750Q {i}", location=typed)
+        assert r.status_code in (200, 201), f"{typed!r}: {r.text}"
+        assert r.json()["location"] == "18.651125,72.868279", r.json()
+    r = _create_project(client, hdr, comp.id, "R750Q bad", location="abc")
+    assert r.status_code == 422 and "'" not in r.json()["detail"][0]["msg"], r.text
