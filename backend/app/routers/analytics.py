@@ -16,6 +16,8 @@ from sqlalchemy import Date, cast, func, true
 from sqlalchemy.orm import Session
 
 from app.office_projects import is_office_project
+from app.project_money import project_money
+from app import payroll_scope
 from app.project_health import project_health
 from app.database import get_db
 from app.auth import get_current_user, verify_company_access, scope_projects, project_ids_for_user
@@ -46,6 +48,8 @@ from app.models import (
     MaterialTransaction,
     GoodsReceiptNote,
     MaterialWastage,
+    PayrollLineItem,
+    PayrollRun,
     Task,
     User,
     WorkOrder,
@@ -159,6 +163,9 @@ def get_company_analytics(company_id: uuid.UUID, db: Session = Depends(get_db), 
         .all()
     )
     project_ids = [p.id for p in projects]
+    # The head office is not a site: its salaries, rent and office attendance
+    # stay out of budget burn, the S-curve and labour productivity.
+    site_ids = [p.id for p in projects if not is_office_project(p)]
 
     budgets = (
         db.query(ProjectBudget)
@@ -208,9 +215,9 @@ def get_company_analytics(company_id: uuid.UUID, db: Session = Depends(get_db), 
     )
     attendance_logs = (
         db.query(AttendanceLog)
-        .filter(AttendanceLog.project_id.in_(project_ids))
+        .filter(AttendanceLog.project_id.in_(site_ids))
         .all()
-        if project_ids
+        if site_ids
         else []
     )
     ncrs = (
@@ -250,6 +257,7 @@ def get_company_analytics(company_id: uuid.UUID, db: Session = Depends(get_db), 
 
     total_budget = 0.0
     total_spend = 0.0
+    head_office_spend = 0.0
     project_summary = []
     for project in projects:
         budget = budget_by_project.get(project.id)
@@ -276,8 +284,12 @@ def get_company_analytics(company_id: uuid.UUID, db: Session = Depends(get_db), 
             if total_tasks and not is_office_project(project) else None
         )
 
-        total_budget += project_budget_total
-        total_spend += project_spend
+        office = is_office_project(project)
+        if office:
+            head_office_spend += project_spend
+        else:
+            total_budget += project_budget_total
+            total_spend += project_spend
 
         project_summary.append(
             {
@@ -290,7 +302,8 @@ def get_company_analytics(company_id: uuid.UUID, db: Session = Depends(get_db), 
                 "completion_pct": completion_pct,
                 "task_count": total_tasks,
                 "completed_tasks": completed_tasks,
-                "health": project.health or "Good",
+                "health": "-" if office else (project.health or "Good"),
+                "is_office": office,
                 "category": project.category,
                 "stage": project.stage,
                 "key_personnel_id": str(project.key_personnel_id) if project.key_personnel_id else None
@@ -305,7 +318,8 @@ def get_company_analytics(company_id: uuid.UUID, db: Session = Depends(get_db), 
     budget_variance = round(total_budget - total_spend, 2)
 
     date_candidates = []
-    for collection in (tasks, bills, attendance_logs, purchase_orders):
+    site_bills = [b for b in bills if b.project_id not in set(project_ids) - set(site_ids)]
+    for collection in (tasks, site_bills, attendance_logs, purchase_orders):
         for item in collection:
             for attr in ("start_date", "end_date", "invoice_date", "due_date", "attendance_date", "po_date", "created_at"):
                 value = getattr(item, attr, None)
@@ -343,7 +357,7 @@ def get_company_analytics(company_id: uuid.UUID, db: Session = Depends(get_db), 
         month_start_d = month.date()
         month_spend = sum(
             _to_float(bill.total_payable)
-            for bill in bills
+            for bill in site_bills
             if is_expense_invoice_type(bill.invoice_type)
             and bill.status != "Cancelled"
             and bill.invoice_date
@@ -515,13 +529,15 @@ def get_company_analytics(company_id: uuid.UUID, db: Session = Depends(get_db), 
     return {
         "company_id": str(company.id),
         "company_name": company.name,
-        "project_count": len(projects),
+        "project_count": len(site_ids),
         "total_tasks": total_tasks,
         "completed_tasks": completed_tasks,
         "task_completion_pct": round((completed_tasks / total_tasks) * 100, 1) if total_tasks else 0.0,
         "total_budget": round(total_budget, 2),
         "total_spend": round(total_spend, 2),
         "budget_variance": budget_variance,
+        # Shown beside the sites' figures, never inside them.
+        "head_office_spend": round(head_office_spend, 2),
         "burn_rate_pct": burn_rate_pct,
         "s_curve": s_curve,
         "budget_burn_series": monthly_burn,
@@ -762,6 +778,7 @@ def get_company_financial_analytics(company_id: uuid.UUID, project_id: Optional[
     monthly_expense = defaultdict(float)
     expense_by_type = defaultdict(float)
     party_balances = defaultdict(float)
+    sites_sales = sites_cost = office_cost = 0.0
 
     for p in projects:
         p_status = p.status or "—"
@@ -776,21 +793,43 @@ def get_company_financial_analytics(company_id: uuid.UUID, project_id: Optional[
             )
 
         p_bills = [b for b in bills if b.project_id == p.id]
-        total_expense = sum(_to_float(b.subtotal) for b in p_bills if is_expense_invoice_type(b.invoice_type))
-        total_sales = sum(_to_float(b.subtotal) for b in p_bills if is_revenue_invoice_type(b.invoice_type))
+        # Full cost as the P&L counts it: bills, salaries, equipment and fuel.
+        money = project_money(db, p.id)
+        total_expense = money["cost"]
+        total_sales = money["revenue"]
+        office = is_office_project(p)
+        if office:
+            office_cost += total_expense
+        else:
+            sites_sales += total_sales
+            sites_cost += total_expense
+        expense_by_type["Salaries"] += money["labour"]
+        # Salaries go in the month they were paid for, like bills by bill date.
+        for month, amt in payroll_scope.for_project(
+            db.query(PayrollRun.payroll_month,
+                     func.sum(PayrollLineItem.gross_salary + PayrollLineItem.pf_employer + PayrollLineItem.esi_employer))
+            .select_from(PayrollLineItem).join(PayrollRun).filter(PayrollRun.status == "finalized"),
+            p.id,
+        ).group_by(PayrollRun.payroll_month).all():
+            try:
+                monthly_expense[datetime.strptime(month, "%Y-%m").strftime("%b %Y")] += _to_float(amt)
+            except (TypeError, ValueError):
+                pass
         # D3: settlement money direction is explicit - payment_in / i_received are
         # cash in, payment_out / i_paid are cash out. Do not mix all settlement
         # types into both sides.
         payment_in = sum(_to_float(b.paid_amount) for b in p_bills if is_revenue_invoice_type(b.invoice_type) or is_settlement_money_in(b.invoice_type))
         payment_out = sum(_to_float(b.paid_amount) for b in p_bills if is_expense_invoice_type(b.invoice_type) or is_settlement_money_out(b.invoice_type))
 
-        health = project_health(p_status, total_expense, budget_total)
+        # The head office is a cost centre: no budget burn, no health.
+        health = "-" if office else project_health(p_status, total_expense, budget_total)
 
         project_summaries.append({
             "project_id": str(p.id),
             "project_name": p.name,
             "project_status": p_status,
             "project_health": health,
+            "is_office": office,
             "project_budget": round(budget_total, 2),
             "total_expense": round(total_expense, 2),
             "budget_remaining": round(budget_total - total_expense, 2),
@@ -807,7 +846,8 @@ def get_company_financial_analytics(company_id: uuid.UUID, project_id: Optional[
             monthly_sales[m_label] += _to_float(b.subtotal)
         elif is_expense_invoice_type(b.invoice_type):
             monthly_expense[m_label] += _to_float(b.subtotal)
-            t_label = "Subcontractor Bill" if b.invoice_type == "subcon" else "Purchase Invoice"
+            t_label = {"subcon": "Subcontractor Bill", "equipment": "Equipment Hire", "expense": "Expenses"}.get(
+                b.invoice_type, "Purchase Invoice")
             expense_by_type[t_label] += _to_float(b.subtotal)
         # settlement and movement do not book revenue or cost (D3)
 
@@ -843,8 +883,16 @@ def get_company_financial_analytics(company_id: uuid.UUID, project_id: Optional[
         "expense_series": expense_series,
         "margin_series": margin_series,
         "expense_by_type": [
-            {"name": k, "value": round(v, 2)} for k, v in expense_by_type.items()
+            {"name": k, "value": round(v, 2)} for k, v in expense_by_type.items() if round(v, 2)
         ],
         "party_balances": party_list[:5],
         "project_summaries": project_summaries,
+        # Company profit = what the sites made, less what the head office cost.
+        "totals": {
+            "sites_sales": round(sites_sales, 2),
+            "sites_cost": round(sites_cost, 2),
+            "sites_margin": round(sites_sales - sites_cost, 2),
+            "head_office_cost": round(office_cost, 2),
+            "company_profit": round(sites_sales - sites_cost - office_cost, 2),
+        },
     }

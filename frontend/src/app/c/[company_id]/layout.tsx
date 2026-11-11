@@ -8,6 +8,7 @@ import { CompanySettingsProvider } from "@/context/CompanySettingsContext";
 import { PermissionsProvider } from "@/context/PermissionsContext";
 import Sidebar from "@/components/Sidebar";
 import PageAccessGuard from "@/components/rbac/PageAccessGuard";
+import SiteOnlyGate from "@/components/SiteOnlyGate";
 import { SidebarProvider } from "@/context/SidebarContext";
 import { isMissingOrDemoTenant } from "@/lib/company-guard";
 import { UNITS } from "@/lib/units";
@@ -87,7 +88,7 @@ export default function CompanyLayout({ children }: { children: React.ReactNode 
 
               {/* Main Workspace Area */}
               <main className="flex-1 flex flex-col h-full overflow-hidden relative">
-                <PageAccessGuard>{children}</PageAccessGuard>
+                <PageAccessGuard><SiteOnlyGate>{children}</SiteOnlyGate></PageAccessGuard>
               </main>
               <datalist id="sf-units">
                 {UNITS.map((u) => <option key={u} value={u} />)}

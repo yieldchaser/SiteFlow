@@ -51,6 +51,8 @@ export type ProjectRecord = {
   project_name?: string;
   code?: string;
   project_code?: string;
+  // The head office: a cost centre, not a site.
+  is_office?: boolean;
 };
 
 export type ProjectContextValue = {
@@ -245,7 +247,9 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
               (candidateProjectId ? list.find((p) => p?.id === candidateProjectId) : undefined) ||
               // With nothing remembered, open on a live site rather than
               // whichever project happens to be first (often a cancelled one).
-              list.find((p) => isValidUuid(p?.id) && /ongoing|active|progress/i.test(String((p as { status?: string })?.status ?? ""))) ||
+              // The head office is never the default: it is not a site.
+              list.find((p) => isValidUuid(p?.id) && !p.is_office && /ongoing|active|progress/i.test(String((p as { status?: string })?.status ?? ""))) ||
+              list.find((p) => isValidUuid(p?.id) && !p.is_office) ||
               list.find((p) => isValidUuid(p?.id));
 
             if (matched && matched.id) {

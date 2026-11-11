@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, Numeric, Boolean, DateTime, String
 from datetime import datetime
 from typing import List, Optional
-from app.office_projects import is_office_project
+from app.office_projects import is_office_project, looks_like_office_name, OFFICE_CATEGORY
 from app.database import get_db
 from app import models
 from app.auth import get_current_user, verify_company_access, verify_project_access, get_company_membership, require_permission, scope_projects
@@ -311,6 +311,8 @@ class ProjectCreate(BaseModel):
     state: Optional[str] = None
     stage: Optional[str] = None
     category: Optional[str] = None
+    # Head office, not a site. Left out, it is ticked for names like "Head Office".
+    is_head_office: Optional[bool] = None
     project_value: float = Field(0.0, ge=0, le=1e15)
     planned_start_date: Optional[str] = None
     planned_end_date: Optional[str] = None
@@ -348,6 +350,7 @@ class ProjectUpdate(BaseModel):
     state: Optional[str] = None
     stage: Optional[str] = None
     category: Optional[str] = None
+    is_head_office: Optional[bool] = None
     project_value: Optional[float] = Field(None, ge=0, le=1e15)
     planned_start_date: Optional[str] = None
     planned_end_date: Optional[str] = None
@@ -466,6 +469,8 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db), curren
         state=payload.state,
         stage=payload.stage,
         category=payload.category,
+        is_head_office=(payload.is_head_office if payload.is_head_office is not None
+                        else looks_like_office_name(payload.name) or (payload.category or "").strip() == OFFICE_CATEGORY),
         project_value=payload.project_value,
         planned_start_date=_parse_dt(payload.planned_start_date),
         planned_end_date=_parse_dt(payload.planned_end_date),

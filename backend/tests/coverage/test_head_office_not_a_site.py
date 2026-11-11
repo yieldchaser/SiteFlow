@@ -1,7 +1,7 @@
 """Head Office is a project only so office staff have somewhere to belong.
 
 Asked for during the VCPL rollout: it must not show up as a site in progress,
-health or status counts. Its money still counts.
+health or status counts. Its money still counts, as head office overheads.
 """
 import uuid
 
@@ -16,7 +16,8 @@ def test_head_office_left_out_of_site_counts(client, db, make_tenant, auth_heade
     hdr = auth_headers(user, comp)
     db.add_all([
         models.Project(id=uuid.uuid4(), company_id=comp.id, name="JNPT Berth", status="Ongoing"),
-        models.Project(id=uuid.uuid4(), company_id=comp.id, name="Head Office - Navi Mumbai", status="Ongoing"),
+        models.Project(id=uuid.uuid4(), company_id=comp.id, name="Head Office - Navi Mumbai", status="Ongoing",
+                       is_head_office=True),
         models.Project(id=uuid.uuid4(), company_id=comp.id, name="Mumbai HQ", status="Ongoing",
                        category="Head Office / Office"),
     ])

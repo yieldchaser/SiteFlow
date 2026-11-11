@@ -168,6 +168,8 @@ async def import_boq(
         raise HTTPException(status_code=404, detail="Project not found")
     get_company_membership(db, current_user, project.company_id)
     require_permission(db, current_user, project.company_id, "budgeting:edit")
+    from app.office_projects import refuse_on_office
+    refuse_on_office(db, project.id, "BOQs")
 
     if not file.filename.endswith(('.xlsx', '.xlsm')):
         raise HTTPException(status_code=400, detail="Only .xlsx or .xlsm Excel files are supported")
@@ -479,6 +481,8 @@ def create_boq_document(req: BOQDocumentCreate, db: Session = Depends(get_db), c
         raise HTTPException(status_code=404, detail="Project not found")
     get_company_membership(db, current_user, project.company_id)
     require_permission(db, current_user, project.company_id, "budgeting:edit")
+    from app.office_projects import refuse_on_office
+    refuse_on_office(db, project.id, "BOQs")
     if req.milestone_done > req.milestone_total:
         raise HTTPException(status_code=400, detail="milestone_done cannot exceed milestone_total")
     if req.client_party_id:
@@ -540,6 +544,8 @@ def create_boq_item(doc_id: UUID, req: BOQItemCreate, db: Session = Depends(get_
         raise HTTPException(status_code=404, detail="Project not found")
     get_company_membership(db, current_user, project.company_id)
     require_permission(db, current_user, project.company_id, "budgeting:edit")
+    from app.office_projects import refuse_on_office
+    refuse_on_office(db, project.id, "BOQ items")
 
     # R2-334: same library gate as the spreadsheet importer. A cost code that
     # is not in the company's Cost Code Library would never roll up.

@@ -162,6 +162,8 @@ class Project(Base):
     health = Column(String(50), default="Good", nullable=True)
     category = Column(String(100), nullable=True)
     stage = Column(String(100), nullable=True)
+    # The company's head office: a cost centre, not a site (see office_projects.py).
+    is_head_office = Column(Boolean, default=False, server_default="false", nullable=False)
     key_personnel_id = Column(UUID(as_uuid=True), ForeignKey("company_team.id", ondelete="SET NULL"), nullable=True)
     project_value = Column(Numeric(18, 2), default=0.0, nullable=False)
     planned_start_date = Column(DateTime(timezone=True), nullable=True)

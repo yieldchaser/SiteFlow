@@ -1264,10 +1264,16 @@ export default function DashboardPage() {
                               </td>
                             </tr>
                           ) : (
-                            financialData.project_summaries.map((p: any, idx: number) => (
+                            // Sites first; the head office is a cost centre and sits last.
+                            [...financialData.project_summaries]
+                              .sort((a: any, b: any) => Number(Boolean(a.is_office)) - Number(Boolean(b.is_office)))
+                              .map((p: any, idx: number) => (
                               <tr key={idx} className="border-t border-border-custom hover:bg-elevated transition-all text-foreground">
                                 <td className="px-3 py-3 text-center border-r border-border-custom text-muted font-sans font-bold">{idx + 1}</td>
-                                <td className="px-4 py-3 border-r border-border-custom font-bold text-foreground">{p.project_name}</td>
+                                <td className="px-4 py-3 border-r border-border-custom font-bold text-foreground">
+                                  {p.project_name}
+                                  {p.is_office && <span className="block text-[10px] font-semibold text-muted">Head office costs, not a site</span>}
+                                </td>
                                 <td className="px-4 py-3 border-r border-border-custom text-muted">{formatLabel(p.project_status)}</td>
                                 <td className="px-4 py-3 text-center border-r border-border-custom">
                                   {p.project_health === "-" ? (
@@ -1277,19 +1283,19 @@ export default function DashboardPage() {
                                   )}
                                 </td>
                                 <td className="px-4 py-3 text-right border-r border-border-custom font-semibold text-muted">
-                                  {fmtINR(p.project_budget)}
+                                  {p.is_office ? "-" : fmtINR(p.project_budget)}
                                 </td>
                                 <td className="px-4 py-3 text-right border-r border-border-custom font-semibold text-muted">
                                   {fmtINR(p.total_expense)}
                                 </td>
                                 <td className="px-4 py-3 text-right border-r border-border-custom font-semibold text-muted">
-                                  {fmtINR(p.budget_remaining)}
+                                  {p.is_office ? "-" : fmtINR(p.budget_remaining)}
                                 </td>
                                 <td className="px-4 py-3 text-right border-r border-border-custom font-semibold text-muted">
-                                  {fmtINR(p.total_sales)}
+                                  {p.is_office ? "-" : fmtINR(p.total_sales)}
                                 </td>
                                 <td className="px-4 py-3 text-right border-r border-border-custom font-semibold text-muted">
-                                  {fmtINR(p.project_margin)}
+                                  {p.is_office ? "-" : fmtINR(p.project_margin)}
                                 </td>
                                 <td className="px-4 py-3 text-right border-r border-border-custom font-semibold text-muted">
                                   {fmtINR(p.payment_in)}
@@ -1306,6 +1312,30 @@ export default function DashboardPage() {
                         </tbody>
                       </table>
                     </div>
+                    {/* Company profit: what the sites made, less what the head office cost. */}
+                    {financialData?.totals && financialData.project_summaries?.length > 0 && (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-border-custom border-t border-border-custom text-xs">
+                        <div className="bg-card px-4 py-3">
+                          <span className="block text-[10px] font-bold text-muted uppercase tracking-wider">Sites margin</span>
+                          <strong className="text-foreground">{fmtINR(financialData.totals.sites_margin)}</strong>
+                          <span className="block text-[10px] text-muted">
+                            Sales {fmtINR(financialData.totals.sites_sales)} less cost {fmtINR(financialData.totals.sites_cost)}
+                          </span>
+                        </div>
+                        <div className="bg-card px-4 py-3">
+                          <span className="block text-[10px] font-bold text-muted uppercase tracking-wider">Head office costs</span>
+                          <strong className="text-foreground">{fmtINR(financialData.totals.head_office_cost)}</strong>
+                          <span className="block text-[10px] text-muted">Office salaries, rent and admin</span>
+                        </div>
+                        <div className="bg-card px-4 py-3">
+                          <span className="block text-[10px] font-bold text-muted uppercase tracking-wider">Company profit</span>
+                          <strong className={financialData.totals.company_profit < 0 ? "text-danger" : "text-foreground"}>
+                            {fmtINR(financialData.totals.company_profit)}
+                          </strong>
+                          <span className="block text-[10px] text-muted">Sites margin less head office costs</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Charts Grid - First Row (Sales, Expense, Margin) */}

@@ -8,6 +8,7 @@ import { useProject } from "@/context/ProjectContext";
 import Icon from "@/components/marketing/Icon";
 import { usePermissions } from "@/context/PermissionsContext";
 import { canOpen } from "@/lib/routeAccess";
+import { isSiteOnlyPath } from "@/components/SiteOnlyGate";
 
 const TABS = [
   { label: "Dashboard", slug: "dashboard" },
@@ -28,6 +29,10 @@ const TABS = [
 // Modules that live only at company level. Each entry mirrors the exact final
 // destination of that module's legacy p/[project_id] redirect stub; withProject
 // appends ?project= so the company page opens scoped to this project.
+// Tabs a head office does not have: it has no BOQ, schedule, subcontractors
+// or inspections.
+const SITE_ONLY_TABS = new Set(["boq", "task", "subcon", "quality"]);
+
 const MORE_TABS = [
   { label: "Billing", path: "/d/billing", withProject: true },
   { label: "Budget", path: "/d/budget", withProject: true },
@@ -76,6 +81,7 @@ type ProjectInfo = {
   name: string;
   code?: string | null;
   status: string;
+  is_office?: boolean;
 };
 
 export default function ProjectDetailLayout({ children }: { children: React.ReactNode }) {
@@ -102,6 +108,7 @@ export default function ProjectDetailLayout({ children }: { children: React.Reac
   // The switcher list already has the name; use it until the project loads.
   const listed = projects.find((p) => p.id === projectId);
   const base = `/c/${companyId}/p/${projectId}`;
+  const isOffice = Boolean(project?.is_office ?? listed?.is_office);
   const currentSlug =
     TABS.find((t) => pathname === `${base}/${t.slug}`)?.slug || "dashboard";
 
@@ -120,6 +127,7 @@ export default function ProjectDetailLayout({ children }: { children: React.Reac
           name: data.name,
           code: data.code,
           status: data.status || "—",
+          is_office: Boolean(data.is_office),
         });
         setStatus(data.status || "—");
       }
@@ -210,7 +218,7 @@ export default function ProjectDetailLayout({ children }: { children: React.Reac
 
       {/* 11-sub-tab nav bar */}
       <div className="flex items-center gap-1 px-4 py-2 border-b border-border-custom bg-background/40 overflow-x-auto">
-        {TABS.filter((t) => canOpen(`${base}/${t.slug}`, can)).map((t) => {
+        {TABS.filter((t) => canOpen(`${base}/${t.slug}`, can) && !(isOffice && SITE_ONLY_TABS.has(t.slug))).map((t) => {
           const href = `${base}/${t.slug}`;
           const active = pathname === href;
           return (
@@ -249,7 +257,7 @@ export default function ProjectDetailLayout({ children }: { children: React.Reac
                 aria-hidden="true"
               />
               <div className="absolute right-0 top-full mt-1 z-50 w-[26rem] max-h-80 overflow-y-auto rounded-md border border-border-custom bg-card shadow-xl p-2 grid grid-cols-1 md:grid-cols-2 gap-1">
-                {MORE_TABS.filter((m) => canOpen(`/c/${companyId}${m.path}`, can)).map((m) => (
+                {MORE_TABS.filter((m) => canOpen(`/c/${companyId}${m.path}`, can) && !(isOffice && isSiteOnlyPath(m.path))).map((m) => (
                   <Link
                     key={m.path}
                     href={`/c/${companyId}${m.path}${m.withProject ? `?project=${projectId}` : ""}`}
@@ -273,6 +281,13 @@ export default function ProjectDetailLayout({ children }: { children: React.Reac
               {projects.length > 0 && (
                 <div className="mt-2 text-xs text-muted">Pick one of your projects from the list at the top.</div>
               )}
+            </div>
+          </div>
+        ) : isOffice && SITE_ONLY_TABS.has(pathname.slice(base.length + 1).split("/")[0]) ? (
+          <div className="p-6">
+            <div className="max-w-lg rounded-lg border border-border-custom bg-card p-4 text-sm text-muted">
+              {project?.name} is your head office, not a site. BOQs, tasks, subcontractor work and inspections belong
+              to a site. Pick a site from the list at the top.
             </div>
           </div>
         ) : (

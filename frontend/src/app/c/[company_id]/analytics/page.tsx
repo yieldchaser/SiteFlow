@@ -28,6 +28,7 @@ interface ProjectSummary {
   spend: number;
   variance: number;
   completion_pct: number | null;
+  is_office?: boolean;
   task_count: number;
   completed_tasks: number;
 }
@@ -62,6 +63,8 @@ interface AnalyticsPayload {
   total_spend: number;
   budget_variance: number;
   burn_rate_pct: number | null;
+  // Head office spend, kept out of the sites' budget figures above.
+  head_office_spend?: number;
   s_curve: AnalyticsPoint[];
   budget_burn_series: BurnPoint[];
   labour_productivity: {
@@ -322,7 +325,10 @@ export default function CompanyAnalyticsPage() {
               {
                 label: "Budget Left",
                 value: data ? formatCurrency(data.budget_variance) : "—",
-                hint: data ? `Spend ${formatCurrency(data.total_spend)} vs budget ${formatCurrency(data.total_budget)}` : "Loading",
+                hint: data
+                  ? `Sites spent ${formatCurrency(data.total_spend)} of ${formatCurrency(data.total_budget)}${
+                      data.head_office_spend ? `. Head office ${formatCurrency(data.head_office_spend)} is extra` : ""}`
+                  : "Loading",
                 tone: data && data.budget_variance < 0 ? "text-danger" : "text-foreground",
               },
               {
@@ -483,12 +489,12 @@ export default function CompanyAnalyticsPage() {
                       <tr key={project.project_id} className="border-t border-border-custom hover:bg-elevated">
                         <td className="px-4 py-3">
                           <div className="font-semibold text-foreground">{project.project_name}</div>
-                          <div className="text-[11px] text-muted">{project.code ?? "—"}</div>
+                          <div className="text-[11px] text-muted">{project.is_office ? "Head office costs, not a site" : (project.code ?? "—")}</div>
                         </td>
-                        <td className="px-4 py-3 text-right text-muted">{formatCurrency(project.budget)}</td>
+                        <td className="px-4 py-3 text-right text-muted">{project.is_office ? "-" : formatCurrency(project.budget)}</td>
                         <td className="px-4 py-3 text-right text-muted">{formatCurrency(project.spend)}</td>
-                        <td className={`px-4 py-3 text-right font-semibold ${project.variance >= 0 ? "text-success" : "text-danger"}`}>
-                          {formatCurrency(project.variance)}
+                        <td className={`px-4 py-3 text-right font-semibold ${project.is_office ? "text-muted" : project.variance >= 0 ? "text-success" : "text-danger"}`}>
+                          {project.is_office ? "-" : formatCurrency(project.variance)}
                         </td>
                         <td className="px-4 py-3 text-right text-foreground">{project.completion_pct == null ? "-" : `${project.completion_pct}%`}</td>
                       </tr>

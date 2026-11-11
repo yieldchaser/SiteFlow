@@ -15,7 +15,7 @@ from app.workflow_controls import (
     enforce_progress_over_estimate,
 )
 from pydantic import BaseModel, field_validator, Field, model_validator
-from app.office_projects import is_office_project
+from app.office_projects import is_office_project, looks_like_office_name, OFFICE_CATEGORY, refuse_on_office
 
 router = APIRouter(
     prefix="/planning",
@@ -564,6 +564,7 @@ def create_task(request: TaskCreateRequest, db: Session = Depends(get_db), curre
         raise HTTPException(status_code=404, detail="Project not found")
     get_company_membership(db, current_user, project.company_id)
     require_permission(db, current_user, project.company_id, "planning:edit")
+    refuse_on_office(db, project.id, "Schedule tasks")
 
     # Data-integrity: a parent task must belong to the same project as the new task.
     if request.parent_id is not None:
@@ -988,6 +989,7 @@ class ProjectCreateSchema(BaseModel):
     category: Optional[str] = None
     stage: Optional[str] = None
     key_personnel_id: Optional[UUID] = None
+    is_head_office: Optional[bool] = None
 
 class ProjectUpdateSchema(BaseModel):
     name: Optional[str] = None
@@ -1001,6 +1003,7 @@ class ProjectUpdateSchema(BaseModel):
     category: Optional[str] = None
     stage: Optional[str] = None
     key_personnel_id: Optional[UUID] = None
+    is_head_office: Optional[bool] = None
 
 class ProjectResponseSchema(BaseModel):
     id: UUID
@@ -1017,6 +1020,7 @@ class ProjectResponseSchema(BaseModel):
     stage: Optional[str] = None
     key_personnel_id: Optional[UUID] = None
     is_pinned: bool = False
+    is_head_office: bool = False
     is_office: bool = False
 
     @model_validator(mode="after")
@@ -1090,7 +1094,9 @@ def create_project_v3(payload: ProjectCreateSchema, db: Session = Depends(get_db
         health=payload.health or "Good",
         category=payload.category,
         stage=payload.stage,
-        key_personnel_id=payload.key_personnel_id
+        key_personnel_id=payload.key_personnel_id,
+        is_head_office=(payload.is_head_office if payload.is_head_office is not None
+                        else looks_like_office_name(payload.name) or (payload.category or "").strip() == OFFICE_CATEGORY),
     )
     _require_own_team_member(db, payload.company_id, payload.key_personnel_id)
     db.add(proj)
@@ -1125,6 +1131,8 @@ def update_project_v3(project_id: UUID, payload: ProjectUpdateSchema, db: Sessio
         proj.category = payload.category
     if payload.stage is not None:
         proj.stage = payload.stage
+    if payload.is_head_office is not None:
+        proj.is_head_office = payload.is_head_office
     if payload.key_personnel_id is not None:
         _require_own_team_member(db, proj.company_id, payload.key_personnel_id)
         proj.key_personnel_id = payload.key_personnel_id

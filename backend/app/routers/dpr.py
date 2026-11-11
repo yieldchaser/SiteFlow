@@ -97,6 +97,8 @@ def create_dpr(req: DPRCreateRequest, db: Session = Depends(get_db), current_use
     # A daily report is site progress: Planning edit (Supervisor, Site Engineer)
     # is enough, without the right to create or change projects.
     require_any_permission(db, current_user, project.company_id, "planning:edit", "projects:edit")
+    from app.office_projects import refuse_on_office
+    refuse_on_office(db, project.id, "Daily progress reports")
 
     # Workflow Controls: Entry Controls (creation date window)
     enforce_entry_creation_window(db, project.company_id, req.dpr_date)

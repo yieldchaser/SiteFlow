@@ -586,69 +586,15 @@ def get_project_pl(project_id: uuid.UUID, db: Session = Depends(get_db), _: None
     sub_budget = float(budget.subcon_budget) if budget else 0.0
     eq_budget = float(budget.equipment_budget) if budget else 0.0
     
-    # Load actual values by summing corresponding entries in bills and salaries.
-    # Bills count at their work value (subtotal): before GST, which is reclaimed
-    # as input credit, and before TDS and retention, which are still cost.
-    # 1. Revenue: Client invoices & material sales (invoice_type in ["sale", "material_sale"])
-    revenue_actual = db.query(func.sum(Bill.subtotal)).filter(
-        Bill.project_id == proj_uuid,
-        Bill.invoice_type.in_(REVENUE_INVOICE_TYPES),
-        Bill.status != "Cancelled"
-    ).scalar() or 0.0
-
-    # 2. Material Cost: Vendor purchase bills (invoice_type == "purchase") + wastage.
-    # R2-749: Partition expense invoice types into their respective heads:
-    # Material = purchase, Subcontractor = subcon, Plant & Machinery = equipment + deployments + fuel, Overhead = expense.
-    material_actual = db.query(func.sum(Bill.subtotal)).filter(
-        Bill.project_id == proj_uuid,
-        Bill.invoice_type == "purchase",
-        Bill.status != "Cancelled"
-    ).scalar() or 0.0
-    material_wastage_actual = db.query(func.sum(MaterialWastage.estimated_value)).filter(
-        MaterialWastage.project_id == proj_uuid
-    ).scalar() or 0.0
-    material_actual = float(material_actual) + float(material_wastage_actual)
-
-    # 3. Labour Cost: Salary expenses (C2: finalized payroll runs only)
-    labour_actual = (
-        # Cost to the company: gross pay plus employer PF and ESI. Net pay
-        # left out the employee PF, ESI and TDS the company still pays over.
-        payroll_scope.for_project(
-            db.query(func.sum(PayrollLineItem.gross_salary + PayrollLineItem.pf_employer + PayrollLineItem.esi_employer))
-            .join(PayrollRun)
-            .filter(PayrollRun.status == "finalized"),
-            proj_uuid,
-        )
-        .scalar()
-        or 0.0
-    )
-
-    # 4. Subcontractor Cost: Subcon bills (invoice_type == "subcon")
-    subcon_actual = db.query(func.sum(Bill.subtotal)).filter(
-        Bill.project_id == proj_uuid,
-        Bill.invoice_type == "subcon",
-        Bill.status != "Cancelled"
-    ).scalar() or 0.0
-
-    # 5. Plant & Machinery (Equipment bills + equipment deployment cost + fuel costs)
-    equipment_bills_actual = db.query(func.sum(Bill.subtotal)).filter(
-        Bill.project_id == proj_uuid,
-        Bill.invoice_type == "equipment",
-        Bill.status != "Cancelled"
-    ).scalar() or 0.0
-
-    dep_cost = owned_deployment_cost(db, proj_uuid)
-
-    fuel_logs = db.query(FuelLog).filter(FuelLog.project_id == proj_uuid).all()
-    fuel_cost = sum(float(log.total_cost or 0.0) for log in fuel_logs)
-    equipment_actual = round(float(equipment_bills_actual) + dep_cost + fuel_cost, 2)
-
-    # 6. Overhead: General expense bills (invoice_type == "expense")
-    overhead_actual = db.query(func.sum(Bill.subtotal)).filter(
-        Bill.project_id == proj_uuid,
-        Bill.invoice_type == "expense",
-        Bill.status != "Cancelled"
-    ).scalar() or 0.0
+    # Same heads the dashboard's project table reads.
+    from app.project_money import project_money
+    money = project_money(db, proj_uuid)
+    revenue_actual = money["revenue"]
+    material_actual = money["material"]
+    labour_actual = money["labour"]
+    subcon_actual = money["subcon"]
+    equipment_actual = money["equipment"]
+    overhead_actual = money["overhead"]
 
     # Variance: for Revenue, variance = Actual - Budget. For Cost, variance = Budget - Actual.
     # To keep it standard: return positive variance for positive variance outcomes, negative for cost overruns.

@@ -596,6 +596,7 @@ function CreateProjectModal({
   const [location, setLocation] = useState("");
   const [stage, setStage] = useState("");
   const [category, setCategory] = useState("");
+  const [isHeadOffice, setIsHeadOffice] = useState(false);
   const [projectValue, setProjectValue] = useState("");
   const [plannedStart, setPlannedStart] = useState("");
   const [plannedEnd, setPlannedEnd] = useState("");
@@ -665,6 +666,8 @@ function CreateProjectModal({
           location: location.trim() || null,
           stage: stage || null,
           category: category || null,
+          // Unticked is left to the server, which ticks it for a name like "Head Office".
+          ...(isHeadOffice ? { is_head_office: true } : {}),
           project_value: parseFloat(projectValue) || 0,
           planned_start_date: plannedStart || null,
           planned_end_date: plannedEnd || null,
@@ -799,6 +802,16 @@ function CreateProjectModal({
                   </select>
                 </Field>
               </div>
+              <label className="flex items-start gap-2 text-sm text-foreground cursor-pointer">
+                <input type="checkbox" checked={isHeadOffice} onChange={(e) => setIsHeadOffice(e.target.checked)} className="mt-0.5" />
+                <span>
+                  This is the head office, not a site
+                  <span className="block text-xs text-muted">
+                    For office staff, rent and admin costs. It is shown as head office costs in the accounts, not as a
+                    site, and takes no BOQ, daily reports or client bills.
+                  </span>
+                </span>
+              </label>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <Field label="Project Value">
                   <input type="number" value={projectValue} onChange={(e) => setProjectValue(e.target.value)} className={inputCls} />
@@ -941,6 +954,7 @@ function ProjectSettingsModal({
     city: project.city || "",
     stage: project.stage || "",
     category: project.category || "",
+    is_head_office: Boolean(project.is_office),
     project_value: String(project.project_value || 0),
     planned_start_date: (project.planned_start_date || "").slice(0, 10),
     planned_end_date: (project.planned_end_date || "").slice(0, 10),
@@ -1035,6 +1049,7 @@ function ProjectSettingsModal({
           city: form.city,
           stage: form.stage,
           category: form.category,
+          is_head_office: form.is_head_office,
           // Left out for roles that cannot see the accounts, so a save never zeroes it.
           ...(project.project_value == null ? {} : { project_value: parseFloat(form.project_value) || 0 }),
           planned_start_date: form.planned_start_date || null,
@@ -1151,6 +1166,16 @@ function ProjectSettingsModal({
                   </select>
                 </Field>
               </div>
+              <label className="flex items-start gap-2 text-sm text-foreground cursor-pointer">
+                <input type="checkbox" checked={form.is_head_office} onChange={(e) => setForm({ ...form, is_head_office: e.target.checked })} className="mt-0.5" />
+                <span>
+                  This is the head office, not a site
+                  <span className="block text-xs text-muted">
+                    For office staff, rent and admin costs. It is shown as head office costs in the accounts, not as a
+                    site, and takes no BOQ, daily reports or client bills.
+                  </span>
+                </span>
+              </label>
               <Field label="Address">
                 <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className="w-full rounded-md border border-border-custom bg-background px-3 py-2 text-sm text-foreground" />
               </Field>

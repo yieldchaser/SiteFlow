@@ -438,6 +438,8 @@ def create_work_order(req: WOCreateRequest, db: Session = Depends(get_db), curre
     get_company_membership(db, current_user, req.company_id)
     verify_project_in_company(db, req.project_id, req.company_id)
     require_permission(db, current_user, req.company_id, "billing:edit")
+    from app.office_projects import refuse_on_office
+    refuse_on_office(db, req.project_id, "Work orders")
     if req.subcontractor_id:
         sub = db.query(models.CompanyTeam).filter(models.CompanyTeam.id == req.subcontractor_id).first()
         if not sub or sub.company_id != req.company_id:
@@ -1359,6 +1361,11 @@ def create_bill(req: BillCreateRequest, db: Session = Depends(get_db), current_u
     # D4 (R2-041/R2-125/R2-319): site state is required for any invoiceable write -
     # place of supply derives from Project.state vs supplier GSTIN.
     _bill_proj = db.query(Project).filter(Project.id == req.project_id).first()
+    # Office purchases and expenses are fine on the head office; client
+    # invoices belong to a site.
+    if req.invoice_type in REVENUE_INVOICE_TYPES:
+        from app.office_projects import refuse_on_office
+        refuse_on_office(db, req.project_id, "Client invoices")
     if not _bill_proj or not str(getattr(_bill_proj, "state", "") or "").strip():
         raise HTTPException(
             status_code=422,
