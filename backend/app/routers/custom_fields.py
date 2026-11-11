@@ -267,9 +267,61 @@ def enforce_required_custom_fields(
         )
 
 
+# Boxes every project form already has. A custom field with one of these
+# names asks for the same thing twice: VCPL added "Location" and "Start
+# Date", and their staff filled the custom box while the real one, the one
+# attendance and the schedule read, stayed wrong or empty.
+_PROJECT_BUILT_IN = {
+    "name": "Project Name (step 1)", "project name": "Project Name (step 1)",
+    "code": "Project Code (step 1)", "project code": "Project Code (step 1)",
+    "address": "Address (step 1)", "site address": "Address (step 1)",
+    "city": "City (step 1)", "state": "State (step 1)",
+    "location": "Site Coordinates (step 1) and Address (step 1)",
+    "site location": "Site Coordinates (step 1) and Address (step 1)",
+    "coordinates": "Site Coordinates (step 1)", "site coordinates": "Site Coordinates (step 1)",
+    "gps": "Site Coordinates (step 1)", "lat long": "Site Coordinates (step 1)",
+    "latitude": "Site Coordinates (step 1)", "longitude": "Site Coordinates (step 1)",
+    "stage": "Stage (step 2)", "category": "Category (step 2)",
+    "value": "Project Value (step 2)", "project value": "Project Value (step 2)",
+    "contract value": "Project Value (step 2)",
+    "start date": "Planned Start Date (step 2)", "planned start date": "Planned Start Date (step 2)",
+    "project start date": "Planned Start Date (step 2)",
+    "end date": "Planned End Date (step 2)", "planned end date": "Planned End Date (step 2)",
+    "completion date": "Planned End Date (step 2)", "project end date": "Planned End Date (step 2)",
+    "orientation": "Orientation (step 2)", "dimension": "Dimension (step 2)",
+    "scope": "Scope of Work (step 2)", "scope of work": "Scope of Work (step 2)",
+    "attendance radius": "Attendance Radius (step 2)",
+}
+
+
+def _norm_name(name) -> str:
+    return " ".join("".join(ch if ch.isalnum() else " " for ch in (name or "").lower()).split())
+
+
+def _refuse_duplicate_field(db, company_id, entity_type, name, field_id=None) -> None:
+    key = _norm_name(name)
+    if entity_type == "project" and key in _PROJECT_BUILT_IN:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Projects already ask for this: {_PROJECT_BUILT_IN[key]} on the project form. "
+                   "Use that box, so attendance, the schedule and reports can read it.",
+        )
+    q = db.query(CustomField).filter(
+        CustomField.company_id == company_id,
+        CustomField.entity_type == entity_type,
+        CustomField.is_active == True,  # noqa: E712
+    )
+    for other in q.all():
+        if other.id != field_id and _norm_name(other.field_name) == key:
+            raise HTTPException(status_code=400, detail=f"There is already a custom field called {other.field_name} here.")
+
+
 @router.post("/fields", response_model=CustomFieldResponse, status_code=status.HTTP_201_CREATED)
 def create_field(payload: CustomFieldCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     require_permission(db, current_user, payload.company_id, "settings:manage")
+    _refuse_duplicate_field(db, payload.company_id, payload.entity_type, payload.field_name)
+    if payload.field_label and _norm_name(payload.field_label) != _norm_name(payload.field_name):
+        _refuse_duplicate_field(db, payload.company_id, payload.entity_type, payload.field_label)
     field = CustomField(**payload.model_dump())
     db.add(field)
     db.commit()
@@ -396,7 +448,10 @@ def update_custom_field(field_id: uuid.UUID, payload: CustomFieldUpdate, db: Ses
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Custom field not found")
     get_company_membership(db, current_user, cf.company_id)
     require_permission(db, current_user, cf.company_id, "settings:manage")
-    for k, v in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    if changes.get("field_name") and _norm_name(changes["field_name"]) != _norm_name(cf.field_name):
+        _refuse_duplicate_field(db, cf.company_id, cf.entity_type, changes["field_name"], field_id=cf.id)
+    for k, v in changes.items():
         setattr(cf, k, v)
     db.commit()
     db.refresh(cf)
