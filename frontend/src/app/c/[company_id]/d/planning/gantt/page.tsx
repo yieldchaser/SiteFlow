@@ -894,7 +894,7 @@ export default function GanttSchedulerPage() {
               {/* Edit Milestone Modal */}
               {editingMilestone && (
                 <div className="fixed inset-0 bg-background/80 flex items-center justify-center z-50 p-4">
-                  <div className="w-full max-w-md bg-card border border-border-custom rounded-lg overflow-hidden shadow-lg animate-in fade-in zoom-in-95 duration-150">
+                  <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto w-full max-w-md bg-card border border-border-custom rounded-lg overflow-hidden shadow-lg animate-in fade-in zoom-in-95 duration-150">
                     <div className="p-4 border-b border-border-custom flex justify-between items-center">
                       <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider">Edit Milestone</h3>
                       <button onClick={() => setEditingMilestone(null)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-4 h-4" /></button>

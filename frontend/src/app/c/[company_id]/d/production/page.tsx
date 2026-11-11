@@ -749,7 +749,7 @@ export default function ProductionPage() {
 
       {showNewRecipeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg rounded-xl border border-border-custom bg-card p-6 shadow-2xl">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto w-full max-w-lg rounded-xl border border-border-custom bg-card p-6 shadow-2xl">
             <div className="flex items-center justify-between border-b border-border-custom pb-4">
               <h3 className="text-lg font-bold text-foreground">Create Production Recipe</h3>
               <button onClick={() => setShowNewRecipeModal(false)} className="text-muted hover:text-foreground text-lg">&times;</button>
@@ -840,7 +840,7 @@ export default function ProductionPage() {
 
       {showLogBatchModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg rounded-xl border border-border-custom bg-card p-6 shadow-2xl">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto w-full max-w-lg rounded-xl border border-border-custom bg-card p-6 shadow-2xl">
             <div className="flex items-center justify-between border-b border-border-custom pb-4">
               <h3 className="text-lg font-bold text-foreground">Log Production Batch</h3>
               <button onClick={() => setShowLogBatchModal(false)} className="text-muted hover:text-foreground text-lg">&times;</button>
@@ -928,7 +928,7 @@ export default function ProductionPage() {
 
       {completing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg rounded-xl border border-border-custom bg-card p-6 shadow-2xl">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto w-full max-w-lg rounded-xl border border-border-custom bg-card p-6 shadow-2xl">
             <div className="flex items-center justify-between border-b border-border-custom pb-4">
               <h3 className="text-lg font-bold text-foreground">Complete {completing.batch_number}</h3>
               <button onClick={() => setCompleting(null)} className="text-muted hover:text-foreground text-lg">&times;</button>

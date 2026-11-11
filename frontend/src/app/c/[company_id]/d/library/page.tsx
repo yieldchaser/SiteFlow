@@ -1344,7 +1344,7 @@ export default function LibraryHubPage() {
       {/* Reusable Simple Item Add Modal */}
       {isSimpleDrawerOpen && (
         <div className="fixed inset-0 bg-background/80 flex items-center justify-center z-50 p-4">
-          <div className="w-full max-w-md bg-card border border-border-custom rounded-lg overflow-hidden shadow-lg animate-in fade-in zoom-in-95 duration-150">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto w-full max-w-md bg-card border border-border-custom rounded-lg overflow-hidden shadow-lg animate-in fade-in zoom-in-95 duration-150">
             <div className="p-6 border-b border-border-custom flex justify-between items-center">
               <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider">{editingId ? `Edit ${activeTab.replace("-", " ")}` : (activeTab === "todo" ? "Add To Do" : `Add ${activeTab.replace("-", " ")}`)}</h3>
               <button onClick={() => setIsSimpleDrawerOpen(false)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>
@@ -1445,7 +1445,7 @@ export default function LibraryHubPage() {
       {/* Add Party Drawer Modal */}
       {isPartyDrawerOpen && (
         <div className="fixed inset-0 bg-background/80 flex items-center justify-center z-50 p-4">
-          <div className="w-full max-w-md bg-card border border-border-custom rounded-lg overflow-hidden shadow-lg animate-in fade-in zoom-in-95 duration-150">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto w-full max-w-md bg-card border border-border-custom rounded-lg overflow-hidden shadow-lg animate-in fade-in zoom-in-95 duration-150">
             <div className="p-6 border-b border-border-custom flex justify-between items-center">
               <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider">{editingId ? "Edit Library Party" : "Register Library Party"}</h3>
               <button onClick={() => setIsPartyDrawerOpen(false)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>
@@ -1785,7 +1785,7 @@ export default function LibraryHubPage() {
       {/* Add Material Drawer Modal */}
       {isMaterialDrawerOpen && (
         <div className="fixed inset-0 bg-background/80 flex items-center justify-center z-50 p-4">
-          <div className="w-full max-w-md bg-card border border-border-custom rounded-lg overflow-hidden shadow-lg animate-in fade-in zoom-in-95 duration-150">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto w-full max-w-md bg-card border border-border-custom rounded-lg overflow-hidden shadow-lg animate-in fade-in zoom-in-95 duration-150">
             <div className="p-6 border-b border-border-custom flex justify-between items-center">
               <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider">{editingId ? "Edit Material Item" : "New Material Item"}</h3>
               <button onClick={() => setIsMaterialDrawerOpen(false)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>
@@ -1922,7 +1922,7 @@ export default function LibraryHubPage() {
       {/* Add Rate Card Drawer Modal */}
       {isRateDrawerOpen && (
         <div className="fixed inset-0 bg-background/80 flex items-center justify-center z-50 p-4">
-          <div className="w-full max-w-md bg-card border border-border-custom rounded-lg overflow-hidden shadow-lg animate-in fade-in zoom-in-95 duration-150">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto w-full max-w-md bg-card border border-border-custom rounded-lg overflow-hidden shadow-lg animate-in fade-in zoom-in-95 duration-150">
             <div className="p-6 border-b border-border-custom flex justify-between items-center">
               <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider">{editingId ? "Edit Rate Card Item" : "New Rate Card Item"}</h3>
               <button onClick={() => setIsRateDrawerOpen(false)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>

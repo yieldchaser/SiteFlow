@@ -872,7 +872,7 @@ export default function EquipmentTrackingPage() {
       {/* Start Machinery Wizard */}
       {activeDeployingEq && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-background border border-border-custom rounded-lg w-full max-w-md shadow-2xl p-6 space-y-4">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-background border border-border-custom rounded-lg w-full max-w-md shadow-2xl p-6 space-y-4">
             <div className="flex justify-between items-center border-b border-border-custom pb-2">
               <h3 className="text-xs font-extrabold text-foreground">Deploy to Site: {activeDeployingEq.name}</h3>
               <button onClick={() => setActiveDeployingEq(null)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>
@@ -929,7 +929,7 @@ export default function EquipmentTrackingPage() {
       {/* Stop Machinery Wizard */}
       {activeStoppingEq && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-background border border-border-custom rounded-lg w-full max-w-md shadow-2xl p-6 space-y-4">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-background border border-border-custom rounded-lg w-full max-w-md shadow-2xl p-6 space-y-4">
             <div className="flex justify-between items-center border-b border-border-custom pb-2">
               <h3 className="text-xs font-extrabold text-foreground">Return from Site: {activeStoppingEq.name}</h3>
               <button onClick={() => setActiveStoppingEq(null)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>
@@ -984,7 +984,7 @@ export default function EquipmentTrackingPage() {
       {/* Maintenance Modal */}
       {isMaintOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <form onSubmit={handleAddMaintenance} className="bg-background border border-border-custom rounded-lg w-full max-w-md shadow-2xl p-6 space-y-4 text-xs">
+          <form onSubmit={handleAddMaintenance} className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-background border border-border-custom rounded-lg w-full max-w-md shadow-2xl p-6 space-y-4 text-xs">
             <div className="flex justify-between items-center border-b border-border-custom pb-2">
               <h3 className="text-xs font-extrabold text-foreground">Add Service Entry</h3>
               <button type="button" onClick={() => setIsMaintOpen(false)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>
@@ -1032,7 +1032,7 @@ export default function EquipmentTrackingPage() {
       {/* Fuel Log Modal */}
       {activeFuelingEq && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-background border border-border-custom rounded-lg w-full max-w-md shadow-2xl p-6 space-y-4">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-background border border-border-custom rounded-lg w-full max-w-md shadow-2xl p-6 space-y-4">
             <div className="flex justify-between items-center border-b border-border-custom pb-2">
               <h3 className="text-xs font-extrabold text-foreground">Log Refueling: {activeFuelingEq.name}</h3>
               <button onClick={() => setActiveFuelingEq(null)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>
@@ -1072,7 +1072,7 @@ export default function EquipmentTrackingPage() {
       {/* Add Equipment Modal */}
       {isAddEqOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-background border border-border-custom rounded-lg w-full max-w-md shadow-2xl p-6 space-y-4">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-background border border-border-custom rounded-lg w-full max-w-md shadow-2xl p-6 space-y-4">
             <div className="flex justify-between items-center border-b border-border-custom pb-2">
               <h3 className="text-xs font-extrabold text-foreground">Add Equipment Assets</h3>
               <button onClick={() => setIsAddEqOpen(false)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>

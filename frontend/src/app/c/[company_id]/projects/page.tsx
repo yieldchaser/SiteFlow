@@ -497,7 +497,7 @@ export default function ProjectsPage() {
 
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-96 rounded-lg border border-border-custom bg-card p-6">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto w-96 rounded-lg border border-border-custom bg-card p-6">
             <h3 className="text-lg font-semibold text-foreground mb-2">Delete Project</h3>
             <p className="text-sm text-muted mb-4">
               Delete <strong>{deleteTarget.name}</strong>? This cannot be undone. Every task, bill,
@@ -703,7 +703,7 @@ function CreateProjectModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="relative flex w-full max-w-3xl rounded-lg border border-border-custom bg-card">
+      <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto relative flex w-full max-w-3xl rounded-lg border border-border-custom bg-card">
         {/* Live preview */}
         <div className="hidden md:block w-1/3 border-r border-border-custom bg-elevated p-6">
           <div className="text-xs uppercase tracking-wider text-muted mb-3">Live Preview</div>
@@ -1112,7 +1112,7 @@ function ProjectSettingsModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-2xl rounded-lg border border-border-custom bg-card">
+      <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto w-full max-w-2xl rounded-lg border border-border-custom bg-card">
         <div className="flex items-center justify-between border-b border-border-custom px-6 py-4">
           <h3 className="text-lg font-semibold text-foreground">Project Settings</h3>
           <button

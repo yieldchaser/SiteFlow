@@ -1036,7 +1036,7 @@ ${tasksXml}
       {/* New Timesheet Drawer */}
       {tsDrawerOpen && (
         <div className="fixed inset-0 bg-background/80 flex items-center justify-center z-50 p-4">
-          <div className="w-full max-w-md bg-card border border-border-custom rounded-lg overflow-hidden shadow-lg">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto w-full max-w-md bg-card border border-border-custom rounded-lg overflow-hidden shadow-lg">
             <div className="p-6 border-b border-border-custom flex justify-between items-center">
               <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider">New Timesheet</h3>
               <button onClick={() => setTsDrawerOpen(false)} className="text-muted hover:text-foreground cursor-pointer">

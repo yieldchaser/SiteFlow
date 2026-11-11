@@ -439,7 +439,7 @@ function AddPartyModal({
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-lg rounded-lg border border-border-custom bg-card p-6">
+      <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto w-full max-w-lg rounded-lg border border-border-custom bg-card p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-foreground">{title}</h3>
           <button onClick={onClose} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>

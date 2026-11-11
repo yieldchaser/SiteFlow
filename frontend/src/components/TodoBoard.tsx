@@ -357,7 +357,7 @@ export default function TodoBoard({ companyId, fixedProjectId }: { companyId: st
 
       {formOpen && (
         <div className="fixed inset-0 bg-background/80 flex items-center justify-center z-50 p-4">
-          <div className="w-full max-w-md bg-card border border-border-custom rounded-lg overflow-hidden shadow-lg relative">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto w-full max-w-md bg-card border border-border-custom rounded-lg overflow-hidden shadow-lg relative">
             <div className="p-5 border-b border-border-custom flex justify-between items-center">
               <h3 className="text-sm font-bold text-foreground uppercase tracking-wider">{editing ? "Edit To Do" : "New To Do"}</h3>
               <button onClick={() => setFormOpen(false)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>

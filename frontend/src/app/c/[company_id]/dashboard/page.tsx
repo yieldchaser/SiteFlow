@@ -1555,7 +1555,7 @@ export default function DashboardPage() {
       {/* 2-Step Project Setup Wizard Modal */}
       {isWizardOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm">
-          <div className="bg-card border border-border-custom rounded-lg w-full max-w-lg overflow-hidden shadow-2xl">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-lg w-full max-w-lg overflow-hidden shadow-2xl">
             {/* Header */}
             <div className="p-6 border-b border-border-custom flex items-center justify-between bg-elevated">
               <div>

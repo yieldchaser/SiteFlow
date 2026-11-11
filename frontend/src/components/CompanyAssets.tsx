@@ -140,7 +140,7 @@ export default function CompanyAssets({ companyId }: { companyId: string }) {
 
       {open && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-background border border-border-custom rounded-lg w-full max-w-md shadow-2xl p-6 space-y-4">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-background border border-border-custom rounded-lg w-full max-w-md shadow-2xl p-6 space-y-4">
             <div className="flex justify-between items-center border-b border-border-custom pb-2">
               <h3 className="text-xs font-extrabold text-foreground">{editingId ? "Edit Asset" : "Add Company Asset"}</h3>
               <button onClick={() => setOpen(false)} className="text-muted hover:text-foreground"><Icon name="close" className="w-5 h-5" /></button>

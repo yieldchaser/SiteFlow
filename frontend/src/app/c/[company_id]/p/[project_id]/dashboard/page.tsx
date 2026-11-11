@@ -896,7 +896,7 @@ export default function ProjectDashboardPage() {
       {/* Add Cost Code */}
       {showAddCC && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-sm rounded-lg border border-border-custom bg-card p-6">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto w-full max-w-sm rounded-lg border border-border-custom bg-card p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-foreground">Add Cost Code</h3>
               <button onClick={() => setShowAddCC(false)} className="text-muted hover:text-foreground cursor-pointer">

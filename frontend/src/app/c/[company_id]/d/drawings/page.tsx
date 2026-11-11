@@ -720,7 +720,7 @@ export default function DrawingsPage() {
       {/* ── Add RFI Pin Modal ── */}
       {showPinModal && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-background border border-border-custom rounded-lg w-full max-w-sm shadow-2xl p-5 space-y-4 text-xs">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-background border border-border-custom rounded-lg w-full max-w-sm shadow-2xl p-5 space-y-4 text-xs">
             <div className="flex justify-between items-start border-b border-border-custom pb-3">
               <div>
                 <div className="text-sm font-extrabold text-foreground">Drop Pin on Drawing</div>
@@ -775,7 +775,7 @@ export default function DrawingsPage() {
       {/* ── Upload Revision Modal ── */}
       {showRevModal && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-background border border-border-custom rounded-lg w-full max-w-md shadow-2xl p-5 space-y-4 text-xs">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-background border border-border-custom rounded-lg w-full max-w-md shadow-2xl p-5 space-y-4 text-xs">
             <div className="flex justify-between items-start border-b border-border-custom pb-3">
               <div>
                 <div className="text-sm font-extrabold text-foreground">Upload New Revision</div>

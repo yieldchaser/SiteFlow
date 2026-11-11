@@ -1449,7 +1449,7 @@ export default function ProcurementPage() {
       {/* Add Indent Modal Drawer (Specs overrides per item) */}
       {showIndentModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-background border border-border-custom rounded-lg w-full max-w-md shadow-2xl p-6 space-y-4 text-xs">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-background border border-border-custom rounded-lg w-full max-w-md shadow-2xl p-6 space-y-4 text-xs">
             <div className="flex justify-between items-center border-b border-border-custom pb-2">
               <h3 className="text-xs font-extrabold text-foreground">Create Material Indent (Requisition)</h3>
               <button onClick={() => setShowIndentModal(false)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>
@@ -1524,7 +1524,7 @@ export default function ProcurementPage() {
       {/* Log GRN PO Checklist Modal (Screen 5767-5768) */}
       {showGRNModal && selectedPOForGRN && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-background border border-border-custom rounded-lg w-full max-w-lg shadow-2xl p-6 space-y-4 text-xs">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-background border border-border-custom rounded-lg w-full max-w-lg shadow-2xl p-6 space-y-4 text-xs">
             <div className="flex justify-between items-center border-b border-border-custom pb-2">
               <div>
                 <h3 className="text-xs font-extrabold text-foreground">Record Goods Receipt Note (GRN)</h3>
@@ -1597,7 +1597,7 @@ export default function ProcurementPage() {
       {/* Log Material Usage Drawer */}
       {showUseModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-background border border-border-custom rounded-lg w-full max-w-md shadow-2xl p-6 space-y-4 text-xs">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-background border border-border-custom rounded-lg w-full max-w-md shadow-2xl p-6 space-y-4 text-xs">
             <div className="flex justify-between items-center border-b border-border-custom pb-2">
               <h3 className="text-xs font-extrabold text-foreground">Log Site Material Usage</h3>
               <button onClick={() => setShowUseModal(false)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>
@@ -1828,7 +1828,7 @@ export default function ProcurementPage() {
           onClick={() => setPreviewUrl(null)}
         >
           <div
-            className="bg-card border border-border-custom rounded-lg p-4 max-w-3xl w-full"
+            className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-lg p-4 max-w-3xl w-full"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex justify-end mb-2">

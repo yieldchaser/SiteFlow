@@ -1982,7 +1982,7 @@ export default function CompanySettingsPage() {
 
                   {showPayrollConfirm && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-                      <div className="bg-card border border-border-custom rounded-xl p-6 max-w-lg w-full space-y-4">
+                      <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-xl p-6 max-w-lg w-full space-y-4">
                         <div className="flex items-center justify-between">
                           <h3 className="text-base font-bold text-foreground">Confirm Statutory Payroll Changes</h3>
                           <button onClick={() => setShowPayrollConfirm(false)} className="text-muted hover:text-foreground">

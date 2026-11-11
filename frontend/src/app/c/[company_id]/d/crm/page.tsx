@@ -1436,7 +1436,7 @@ export default function CRMPage() {
           {/* Convert to Invoice Modal */}
           {convertModal && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setConvertModal(null)}>
-              <div className="bg-card border border-border-custom rounded-xl w-full max-w-lg p-6 relative shadow-2xl space-y-4" onClick={e => e.stopPropagation()}>
+              <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-xl w-full max-w-lg p-6 relative shadow-2xl space-y-4" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between border-b border-border-custom pb-3">
                   <div>
                     <h3 className="text-sm font-bold text-foreground uppercase tracking-wider font-sans">Convert Quotation to Invoice</h3>
@@ -1527,7 +1527,7 @@ export default function CRMPage() {
           {/* Convert Success Dialog */}
           {convertSuccess && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setConvertSuccess(null)}>
-              <div className="bg-card border border-border-custom rounded-xl w-full max-w-md p-6 relative shadow-2xl space-y-4" onClick={e => e.stopPropagation()}>
+              <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-xl w-full max-w-md p-6 relative shadow-2xl space-y-4" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-success/20 text-success flex items-center justify-center">
                     <Icon name="check" className="w-5 h-5" />

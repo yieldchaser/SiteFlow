@@ -369,7 +369,7 @@ export default function DepreciationPage() {
 
       {showSchedModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-elevated border border-border-custom rounded-lg p-6 w-full max-w-lg">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-elevated border border-border-custom rounded-lg p-6 w-full max-w-lg">
             <h2 className="text-xl font-bold text-foreground mb-4">New Depreciation Schedule</h2>
             <form onSubmit={handleCreateSchedule} className="space-y-4">
               <div>
@@ -447,7 +447,7 @@ export default function DepreciationPage() {
 
       {showEntryModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-elevated border border-border-custom rounded-lg p-6 w-full max-w-lg">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-elevated border border-border-custom rounded-lg p-6 w-full max-w-lg">
             <h2 className="text-xl font-bold text-foreground mb-4">New Depreciation Entry</h2>
             <form onSubmit={handleCreateEntry} className="space-y-4">
               <div>

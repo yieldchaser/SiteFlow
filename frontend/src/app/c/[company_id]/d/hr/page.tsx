@@ -88,7 +88,7 @@ function SitePayFields({ value, onChange, projects }: {
             <option key={p.id} value={p.id}>{p.name || p.project_name || "Untitled project"}</option>
           ))}
         </select>
-        <p className="text-muted mt-1">Office staff: make a project called Head Office and pick it here.</p>
+        <p className="text-muted mt-1">Office staff: pick your head office.</p>
       </div>
       <div>
         <label className={lab}>PF</label>
@@ -2167,7 +2167,7 @@ export default function HRPayrollPage() {
       {selectedPayslip && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={() => setSelectedPayslip(null)}>
-          <div className="payslip-print bg-card border border-border-custom rounded-lg w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto payslip-print bg-card border border-border-custom rounded-lg w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
               <div>
                 <h2 className="text-base font-bold text-foreground">Payslip: {selectedPayslip.employeeName}</h2>
@@ -2255,7 +2255,7 @@ export default function HRPayrollPage() {
       {showAddEmp && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={() => setShowAddEmp(false)}>
-          <div className="bg-card border border-border-custom rounded-lg w-full max-w-xl p-6" onClick={e => e.stopPropagation()}>
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-lg w-full max-w-xl p-6" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-base font-bold text-foreground">Add New Employee</h2>
               <button onClick={() => setShowAddEmp(false)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>
@@ -2305,7 +2305,7 @@ export default function HRPayrollPage() {
       {showApplyLeaveModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={() => setShowApplyLeaveModal(false)}>
-          <div className="bg-card border border-border-custom rounded-lg w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-lg w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-base font-bold text-foreground">Apply for Leave</h2>
               <button onClick={() => setShowApplyLeaveModal(false)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>
@@ -2427,7 +2427,7 @@ export default function HRPayrollPage() {
       {showAddHolidayModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={() => setShowAddHolidayModal(false)}>
-          <div className="bg-card border border-border-custom rounded-lg w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-lg w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-base font-bold text-foreground">Add Company Holiday</h2>
               <button onClick={() => setShowAddHolidayModal(false)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>

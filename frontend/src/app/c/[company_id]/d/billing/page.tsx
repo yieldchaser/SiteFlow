@@ -1091,7 +1091,7 @@ export default function SubcontractorBillingPage() {
       {/* Modal: Create Work Order */}
       {showWOModal && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-card border border-border-custom rounded-lg w-full max-w-md border border-border-custom rounded-md p-6 space-y-4">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-lg w-full max-w-md border border-border-custom rounded-md p-6 space-y-4">
             <div>
               <h3 className="text-sm font-extrabold text-foreground">Create Work Order (WO)</h3>
               <p className="text-xs text-muted mt-1">Issue a formal contract scope for labor works.</p>
@@ -1160,7 +1160,7 @@ export default function SubcontractorBillingPage() {
       {/* Modal: Create RA Bill (with interactive math engine preview) */}
       {showBillModal && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-card border border-border-custom rounded-lg w-full max-w-2xl border border-border-custom rounded-md p-6 grid grid-cols-12 gap-6 my-10">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-lg w-full max-w-2xl border border-border-custom rounded-md p-6 grid grid-cols-12 gap-6 my-10">
             
             {/* Form Column */}
             <div className="col-span-12 md:col-span-7 space-y-4">
@@ -1594,7 +1594,7 @@ export default function SubcontractorBillingPage() {
       {/* Retention Release Dialog */}
       {retentionModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setRetentionModal(null)}>
-          <div className="bg-card border border-border-custom rounded-xl w-full max-w-md p-6 relative shadow-2xl space-y-4" onClick={e => e.stopPropagation()}>
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-xl w-full max-w-md p-6 relative shadow-2xl space-y-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-border-custom pb-3">
               <div>
                 <h3 className="text-sm font-bold text-foreground uppercase tracking-wider font-sans">Release Retention</h3>

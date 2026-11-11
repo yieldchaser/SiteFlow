@@ -988,7 +988,7 @@ export default function DPRPage() {
       {/* Measurement Book (M.B.) Takeoff Sheet Modal */}
       {showMBModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-background border border-border-custom rounded-lg w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-background border border-border-custom rounded-lg w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col">
             <div className="px-6 py-4 border-b border-border-custom flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-extrabold text-foreground inline-flex items-center gap-2">

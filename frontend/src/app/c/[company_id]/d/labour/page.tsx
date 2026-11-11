@@ -275,7 +275,7 @@ export default function LabourPage() {
 
       {showMusterModal && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-card border border-border-custom rounded-lg w-full max-w-md border border-border-custom rounded-md p-6 space-y-4">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-lg w-full max-w-md border border-border-custom rounded-md p-6 space-y-4">
             <div><h3 className="text-sm font-extrabold text-foreground">Add Muster Roll Entry</h3></div>
             <div className="space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -323,7 +323,7 @@ export default function LabourPage() {
 
       {showBocwModal && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-card border border-border-custom rounded-lg w-full max-w-md p-6 space-y-4">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-lg w-full max-w-md p-6 space-y-4">
             <div><h3 className="text-sm font-extrabold text-foreground">Add BOCW Record</h3></div>
             <div className="space-y-3">
               <div>

@@ -829,7 +829,7 @@ export default function SafetyPage() {
       {/* ─── Modal: Close Incident ────────────────────────────────────────── */}
       {showCloseModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-card border border-border-custom rounded-2xl p-6 w-full max-w-md shadow-2xl">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-2xl p-6 w-full max-w-md shadow-2xl">
             <h3 className="text-base font-bold text-foreground mb-4">Close Incident</h3>
             <div className="space-y-3.5">
               <div>
@@ -872,7 +872,7 @@ export default function SafetyPage() {
       {/* ─── Modal: Toolbox Talk ──────────────────────────────────────────── */}
       {showTalkModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-card border border-border-custom rounded-2xl p-6 w-full max-w-md shadow-2xl">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-2xl p-6 w-full max-w-md shadow-2xl">
             <h3 className="text-base font-bold text-foreground mb-4">Log Toolbox Talk</h3>
             <div className="space-y-3.5">
               <div>
@@ -945,7 +945,7 @@ export default function SafetyPage() {
       {/* ─── Modal: PPE Check ─────────────────────────────────────────────── */}
       {showPPEModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-card border border-border-custom rounded-2xl p-6 w-full max-w-md shadow-2xl">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-2xl p-6 w-full max-w-md shadow-2xl">
             <h3 className="text-base font-bold text-foreground mb-4">Record PPE Compliance Check</h3>
             <div className="space-y-3.5">
               <div>

@@ -317,7 +317,7 @@ export default function ClientReportsPage() {
       {/* Generate Report Dialog Modal */}
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-input border border-border-custom rounded-lg overflow-hidden shadow-2xl">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto w-full max-w-md bg-input border border-border-custom rounded-lg overflow-hidden shadow-2xl">
             <div className="px-5 py-4 border-b border-border-custom flex items-center justify-between">
               <h3 className="text-xs font-bold text-foreground uppercase tracking-wider">
                 Compile Progress Report

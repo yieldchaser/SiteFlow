@@ -1123,7 +1123,7 @@ isCode: cl.is_code_reference || "—",
       {/* Modal: Start Site Inspection */}
       {showInspForm && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-card border border-border-custom rounded-lg w-full max-w-md border border-border-custom rounded-md p-6 space-y-4 text-left">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-lg w-full max-w-md border border-border-custom rounded-md p-6 space-y-4 text-left">
             <div>
               <h3 className="text-sm font-extrabold text-foreground">Start Site Inspection</h3>
               <p className="text-xs text-muted mt-1">Initiate a quality control verification event.</p>
@@ -1177,7 +1177,7 @@ isCode: cl.is_code_reference || "—",
       {/* Modal: Raise NCR */}
       {showNCRForm && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-card border border-border-custom rounded-lg w-full max-w-md border border-border-custom rounded-md p-6 space-y-4 text-left">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-lg w-full max-w-md border border-border-custom rounded-md p-6 space-y-4 text-left">
             <div>
               <h3 className="text-sm font-extrabold text-foreground">Raise Non-Conformance Report (NCR)</h3>
               <p className="text-xs text-muted mt-1">Issue a formal quality deviation report.</p>
@@ -1274,7 +1274,7 @@ isCode: cl.is_code_reference || "—",
       {/* Modal: Log Material Test */}
       {showTestForm && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-card border border-border-custom rounded-lg w-full max-w-md border border-border-custom rounded-md p-6 space-y-4 text-left">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-lg w-full max-w-md border border-border-custom rounded-md p-6 space-y-4 text-left">
             <div>
               <h3 className="text-sm font-extrabold text-foreground">Log Material Lab Test</h3>
               <p className="text-xs text-muted mt-1">Record on-site / lab compressive, slump, or soil test results.</p>

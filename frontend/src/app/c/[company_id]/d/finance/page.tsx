@@ -3063,7 +3063,7 @@ export default function FinancePage() {
       {/* ── Add Cash Account Modal ── */}
       {showAddCashModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center animate-fade-in p-4" onClick={() => setShowAddCashModal(false)}>
-          <div className="bg-card w-full max-w-md border border-border-custom shadow-2xl rounded-xl p-6" onClick={e => e.stopPropagation()}>
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card w-full max-w-md border border-border-custom shadow-2xl rounded-xl p-6" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center border-b border-border-custom pb-4 mb-5">
               <div>
                 <h3 className="text-sm font-bold text-foreground uppercase tracking-wider">New Cash Account</h3>
@@ -3518,7 +3518,7 @@ export default function FinancePage() {
       {/* ── Tally Setup Modal ── */}
       {showTallySetup && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => setShowTallySetup(false)}>
-          <div className="w-full max-w-md bg-card border border-border-custom rounded-xl p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto w-full max-w-md bg-card border border-border-custom rounded-xl p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-sm font-bold text-foreground">Tally Prime Connection</h3>
             <form onSubmit={saveTallyConnection} className="space-y-3">
               <div>

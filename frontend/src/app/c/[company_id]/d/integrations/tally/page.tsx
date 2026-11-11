@@ -908,7 +908,7 @@ export default function TallyIntegrationPage() {
         {/* ── Register Agent Modal ── */}
         {showAgentModal && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowAgentModal(false)}>
-            <div className="bg-card border border-border-custom rounded-xl w-full max-w-md p-6 relative overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-xl w-full max-w-md p-6 relative overflow-hidden" onClick={e => e.stopPropagation()}>
               <div className="flex justify-between items-start pb-3 border-b border-border-custom">
                 <div>
                   <h3 className="text-xs font-bold text-foreground uppercase tracking-wider">Register Tally Desktop Agent</h3>
@@ -973,7 +973,7 @@ export default function TallyIntegrationPage() {
         {/* ── Add Bank Mapping Modal ── */}
         {showBankModal && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowBankModal(false)}>
-            <div className="bg-card border border-border-custom rounded-xl w-full max-w-md p-6 relative overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-xl w-full max-w-md p-6 relative overflow-hidden" onClick={e => e.stopPropagation()}>
               <div className="flex justify-between items-start pb-3 border-b border-border-custom">
                 <div>
                   <h3 className="text-xs font-bold text-foreground uppercase tracking-wider">Add Bank Ledger Mapping</h3>

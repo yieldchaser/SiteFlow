@@ -231,7 +231,7 @@ export default function CustomFieldsPage() {
 
           {editing && (
             <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-              <form onSubmit={save} className="bg-elevated border border-border-custom rounded-lg p-6 w-full max-w-lg space-y-4">
+              <form onSubmit={save} className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-elevated border border-border-custom rounded-lg p-6 w-full max-w-lg space-y-4">
                 <h2 className="text-base font-bold text-foreground">{editing === "new" ? "New Custom Field" : `Edit "${(editing as Field).field_label}"`}</h2>
                 {formError && <div className="p-3 rounded-md bg-danger/10 text-danger text-xs">{formError}</div>}
 

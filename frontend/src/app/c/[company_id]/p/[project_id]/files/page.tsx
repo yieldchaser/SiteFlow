@@ -298,7 +298,7 @@ export default function FilesTab() {
 
       {showNewFolder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-sm rounded-lg border border-border-custom bg-card p-6">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto w-full max-w-sm rounded-lg border border-border-custom bg-card p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-foreground">New Folder</h3>
               <button onClick={() => setShowNewFolder(false)} className="text-muted hover:text-foreground cursor-pointer">
@@ -340,7 +340,7 @@ export default function FilesTab() {
 
       {preview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-4xl h-[88vh] rounded-lg border border-border-custom bg-card flex flex-col">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto w-full max-w-4xl h-[88vh] rounded-lg border border-border-custom bg-card flex flex-col">
             <div className="flex items-center justify-between px-4 py-3 border-b border-border-custom">
               <div className="min-w-0">
                 <div className="text-sm font-semibold text-foreground truncate">{preview.name}</div>

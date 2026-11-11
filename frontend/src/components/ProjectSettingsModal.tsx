@@ -190,7 +190,7 @@ export default function ProjectSettingsModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-2xl rounded-lg border border-border-custom bg-card">
+      <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto w-full max-w-2xl rounded-lg border border-border-custom bg-card">
         <div className="flex items-center justify-between border-b border-border-custom px-6 py-4">
           <h3 className="text-lg font-semibold text-foreground">Project Settings</h3>
           <button

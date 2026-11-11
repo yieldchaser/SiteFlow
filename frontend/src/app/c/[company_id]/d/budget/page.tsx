@@ -296,7 +296,7 @@ export default function BudgetPage() {
 
       {showBudgetModal && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-card border border-border-custom rounded-lg w-full max-w-md p-6 space-y-4">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-lg w-full max-w-md p-6 space-y-4">
             <div><h3 className="text-sm font-extrabold text-foreground">Set Project Budget</h3></div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>

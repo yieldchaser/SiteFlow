@@ -1002,7 +1002,7 @@ export default function RFQPage() {
       {/* Delete Confirmation Modal */}
       {showDeleteModal && targetRfq && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-card border border-border-custom rounded-lg w-full max-w-sm p-5 space-y-4">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-lg w-full max-w-sm p-5 space-y-4">
             <h3 className="text-sm font-bold text-foreground">Confirm Deletion</h3>
             <p className="text-xs text-muted">
               Are you sure you want to delete RFQ <span className="font-bold text-foreground">{targetRfq.rfq_number}</span>? This will permanently remove the RFQ, line items, and all associated vendor quotes.

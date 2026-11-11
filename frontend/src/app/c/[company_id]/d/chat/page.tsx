@@ -964,7 +964,7 @@ export default function ChatPage() {
       {/* MODAL 1: Create Group Modal */}
       {showGroupModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-card border border-border-custom rounded-xl p-6 w-full max-w-md shadow-2xl relative">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-xl p-6 w-full max-w-md shadow-2xl relative">
             {/* Close */}
             <button
               onClick={() => setShowGroupModal(false)}
@@ -1039,7 +1039,7 @@ export default function ChatPage() {
       {/* MODAL 2: Group Details & Members List Tabbed Drawer */}
       {showMembersModal && activeGroup && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-card border border-border-custom rounded-xl p-6 w-full max-w-md shadow-2xl relative">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-xl p-6 w-full max-w-md shadow-2xl relative">
             {/* Close */}
             <button
               onClick={() => setShowMembersModal(false)}
@@ -1221,7 +1221,7 @@ export default function ChatPage() {
       {/* MODAL 3: Add Member Modal */}
       {showAddMemberModal && activeGroup && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-card border border-border-custom rounded-xl p-6 w-full max-w-md shadow-2xl relative">
+          <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-card border border-border-custom rounded-xl p-6 w-full max-w-md shadow-2xl relative">
             {/* Close */}
             <button
               onClick={() => setShowAddMemberModal(false)}
