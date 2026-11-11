@@ -12,7 +12,6 @@ import PageShell from "@/components/layout/PageShell";
 import PageHeader from "@/components/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
-import FieldHint from "@/components/ui/FieldHint";
 import AuthImage, { uploadProjectImage } from "@/components/ui/AuthImage";
 
 interface Task {
@@ -135,6 +134,19 @@ export default function DPRPage() {
 
   // Form states
   const [selectedTaskId, setSelectedTaskId] = useState("");
+  // A site engineer filing a report for work nobody planned yet can add the
+  // task here instead of leaving the form for Planning.
+  const [newTaskOpen, setNewTaskOpen] = useState(false);
+  const [newTaskName, setNewTaskName] = useState("");
+  const [newTaskDays, setNewTaskDays] = useState("1");
+  const [newTaskSaving, setNewTaskSaving] = useState(false);
+  const [newTaskError, setNewTaskError] = useState("");
+  // Same for a material the Library does not have yet.
+  const [newMatOpen, setNewMatOpen] = useState(false);
+  const [newMatName, setNewMatName] = useState("");
+  const [newMatUnit, setNewMatUnit] = useState("");
+  const [newMatSaving, setNewMatSaving] = useState(false);
+  const [newMatError, setNewMatError] = useState("");
   // The day the work was done: yesterday's report is often written next morning.
   const [reportDate, setReportDate] = useState(todayLocalISO());
   const [executedQty, setExecutedQty] = useState("");
@@ -191,6 +203,89 @@ export default function DPRPage() {
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const createTaskHere = async () => {
+    const name = newTaskName.trim();
+    const days = parseInt(newTaskDays) || 0;
+    if (!name) { setNewTaskError("Enter what the task is, e.g. Slab casting, 2nd floor."); return; }
+    if (days < 1) { setNewTaskError("A task lasts at least 1 day."); return; }
+    setNewTaskSaving(true);
+    setNewTaskError("");
+    try {
+      const res = await fetch(`${getApiHost()}/apis/v3/planning/tasks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
+        body: JSON.stringify({
+          project_id: projectId,
+          name,
+          duration_days: days,
+          // Starts on the day being reported, at noon so the day never shifts.
+          start_date: new Date(`${reportDate}T12:00:00`).toISOString(),
+          status: "in_progress",
+        }),
+      });
+      if (!res.ok) {
+        setNewTaskError(res.status === 403
+          ? "Your role cannot add tasks. Ask your office to add it in Planning, or to give your role Planning edit access."
+          : (await readErrorDetail(res)) || "Could not add the task.");
+        return;
+      }
+      const created = (await res.json()) as Task;
+      setTasks((prev) => [created, ...prev]);
+      setSelectedTaskId(created.id);
+      setNewTaskOpen(false);
+      setNewTaskName("");
+      setNewTaskDays("1");
+    } catch {
+      setNewTaskError("Could not reach the server. Try again.");
+    } finally {
+      setNewTaskSaving(false);
+    }
+  };
+
+  const createMaterialHere = async () => {
+    const name = newMatName.trim();
+    const unit = newMatUnit.trim();
+    if (!name) { setNewMatError("Enter the material, e.g. Cement OPC 53."); return; }
+    if (!unit) { setNewMatError("Enter its unit, e.g. Bag or Cu.M."); return; }
+    const existing = materials.find((m) => m.name.trim().toLowerCase() === name.toLowerCase());
+    let picked: { name: string; unit: string } | null = existing ? { name: existing.name, unit: existing.unit || unit } : null;
+    if (!picked) {
+      setNewMatSaving(true);
+      setNewMatError("");
+      try {
+        const res = await fetch(`${getApiHost()}/apis/v3/library/materials`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(authHeaders() || {}) },
+          body: JSON.stringify({ company_id: companyId, name, unit }),
+        });
+        if (!res.ok) {
+          setNewMatError(res.status === 403
+            ? "Your role cannot add materials to the Library. Ask your office to add it, or to give your role Library edit access."
+            : (await readErrorDetail(res)) || "Could not add the material.");
+          return;
+        }
+        const created = (await res.json()) as MaterialOption;
+        setMaterials((prev) => [...prev, created]);
+        picked = { name: created.name, unit: created.unit || unit };
+      } catch {
+        setNewMatError("Could not reach the server. Try again.");
+        return;
+      } finally {
+        setNewMatSaving(false);
+      }
+    }
+    // Fill the first empty row, or add a row for it.
+    setMaterialsConsumed((prev) => {
+      const i = prev.findIndex((r) => !r.material_name);
+      const row = { material_name: picked!.name, quantity: i >= 0 ? prev[i].quantity : "", unit: picked!.unit };
+      if (i >= 0) return prev.map((r, k) => (k === i ? row : r));
+      return [...prev, row];
+    });
+    setNewMatOpen(false);
+    setNewMatName("");
+    setNewMatUnit("");
   };
 
   const fetchMaterialsAndInventory = async () => {
@@ -475,7 +570,18 @@ export default function DPRPage() {
               )}
 
               <div className="space-y-1">
-                <label className="text-muted">Select Task</label>
+                <div className="flex justify-between items-center h-5">
+                  <label className="text-muted">Select Task</label>
+                  {!newTaskOpen && (
+                    <button
+                      type="button"
+                      onClick={() => { setNewTaskOpen(true); setNewTaskError(""); }}
+                      className="text-[10px] font-bold text-primary hover:underline cursor-pointer"
+                    >
+                      + New task
+                    </button>
+                  )}
+                </div>
                 <select
                   value={selectedTaskId}
                   onChange={(e) => setSelectedTaskId(e.target.value)}
@@ -488,6 +594,44 @@ export default function DPRPage() {
                     <option key={t.id} value={t.id}>{t.name} ({formatLabel(t.status)})</option>
                   ))}
                 </select>
+                {newTaskOpen && (
+                  <div className="mt-2 p-3 rounded-lg border border-border-custom bg-elevated/40 space-y-2">
+                    <div className="grid grid-cols-1 md:grid-cols-[1fr_7rem] gap-2">
+                      <input
+                        type="text"
+                        value={newTaskName}
+                        onChange={(e) => setNewTaskName(e.target.value)}
+                        placeholder="Task, e.g. Slab casting, 2nd floor"
+                        maxLength={255}
+                        className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground"
+                      />
+                      <input
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={newTaskDays}
+                        onChange={(e) => setNewTaskDays(e.target.value)}
+                        title="How many days it should take"
+                        className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground"
+                      />
+                    </div>
+                    <p className="text-[10px] text-muted">
+                      Starts on the report date and takes the number of days on the right. It also appears in Planning,
+                      where you can link it to a BOQ line so its progress is worked out from the quantity you report.
+                    </p>
+                    {newTaskError && <p className="text-[11px] text-danger">{newTaskError}</p>}
+                    <div className="flex gap-2 justify-end">
+                      <button type="button" onClick={() => setNewTaskOpen(false)}
+                        className="px-3 py-1.5 rounded-md border border-border-custom text-muted hover:text-foreground cursor-pointer">
+                        Cancel
+                      </button>
+                      <button type="button" onClick={createTaskHere} disabled={newTaskSaving}
+                        className="px-3 py-1.5 rounded-md bg-primary text-white font-semibold disabled:opacity-50 cursor-pointer">
+                        {newTaskSaving ? "Adding..." : "Add task"}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1">
@@ -528,13 +672,13 @@ export default function DPRPage() {
                       <Icon name="ruler" className="w-3 h-3" /> Open M.B. Sheet
                     </button>
                   </div>
-                  <input type="number" step="0.01" value={executedQty} onChange={(e) => setExecutedQty(e.target.value)} className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground" placeholder="e.g. 45" />
+                  <input type="number" min={0} step="0.01" value={executedQty} onChange={(e) => setExecutedQty(e.target.value)} className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground" placeholder="e.g. 45" />
                 </div>
                 <div className="space-y-1">
                   <div className="flex items-center h-5">
                     <label className="text-muted">Workers Deployed</label>
                   </div>
-                  <input type="number" value={workersDeployed} onChange={(e) => setWorkersDeployed(e.target.value)} className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground" placeholder="e.g. 15" />
+                  <input type="number" min={0} step={1} value={workersDeployed} onChange={(e) => setWorkersDeployed(e.target.value)} className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground" placeholder="e.g. 15" />
                 </div>
               </div>
 
@@ -563,8 +707,43 @@ export default function DPRPage() {
                   </button>
                 </div>
 
-                {materials.length === 0 && inventory.length === 0 && (
-                  <FieldHint text="No materials yet. Add one in Library." href={`/c/${companyId}/d/library`} linkLabel="Go to Library" />
+                {materials.length === 0 && inventory.length === 0 && !newMatOpen && (
+                  <p className="text-[10px] text-muted">
+                    No materials in your Library yet.{" "}
+                    <button type="button" onClick={() => { setNewMatOpen(true); setNewMatError(""); }} className="text-primary font-semibold hover:underline cursor-pointer">
+                      Add one here
+                    </button>
+                  </p>
+                )}
+                {(materials.length > 0 || inventory.length > 0) && !newMatOpen && (
+                  <button type="button" onClick={() => { setNewMatOpen(true); setNewMatError(""); }}
+                    className="text-[10px] font-bold text-primary hover:underline cursor-pointer">
+                    Material not in the list? Add it
+                  </button>
+                )}
+                {newMatOpen && (
+                  <div className="p-3 rounded-lg border border-border-custom bg-elevated/40 space-y-2">
+                    <div className="grid grid-cols-1 md:grid-cols-[1fr_7rem] gap-2">
+                      <input type="text" value={newMatName} onChange={(e) => setNewMatName(e.target.value)} maxLength={255}
+                        placeholder="Material, e.g. Cement OPC 53"
+                        className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground" />
+                      <UnitInput type="text" value={newMatUnit} onChange={(e) => setNewMatUnit(e.target.value)} autoComplete="off"
+                        placeholder="Unit, e.g. Bag"
+                        className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground" />
+                    </div>
+                    <p className="text-[10px] text-muted">
+                      Saved to your Library so everyone can pick it next time. This site&apos;s stock of it comes from material received here.
+                    </p>
+                    {newMatError && <p className="text-[11px] text-danger">{newMatError}</p>}
+                    <div className="flex gap-2 justify-end">
+                      <button type="button" onClick={() => setNewMatOpen(false)}
+                        className="px-3 py-1.5 rounded-md border border-border-custom text-muted hover:text-foreground cursor-pointer">Cancel</button>
+                      <button type="button" onClick={createMaterialHere} disabled={newMatSaving}
+                        className="px-3 py-1.5 rounded-md bg-primary text-white font-semibold disabled:opacity-50 cursor-pointer">
+                        {newMatSaving ? "Adding..." : "Add material"}
+                      </button>
+                    </div>
+                  </div>
                 )}
 
                 {materialsConsumed.length > 0 && (
@@ -783,10 +962,11 @@ export default function DPRPage() {
                         <td className="px-4 py-2">
                           <input
                             type="number"
+                            min={0}
                             value={row.nos}
                             onChange={(e) => {
                               const next = [...mbRows];
-                              next[idx].nos = parseFloat(e.target.value) || 0;
+                              next[idx].nos = Math.max(0, parseFloat(e.target.value) || 0);
                               setMbRows(next);
                             }}
                             className="bg-input border border-border-custom rounded px-2 py-1 text-foreground w-16"
@@ -795,10 +975,11 @@ export default function DPRPage() {
                         <td className="px-4 py-2">
                           <input
                             type="number"
+                            min={0}
                             value={row.l}
                             onChange={(e) => {
                               const next = [...mbRows];
-                              next[idx].l = parseFloat(e.target.value) || 0;
+                              next[idx].l = Math.max(0, parseFloat(e.target.value) || 0);
                               setMbRows(next);
                             }}
                             className="bg-input border border-border-custom rounded px-2 py-1 text-foreground w-16"
@@ -807,10 +988,11 @@ export default function DPRPage() {
                         <td className="px-4 py-2">
                           <input
                             type="number"
+                            min={0}
                             value={row.w}
                             onChange={(e) => {
                               const next = [...mbRows];
-                              next[idx].w = parseFloat(e.target.value) || 0;
+                              next[idx].w = Math.max(0, parseFloat(e.target.value) || 0);
                               setMbRows(next);
                             }}
                             className="bg-input border border-border-custom rounded px-2 py-1 text-foreground w-16"
@@ -819,10 +1001,11 @@ export default function DPRPage() {
                         <td className="px-4 py-2">
                           <input
                             type="number"
+                            min={0}
                             value={row.h}
                             onChange={(e) => {
                               const next = [...mbRows];
-                              next[idx].h = parseFloat(e.target.value) || 0;
+                              next[idx].h = Math.max(0, parseFloat(e.target.value) || 0);
                               setMbRows(next);
                             }}
                             className="bg-input border border-border-custom rounded px-2 py-1 text-foreground w-16"
