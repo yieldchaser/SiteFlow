@@ -83,6 +83,9 @@ class DPRResponse(BaseModel):
     # Unit of the BOQ line behind the task, so "Qty executed: 46" can read
     # "46 cum". None when the task is not tied to a BOQ line.
     task_unit: Optional[str] = None
+    # Named here so a feed of several sites can show it without loading
+    # every site's schedule.
+    task_name: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -270,7 +273,9 @@ def get_dprs(project_id: uuid.UUID, db: Session = Depends(get_db), _: None = Dep
     author_map = resolve_dpr_authors(db, dprs)
     task_ids = {d.task_id for d in dprs if d.task_id}
     unit_by_task = {}
+    name_by_task = {}
     if task_ids:
+        name_by_task = dict(db.query(Task.id, Task.name).filter(Task.id.in_(task_ids)).all())
         rows = (
             db.query(Task.id, BOQItem.unit)
             .join(BOQItem, BOQItem.id == Task.boq_item_id)
@@ -286,6 +291,7 @@ def get_dprs(project_id: uuid.UUID, db: Session = Depends(get_db), _: None = Dep
                 project_id=d.project_id,
                 task_id=d.task_id,
                 task_unit=unit_by_task.get(d.task_id),
+                task_name=name_by_task.get(d.task_id),
                 reported_by=author_map.get(d.reported_by, d.reported_by or "Unknown"),
                 dpr_date=d.dpr_date,
                 weather=d.weather,

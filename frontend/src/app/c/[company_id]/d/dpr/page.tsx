@@ -65,6 +65,8 @@ interface DPRLog {
   workers_deployed: number;
   task_id?: string | null;
   task_unit?: string | null;
+  task_name?: string | null;
+  project_id?: string;
   materials_consumed?: { material_name: string; quantity: number; unit: string }[];
   notes: string;
   issues: string;
@@ -99,10 +101,25 @@ const PHOTO_SLOTS: { label: string; icon: IconName; color: string }[] = [
 export default function DPRPage() {
   const params = useParams();
   const companyId = params?.company_id as string;
-  const { activeProjectId, projects } = useProject();
+  const { activeProjectId, projects, setActiveProjectId } = useProject();
   const projectId = activeProjectId;
   const activeProject = projects.find((p) => p.id === projectId);
   const projectName = activeProject?.project_name || activeProject?.name || "";
+  // Reports are filed per site. The head office is not a site.
+  const sites = projects.filter((p) => p.id && !p.is_office);
+  const siteName = (id?: string) => {
+    const p = projects.find((x) => x.id === id);
+    return p?.project_name || p?.name || "";
+  };
+  // Feed of every site at once. Filing a report is still for one site.
+  const [viewAll, setViewAll] = useState(false);
+  // Picking a site here picks it everywhere (sidebar, Planning, Material), so
+  // the tasks and stock in the form are always that site's.
+  const pickSite = (id: string) => {
+    if (id === "__all") { setViewAll(true); return; }
+    setViewAll(false);
+    if (id && id !== projectId) setActiveProjectId(id);
+  };
   const { quantityDecimalPlaces } = useCompanySettings();
 
   const fmtQty = (val: number | string | null | undefined) => {
@@ -308,13 +325,26 @@ export default function DPRPage() {
     }
   };
 
+  const feedProjectIds = () => (viewAll ? sites.map((p) => p.id as string) : projectId ? [projectId] : []);
+
   const fetchDPRSummary = async () => {
     try {
-      const res = await fetch(`${getApiHost()}/apis/v3/dpr/summary?project_id=${projectId}`, { headers: authHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        setSummary(data);
+      const ids = feedProjectIds();
+      const parts = await Promise.all(ids.map(async (id) => {
+        const res = await fetch(`${getApiHost()}/apis/v3/dpr/summary?project_id=${id}`, { headers: authHeaders() });
+        return res.ok ? ((await res.json()) as Record<string, unknown>) : null;
+      }));
+      const ok = parts.filter((x): x is Record<string, unknown> => x !== null);
+      if (!ok.length) return;
+      // Counts add up across sites; the average is averaged.
+      const total: Record<string, number> = {};
+      for (const part of ok) {
+        for (const [k, v] of Object.entries(part)) {
+          if (typeof v === "number") total[k] = (total[k] || 0) + v;
+        }
       }
+      if (ok.length > 1 && total.avg_completion != null) total.avg_completion = total.avg_completion / ok.length;
+      setSummary((prev) => ({ ...prev, ...(ok.length === 1 ? ok[0] : total) } as DPRSummary));
     } catch (e) {
       console.error(e);
     }
@@ -322,11 +352,13 @@ export default function DPRPage() {
 
   const fetchDPRLogs = async () => {
     try {
-      const res = await fetch(`${getApiHost()}/apis/v3/dpr?project_id=${projectId}`, { headers: authHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        setLogs(data);
-      }
+      const ids = feedProjectIds();
+      const parts = await Promise.all(ids.map(async (id) => {
+        const res = await fetch(`${getApiHost()}/apis/v3/dpr?project_id=${id}`, { headers: authHeaders() });
+        return res.ok ? ((await res.json()) as DPRLog[]) : [];
+      }));
+      // Newest first across every site in view.
+      setLogs(parts.flat().sort((a, b) => (a.dpr_date < b.dpr_date ? 1 : a.dpr_date > b.dpr_date ? -1 : 0)));
     } catch (e) {
       console.error(e);
     } finally {
@@ -360,13 +392,20 @@ export default function DPRPage() {
 
   useEffect(() => {
     if (projectId) {
-      setLogsLoaded(false);
       fetchTasks();
-      fetchDPRSummary();
-      fetchDPRLogs();
       fetchMaterialsAndInventory();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, companyId]);
+
+  useEffect(() => {
+    if (projectId || viewAll) {
+      setLogsLoaded(false);
+      fetchDPRSummary();
+      fetchDPRLogs();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, companyId, viewAll, sites.length]);
 
   const handleSubmitDPR = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -431,8 +470,21 @@ export default function DPRPage() {
       <main className="flex-1 flex flex-col overflow-hidden">
         <PageHeader
           title="Project Daily Progress Report (DPR)"
-          subtitle={projectName ? `Daily site reports for ${projectName}` : "Daily site reports"}
+          subtitle={viewAll ? `Daily site reports for all ${sites.length} sites` : projectName ? `Daily site reports for ${projectName}` : "Daily site reports"}
         >
+          <label className="flex items-center gap-2 text-xs text-muted">
+            Site
+            <select
+              value={viewAll ? "__all" : projectId}
+              onChange={(e) => pickSite(e.target.value)}
+              className="bg-input border border-border-custom rounded-md px-2 py-1.5 text-xs font-semibold text-foreground max-w-[14rem]"
+            >
+              {sites.length > 1 && <option value="__all">All sites</option>}
+              {sites.map((p) => (
+                <option key={p.id} value={p.id}>{p.project_name || p.name}</option>
+              ))}
+            </select>
+          </label>
           <button
             onClick={() => setIsCreateDPROpen(true)}
             className="px-3.5 py-1.5 bg-primary rounded-md text-xs font-bold text-white hover:opacity-90 transition-all cursor-pointer"
@@ -503,8 +555,11 @@ export default function DPRPage() {
                       </span>
                     </div>
                     <div className="border-l-2 border-border-custom pl-3 my-2 space-y-1">
-                      {log.task_id && tasks.find((t) => t.id === log.task_id) && (
-                        <p className="text-foreground text-xs font-bold">{tasks.find((t) => t.id === log.task_id)?.name}</p>
+                      {viewAll && log.project_id && (
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-primary">{siteName(log.project_id)}</p>
+                      )}
+                      {(log.task_name || (log.task_id && tasks.find((t) => t.id === log.task_id)?.name)) && (
+                        <p className="text-foreground text-xs font-bold">{log.task_name || tasks.find((t) => t.id === log.task_id)?.name}</p>
                       )}
                       <p className="text-foreground text-xs font-semibold">
                         Qty Executed: {fmtQty(log.executed_qty)}{log.task_unit ? ` ${log.task_unit}` : ""} · Workers: {fmtQty(log.workers_deployed)}
@@ -568,6 +623,22 @@ export default function DPRPage() {
                   {message}
                 </div>
               )}
+
+              <div className="space-y-1">
+                <label className="text-muted">Site</label>
+                <select
+                  value={projectId}
+                  onChange={(e) => pickSite(e.target.value)}
+                  required
+                  className="w-full bg-input border border-border-custom rounded-lg p-2 text-foreground font-semibold"
+                >
+                  {!projectId && <option value="">Pick the site</option>}
+                  {sites.map((p) => (
+                    <option key={p.id} value={p.id}>{p.project_name || p.name}</option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-muted">The tasks and stock below are this site&apos;s. Changing it here changes the site everywhere in the app.</p>
+              </div>
 
               <div className="space-y-1">
                 <div className="flex justify-between items-center h-5">
