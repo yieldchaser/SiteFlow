@@ -32,8 +32,9 @@ def test_audit_probes_rejected(client, make_tenant, auth_headers):
 def test_statutory_ceilings_enforced(client, make_tenant, auth_headers):
     comp, hdr = _hdr(make_tenant, auth_headers)
     for probe in (
-        {"pf_employee_pct": 12.01},
-        {"pf_employer_pct": 12.01},
+        # 12% is the legal minimum, not a cap: voluntary PF goes higher.
+        {"pf_employee_pct": 100.01},
+        {"pf_employer_pct": 100.01},
         {"esi_employee_pct": 1.01},
         {"esi_employer_pct": 5.01},
     ):

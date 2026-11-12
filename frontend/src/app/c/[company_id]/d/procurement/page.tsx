@@ -100,6 +100,9 @@ interface Transaction {
   date: string;
 }
 
+// GST slabs, plus 0.25% (rough diamonds) and 3% (gold). Any other rate can be typed.
+const GST_PRESETS = [0, 0.25, 3, 5, 12, 18, 28, 40];
+
 export default function ProcurementPage() {
   const { company_id } = useParams();
   const companyId = company_id || "demo-company";
@@ -374,6 +377,8 @@ export default function ProcurementPage() {
   const [newPOExpectedDeliveryDate, setNewPOExpectedDeliveryDate] = useState("");
   const [vendorOptions, setVendorOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [materials, setMaterials] = useState<Array<{ id: string; name: string; unit: string; gst_rate: number | null }>>([]);
+  // Rows where the person picked "Other rate" for GST.
+  const [gstCustomRows, setGstCustomRows] = useState<Record<number, boolean>>({});
   const [poFormItems, setPoFormItems] = useState<POItem[]>([
     { name: "", qty: 0, unit: "", rate: 0, tax_pct: 18 }
   ]);
@@ -1725,17 +1730,29 @@ export default function ProcurementPage() {
                       </div>
                       <div className="space-y-1">
                         <label className="text-muted text-[9px]">GST Tax %</label>
-                        <select
-                          value={item.tax_pct ?? 18}
-                          onChange={e => { const next = [...poFormItems]; next[idx].tax_pct = parseFloat(e.target.value) || 0; setPoFormItems(next); }}
-                          className="w-full bg-input border border-border-custom rounded p-1 text-foreground text-[11px]"
-                        >
-                          <option value={0}>0% (Exempt)</option>
-                          <option value={5}>5%</option>
-                          <option value={12}>12%</option>
-                          <option value={18}>18% (Standard GST)</option>
-                          <option value={28}>28%</option>
-                        </select>
+                        <div className="flex gap-1">
+                          <select
+                            value={GST_PRESETS.includes(item.tax_pct ?? 18) && !gstCustomRows[idx] ? String(item.tax_pct ?? 18) : "custom"}
+                            onChange={e => {
+                              const custom = e.target.value === "custom";
+                              setGstCustomRows(r => ({ ...r, [idx]: custom }));
+                              if (custom) return;
+                              const next = [...poFormItems]; next[idx].tax_pct = parseFloat(e.target.value) || 0; setPoFormItems(next);
+                            }}
+                            className="w-full bg-input border border-border-custom rounded p-1 text-foreground text-[11px]"
+                          >
+                            {GST_PRESETS.map(r => (
+                              <option key={r} value={String(r)}>{r}%{r === 0 ? " (Exempt)" : r === 18 ? " (Standard GST)" : ""}</option>
+                            ))}
+                            <option value="custom">Other rate</option>
+                          </select>
+                          {(!GST_PRESETS.includes(item.tax_pct ?? 18) || gstCustomRows[idx]) && (
+                            <input type="number" min={0} max={100} step="0.01" value={item.tax_pct ?? 0}
+                              aria-label="GST rate in percent"
+                              onChange={e => { const next = [...poFormItems]; next[idx].tax_pct = Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)); setPoFormItems(next); }}
+                              className="w-16 shrink-0 bg-input border border-border-custom rounded p-1 text-foreground text-[11px]" />
+                          )}
+                        </div>
                       </div>
                     </div>
                     {item.qty > 0 && item.rate > 0 && (

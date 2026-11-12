@@ -393,6 +393,12 @@ def export_pf_ecr(
         PayrollLineItem.payroll_run_id.in_([r.id for r in runs])
     ).all()
 
+    # Only people who paid PF that month are on the return. Staff with no PF
+    # (0%) used to be listed, and one of them without a UAN blocked the file.
+    line_items = [li for li in line_items if float(li.pf_employee or 0) > 0 or float(li.pf_employer or 0) > 0]
+    from app.pf_ceiling import pf_wage_ceiling_for
+    ceiling = pf_wage_ceiling_for(db, company_id)
+
     # R2-756: Refuse export if any employee included in the return lacks a valid 12-digit UAN
     missing_uan_employees = []
     for li in line_items:
@@ -417,8 +423,10 @@ def export_pf_ecr(
         # whenever the company's PF wage ceiling or an employee's rate differed.
         ee_pf = round(float(li.pf_employee or 0), 2)
         er_pf = round(float(li.pf_employer or 0), 2)
-        ee_pct = float(emp.pf_employee_pct or 12)
-        pf_wages = round(ee_pf * 100 / ee_pct, 2) if ee_pct > 0 and ee_pf > 0 else min(float(li.basic or 0), 15000.0)
+        # PF wages are the month's basic up to the ceiling, the base payroll
+        # used. Working them back from the person's rate went wrong once the
+        # rate changed (12% to 25% after the month was paid halved the wages).
+        pf_wages = round(min(float(li.basic or 0), ceiling), 2)
         # Pension (EPS) is 8.33% of wages up to the statutory Rs 15,000, never
         # more than the employer's share; the rest of that share is EPF. The
         # ECR takes whole rupees, so EPS rounds half up (Rs 1,249.50 is

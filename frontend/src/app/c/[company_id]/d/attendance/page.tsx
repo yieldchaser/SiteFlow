@@ -1094,7 +1094,7 @@ export default function AttendancePage() {
                         <th className="py-2.5 pl-5 pr-3">Employee</th>
                         <th className="py-2.5 px-3">Designation</th>
                         <th className="py-2.5 px-3 text-right">Gross (₹)</th>
-                        <th className="py-2.5 px-3 text-right">PF (12%)</th>
+                        <th className="py-2.5 px-3 text-right">PF</th>
                         <th className="py-2.5 px-3 text-right">ESI (0.75%)</th>
                         <th className="py-2.5 px-3 text-right">TDS</th>
                         <th className="py-2.5 px-3 text-right">Net Pay</th>

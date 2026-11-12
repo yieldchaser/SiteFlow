@@ -1700,15 +1700,8 @@ def _rep_payroll_library(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
     try:
         from app.routers.hr import _compute_payslip
         company = _get(db, Company, cid)
-        ceiling = getattr(company, "pf_wage_ceiling", None) if company else None
-        try:
-            from app.models import CompanyPayrollSettings as _CPS
-            cps = db.query(_CPS).filter(_CPS.company_id == cid).first()
-            if cps is not None and getattr(cps, "pf_wage_ceiling", None) is not None:
-                ceiling = cps.pf_wage_ceiling
-        except Exception:
-            pass
-        ceiling = float(ceiling) if ceiling is not None else 15000.0
+        from app.pf_ceiling import pf_wage_ceiling_for
+        ceiling = pf_wage_ceiling_for(db, cid)
         q = db.query(StaffEmployee).filter(StaffEmployee.company_id == cid)
         rows = []
         for emp in q.order_by(StaffEmployee.name.asc()).all():
@@ -3416,8 +3409,8 @@ def _rep_staff_salary(db: Session, cid: uuid.UUID, pid: Optional[uuid.UUID]):
     try:
         from app.routers.hr import _compute_payslip
         company = _get(db, Company, cid)
-        ceiling = getattr(company, "pf_wage_ceiling", None) if company else None
-        ceiling = float(ceiling) if ceiling is not None else 15000.0
+        from app.pf_ceiling import pf_wage_ceiling_for
+        ceiling = pf_wage_ceiling_for(db, cid)
         q = db.query(StaffEmployee).filter(StaffEmployee.company_id == cid)
         if pid:
             q = q.filter(StaffEmployee.project_id == pid)

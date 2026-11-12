@@ -48,15 +48,60 @@ interface Employee {
 
 // Where someone works and how they are paid: shared by the add and edit forms.
 // weeklyOff: "" = company's weekly off, "none" = works every day, else a day name.
-type SitePay = { site: string; pfOn: boolean; paidBy: "bank" | "cash"; bankAccount: string; ifsc: string; bankName: string; ptOn: boolean; weeklyOff: string; gender: string };
+// pfEmp / pfEr: PF rates in percent, as typed. "0" means no PF.
+type SitePay = { site: string; pfEmp: string; pfEr: string; paidBy: "bank" | "cash"; bankAccount: string; ifsc: string; bankName: string; ptOn: boolean; weeklyOff: string; gender: string };
 const WEEK_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const weeklyOffFromApi = (v: string[] | null | undefined) => (v == null ? "" : v.length === 0 ? "none" : v[0]);
+
+const pctValue = (v: string) => Math.min(100, Math.max(0, Number(v) || 0));
+
+// A rate picker: the usual rates, or any other the person types.
+const PF_PRESETS = ["12", "25"];
+function PctPicker({ value, onChange, noneLabel, box }: {
+  value: string;
+  onChange: (v: string) => void;
+  noneLabel?: string;
+  box: string;
+}) {
+  const n = pctValue(value);
+  const preset = noneLabel && n === 0 ? "0" : PF_PRESETS.find((x) => Number(x) === n);
+  const [custom, setCustom] = useState(false);
+  const mode = custom || !preset ? "custom" : preset;
+  return (
+    <div className="flex gap-2">
+      <select
+        value={mode}
+        onChange={(e) => {
+          if (e.target.value === "custom") { setCustom(true); return; }
+          setCustom(false);
+          onChange(e.target.value);
+        }}
+        className={box}
+      >
+        {noneLabel && <option value="0">{noneLabel}</option>}
+        {PF_PRESETS.map((x) => <option key={x} value={x}>{x}%</option>)}
+        <option value="custom">Other rate</option>
+      </select>
+      {mode === "custom" && (
+        <div className="relative w-28 shrink-0">
+          <input
+            type="number" min={0} max={100} step="0.01" value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className={`${box} pr-6`}
+            aria-label="Rate in percent"
+          />
+          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-muted">%</span>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function sitePayBody(v: SitePay) {
   return {
     project_id: v.site || null,
-    pf_employee_pct: v.pfOn ? 12.0 : 0,
-    pf_employer_pct: v.pfOn ? 12.0 : 0,
+    pf_employee_pct: pctValue(v.pfEmp),
+    pf_employer_pct: pctValue(v.pfEmp) > 0 ? pctValue(v.pfEr) : 0,
     salary_paid_by: v.paidBy,
     bank_account: v.paidBy === "bank" ? v.bankAccount.trim() || null : null,
     bank_ifsc: v.paidBy === "bank" ? v.ifsc.trim() || null : null,
@@ -91,12 +136,18 @@ function SitePayFields({ value, onChange, projects }: {
         <p className="text-muted mt-1">Office staff: pick your head office.</p>
       </div>
       <div>
-        <label className={lab}>PF</label>
-        <select value={value.pfOn ? "yes" : "no"} onChange={(e) => onChange({ ...value, pfOn: e.target.value === "yes" })} className={box}>
-          <option value="yes">Yes, deduct PF (12%)</option>
-          <option value="no">No PF for this person</option>
-        </select>
+        <label className={lab}>PF from salary (employee)</label>
+        <PctPicker box={box} noneLabel="No PF for this person" value={value.pfEmp}
+          onChange={(v) => onChange({ ...value, pfEmp: v, pfEr: pctValue(value.pfEmp) === 0 && pctValue(v) > 0 && pctValue(value.pfEr) === 0 ? "12" : value.pfEr })} />
+        {pctValue(value.pfEmp) > 0 && <p className="text-muted mt-1">Of basic pay, up to the PF wage ceiling in Settings.</p>}
       </div>
+      {pctValue(value.pfEmp) > 0 && (
+        <div>
+          <label className={lab}>PF paid by company (employer)</label>
+          <PctPicker box={box} value={value.pfEr} onChange={(v) => onChange({ ...value, pfEr: v })} />
+          <p className="text-muted mt-1">12% is the legal minimum. A higher salary share does not raise it.</p>
+        </div>
+      )}
       <div>
         <label className={lab}>Professional tax</label>
         <select value={value.ptOn ? "yes" : "no"} onChange={(e) => onChange({ ...value, ptOn: e.target.value === "yes" })} className={box}>
@@ -264,11 +315,24 @@ export default function HRPayrollPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   // Payroll caps employer PF at this basic (company payroll settings).
   const [pfCeiling, setPfCeiling] = useState(15000);
+  const [pfDefaults, setPfDefaults] = useState({ ee: "12", er: "12", esiEe: 0.75, esiEr: 3.25 });
   useEffect(() => {
     if (!companyId) return;
     fetch(`${getApiHost()}/apis/v3/settings/payroll/${companyId}`, { headers: authHeaders() })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d && Number(d.pf_wage_ceiling) > 0) setPfCeiling(Number(d.pf_wage_ceiling)); })
+      .then((d) => {
+        if (!d) return;
+        if (Number(d.pf_wage_ceiling) > 0) setPfCeiling(Number(d.pf_wage_ceiling));
+        // New staff start on the company's own rates from Settings, not fixed ones.
+        const dflt = {
+          ee: String(Number(d.pf_employee_pct ?? 12)),
+          er: String(Number(d.pf_employer_pct ?? 12)),
+          esiEe: Number(d.esi_employee_pct ?? 0.75),
+          esiEr: Number(d.esi_employer_pct ?? 3.25),
+        };
+        setPfDefaults(dflt);
+        setNewPay((p) => ({ ...p, pfEmp: dflt.ee, pfEr: dflt.er }));
+      })
       .catch(() => {});
   }, [companyId]);
   // Cost to company for a full month, worked out the way payroll does.
@@ -309,7 +373,7 @@ export default function HRPayrollPage() {
   // here was silently not paid.
   const emptyDetails = { basic: "", hra: "", allowances: "", tds: "", designation: "", department: "", mobile: "", uan: "", joined: "", otRate: "" };
   const [detailsForm, setDetailsForm] = useState(emptyDetails);
-  const [detailsPay, setDetailsPay] = useState<SitePay>({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "", bankName: "", ptOn: true, weeklyOff: "", gender: "" });
+  const [detailsPay, setDetailsPay] = useState<SitePay>({ site: "", pfEmp: "12", pfEr: "12", paidBy: "bank", bankAccount: "", ifsc: "", bankName: "", ptOn: true, weeklyOff: "", gender: "" });
 
   const openDetailsDrawer = (emp: Employee) => {
     setSelectedEmpDetail(emp);
@@ -327,7 +391,8 @@ export default function HRPayrollPage() {
     });
     setDetailsPay({
       site: emp.projectId,
-      pfOn: Number(emp.pfPct) > 0,
+      pfEmp: String(Number(emp.pfPct) || 0),
+      pfEr: String(Number(emp.pfEmployerPct) || 0),
       paidBy: emp.paidBy,
       bankAccount: emp.bankAccount,
       ifsc: emp.ifsc,
@@ -512,7 +577,7 @@ export default function HRPayrollPage() {
     uan: "",
     joined: todayLocalISO()
   });
-  const [newPay, setNewPay] = useState<SitePay>({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "", bankName: "", ptOn: true, weeklyOff: "", gender: "" });
+  const [newPay, setNewPay] = useState<SitePay>({ site: "", pfEmp: "12", pfEr: "12", paidBy: "bank", bankAccount: "", ifsc: "", bankName: "", ptOn: true, weeklyOff: "", gender: "" });
 
   const fetchEmployees = async () => {
     if (!companyId) return;
@@ -775,8 +840,8 @@ export default function HRPayrollPage() {
           hra: parseFloat(empForm.hra) || 0,
           other_allowances: parseFloat(empForm.allowances) || 0,
           ...sitePayBody({ ...newPay, site: newPay.site || projectId || "" }),
-          esi_employee_pct: 0.75,
-          esi_employer_pct: 3.25,
+          esi_employee_pct: pfDefaults.esiEe,
+          esi_employer_pct: pfDefaults.esiEr,
           tds_monthly: parseFloat(empForm.tds) || 0,
           uan: empForm.uan.trim() || null,
           is_esi_applicable:
@@ -801,7 +866,7 @@ export default function HRPayrollPage() {
           uan: "",
           joined: todayLocalISO()
         });
-        setNewPay({ site: "", pfOn: true, paidBy: "bank", bankAccount: "", ifsc: "", bankName: "", ptOn: true, weeklyOff: "", gender: "" });
+        setNewPay({ site: "", pfEmp: pfDefaults.ee, pfEr: pfDefaults.er, paidBy: "bank", bankAccount: "", ifsc: "", bankName: "", ptOn: true, weeklyOff: "", gender: "" });
       } else {
         const err = await readErrorDetail(res);
         alert(err || 'Action failed');
@@ -2210,7 +2275,7 @@ export default function HRPayrollPage() {
             <div className="space-y-1 mb-4">
               <p className="text-[10px] text-muted font-bold uppercase tracking-wider mb-2">Deductions</p>
               {[
-                ["PF (Employee 12%)", selectedPayslip.pfEmployee],
+                ["PF (Employee)", selectedPayslip.pfEmployee],
                 ["ESI (Employee 0.75%)", selectedPayslip.esiEmployee],
                 ["TDS", selectedPayslip.tds],
                 ["Professional Tax", selectedPayslip.pt],
@@ -2232,7 +2297,7 @@ export default function HRPayrollPage() {
             <div className="space-y-1 mb-4">
               <p className="text-[10px] text-muted font-bold uppercase tracking-wider mb-2">Paid by the company on top</p>
               {[
-                ["PF (Employer 12%)", selectedPayslip.pfEmployer],
+                ["PF (Employer)", selectedPayslip.pfEmployer],
                 ["ESI (Employer 3.25%)", selectedPayslip.esiEmployer],
               ].map(([label, val]) => (
                 <div key={label as string} className="flex justify-between text-xs">
@@ -2690,7 +2755,7 @@ export default function HRPayrollPage() {
                   </div>
                 </div>
                 <p className="text-muted">
-                  Gross {fmt((parseFloat(detailsForm.basic) || 0) + (parseFloat(detailsForm.hra) || 0) + (parseFloat(detailsForm.allowances) || 0))} a month. PF is 12% of basic up to ₹15,000; ESI applies while gross is ₹21,000 or less. A change applies to the next payroll run.
+                  Gross {fmt((parseFloat(detailsForm.basic) || 0) + (parseFloat(detailsForm.hra) || 0) + (parseFloat(detailsForm.allowances) || 0))} a month. PF is taken from basic up to the PF wage ceiling (₹{pfCeiling.toLocaleString("en-IN")}), at this person&apos;s PF rate; ESI applies while gross is ₹21,000 or less. A change applies to the next payroll run.
                 </p>
                 <div className="grid grid-cols-2 gap-3">
                   <div>

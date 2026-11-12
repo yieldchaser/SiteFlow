@@ -1330,16 +1330,8 @@ def run_payroll(payload: PayrollRunCreate, db: Session = Depends(get_db), curren
         # ALWAYS return attendance_source recorded|assumed and badge assumed rows (NOT optional).
         effective_assume = bool(payload.assume_full_month) or bool(getattr(company, "assume_full_month_when_no_attendance", False))
         # CD-4: EPF wage ceiling default 15000, capped in _compute_payslip employer PF (single place).
-        _ceiling_raw = getattr(company, "pf_wage_ceiling", None)
-        if _ceiling_raw is None:
-            try:
-                from app.models import CompanyPayrollSettings as _CPS
-                _cps_row = db.query(_CPS).filter(_CPS.company_id == payload.company_id).first()
-                if _cps_row is not None and getattr(_cps_row, "pf_wage_ceiling", None) is not None:
-                    _ceiling_raw = _cps_row.pf_wage_ceiling
-            except Exception:
-                pass
-        effective_ceiling = float(_ceiling_raw) if _ceiling_raw is not None else 15000.0
+        from app.pf_ceiling import pf_wage_ceiling_for
+        effective_ceiling = pf_wage_ceiling_for(db, payload.company_id)
         if (att_count + approved_leave_days) > 0:
             days_present = float(att_count + approved_leave_days)
             attendance_source = "recorded"

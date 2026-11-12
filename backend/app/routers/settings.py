@@ -904,8 +904,10 @@ class PayrollSettingsResponse(BaseModel):
 
 
 class PayrollSettingsUpdate(BaseModel):
-    pf_employee_pct: Optional[float] = Field(None, ge=0, le=12)
-    pf_employer_pct: Optional[float] = Field(None, ge=0, le=12)
+    # 12% is the statutory rate; companies and staff may contribute more
+    # (voluntary PF), so any rate up to 100% is accepted.
+    pf_employee_pct: Optional[float] = Field(None, ge=0, le=100)
+    pf_employer_pct: Optional[float] = Field(None, ge=0, le=100)
     esi_employee_pct: Optional[float] = Field(None, ge=0, le=1)
     esi_employer_pct: Optional[float] = Field(None, ge=0, le=5)
     tds_monthly: Optional[float] = Field(None, ge=0)
@@ -940,8 +942,8 @@ def get_payroll_settings(company_id: uuid.UUID, db: Session = Depends(get_db), _
     comp = db.query(models.Company).filter(models.Company.id == company_id).first()
     res = PayrollSettingsResponse.model_validate(row)
     res.assume_full_month_when_no_attendance = bool(comp.assume_full_month_when_no_attendance) if comp else False
-    if res.pf_wage_ceiling is None:
-        res.pf_wage_ceiling = float(comp.pf_wage_ceiling) if comp and comp.pf_wage_ceiling else 15000.0
+    from app.pf_ceiling import pf_wage_ceiling_for
+    res.pf_wage_ceiling = pf_wage_ceiling_for(db, company_id)
     res.pt_state = comp.pt_state if comp else None
     res.pt_states = PT_STATES
     return res
@@ -976,8 +978,8 @@ def update_payroll_settings(company_id: uuid.UUID, payload: PayrollSettingsUpdat
     comp = db.query(models.Company).filter(models.Company.id == company_id).first()
     res = PayrollSettingsResponse.model_validate(row)
     res.assume_full_month_when_no_attendance = bool(comp.assume_full_month_when_no_attendance) if comp else False
-    if res.pf_wage_ceiling is None:
-        res.pf_wage_ceiling = float(comp.pf_wage_ceiling) if comp and comp.pf_wage_ceiling else 15000.0
+    from app.pf_ceiling import pf_wage_ceiling_for
+    res.pf_wage_ceiling = pf_wage_ceiling_for(db, company_id)
     res.pt_state = comp.pt_state if comp else None
     res.pt_states = PT_STATES
     return res

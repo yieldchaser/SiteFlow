@@ -414,6 +414,9 @@ def test_pf_ecr_files_the_pf_the_payslip_deducted(client, db, make_tenant, auth_
     higher wage on the payslip. The return used to refile it on a fixed
     Rs 15,000 ceiling, so it disagreed with the money actually deducted."""
     comp, user, hdr = _hdr(auth_headers, make_tenant, db, "ECRPAY")
+    # The company's own PF wage ceiling, set in Settings, is above Rs 15,000.
+    comp.pf_wage_ceiling = 25000
+    db.commit()
     emp = _emp(db, comp, "Rig Supervisor", basic_salary=20000)
     _seed_payroll(db, comp, "2026-07", [
         (emp, dict(days_present=26, days_in_month=26, basic=20000, pf_employee=2400, pf_employer=2400)),
