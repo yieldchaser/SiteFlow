@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import List, Optional
 from app.database import get_db
 from app import models, supabase_storage
+from app.library_names import refuse_same_name_on_create, refuse_same_name_on_update
 from app.models import User
 from app.auth import get_current_user, verify_company_access, verify_project_access, get_company_membership, require_permission, assert_cost_codes_known
 import uuid
@@ -351,6 +352,7 @@ def create_library_party(payload: PartyCreate, db: Session = Depends(get_db), cu
     else:
         payload.party_id_custom = next_party_id_custom(db, payload.company_id)
     
+    refuse_same_name_on_create(db, models.LibraryParty, payload)
     party = models.LibraryParty(
         company_id=payload.company_id,
         party_id_custom=payload.party_id_custom,
@@ -409,6 +411,7 @@ def update_library_party(party_id: uuid.UUID, payload: PartyUpdate, db: Session 
         raise HTTPException(status_code=404, detail="Party not found")
     get_company_membership(db, current_user, party.company_id)
     require_permission(db, current_user, party.company_id, "library:edit")
+    refuse_same_name_on_update(db, party, payload)
 
     update_dict = payload.model_dump(exclude_unset=True)
     if "date_of_joining" in update_dict:
@@ -642,6 +645,7 @@ def get_library_asset_types(company_id: uuid.UUID, db: Session = Depends(get_db)
 def create_library_asset_type(payload: AssetTypeCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     get_company_membership(db, current_user, payload.company_id)
     require_permission(db, current_user, payload.company_id, "library:edit")
+    refuse_same_name_on_create(db, models.LibraryAssetType, payload)
     item = models.LibraryAssetType(company_id=payload.company_id, name=payload.name)
     db.add(item)
     db.commit()
@@ -655,6 +659,7 @@ def update_library_asset_type(item_id: uuid.UUID, payload: AssetTypeUpdate, db: 
         raise HTTPException(status_code=404, detail="Asset type not found")
     get_company_membership(db, current_user, item.company_id)
     require_permission(db, current_user, item.company_id, "library:edit")
+    refuse_same_name_on_update(db, item, payload)
     item.name = payload.name
     db.commit()
     db.refresh(item)
@@ -832,6 +837,7 @@ def get_library_deductions(company_id: uuid.UUID, db: Session = Depends(get_db),
 def create_library_deduction(payload: DeductionCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     get_company_membership(db, current_user, payload.company_id)
     require_permission(db, current_user, payload.company_id, "library:edit")
+    refuse_same_name_on_create(db, models.LibraryDeduction, payload)
     item = models.LibraryDeduction(company_id=payload.company_id, name=payload.name)
     db.add(item)
     db.commit()
@@ -845,6 +851,7 @@ def update_library_deduction(item_id: uuid.UUID, payload: DeductionUpdate, db: S
         raise HTTPException(status_code=404, detail="Deduction not found")
     get_company_membership(db, current_user, item.company_id)
     require_permission(db, current_user, item.company_id, "library:edit")
+    refuse_same_name_on_update(db, item, payload)
     item.name = payload.name
     db.commit()
     db.refresh(item)
@@ -873,6 +880,7 @@ def get_library_progresses(company_id: uuid.UUID, db: Session = Depends(get_db),
 def create_library_progress(payload: ProgressCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     get_company_membership(db, current_user, payload.company_id)
     require_permission(db, current_user, payload.company_id, "library:edit")
+    refuse_same_name_on_create(db, models.LibraryProgress, payload)
     item = models.LibraryProgress(company_id=payload.company_id, name=payload.name)
     db.add(item)
     db.commit()
@@ -886,6 +894,7 @@ def update_library_progress(item_id: uuid.UUID, payload: ProgressUpdate, db: Ses
         raise HTTPException(status_code=404, detail="Progress not found")
     get_company_membership(db, current_user, item.company_id)
     require_permission(db, current_user, item.company_id, "library:edit")
+    refuse_same_name_on_update(db, item, payload)
     item.name = payload.name
     db.commit()
     db.refresh(item)
@@ -914,6 +923,7 @@ def get_library_workforces(company_id: uuid.UUID, db: Session = Depends(get_db),
 def create_library_workforce(payload: WorkforceCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     get_company_membership(db, current_user, payload.company_id)
     require_permission(db, current_user, payload.company_id, "library:edit")
+    refuse_same_name_on_create(db, models.LibraryWorkforce, payload)
     item = models.LibraryWorkforce(
         company_id=payload.company_id,
         name=payload.name,
@@ -934,6 +944,7 @@ def update_library_workforce(item_id: uuid.UUID, payload: WorkforceUpdate, db: S
         raise HTTPException(status_code=404, detail="Workforce not found")
     get_company_membership(db, current_user, item.company_id)
     require_permission(db, current_user, item.company_id, "library:edit")
+    refuse_same_name_on_update(db, item, payload)
     update_data = payload.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(item, field, value)
@@ -992,6 +1003,7 @@ def get_library_materials(
 def create_library_material(payload: MaterialCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     get_company_membership(db, current_user, payload.company_id)
     require_permission(db, current_user, payload.company_id, "library:edit")
+    refuse_same_name_on_create(db, models.LibraryMaterial, payload)
     item = models.LibraryMaterial(
         company_id=payload.company_id,
         name=payload.name,
@@ -1021,6 +1033,7 @@ def update_library_material(item_id: uuid.UUID, payload: MaterialUpdate, db: Ses
         raise HTTPException(status_code=404, detail="Material not found")
     get_company_membership(db, current_user, item.company_id)
     require_permission(db, current_user, item.company_id, "library:edit")
+    refuse_same_name_on_update(db, item, payload)
     for k, v in payload.model_dump(exclude_unset=True).items():
         setattr(item, k, v)
     db.commit()
@@ -1064,6 +1077,7 @@ def create_library_rate(payload: RateCreate, db: Session = Depends(get_db), curr
     # R2-764: library rate cost code must exist in the company's Cost Code Library
     if payload.cost_code:
         assert_cost_codes_known(db, payload.company_id, codes=[payload.cost_code], status_code=422)
+    refuse_same_name_on_create(db, models.LibraryRate, payload)
     item = models.LibraryRate(
         company_id=payload.company_id,
         name=payload.name,
@@ -1091,6 +1105,7 @@ def update_library_rate(item_id: uuid.UUID, payload: RateUpdate, db: Session = D
         raise HTTPException(status_code=404, detail="Rate item not found")
     get_company_membership(db, current_user, item.company_id)
     require_permission(db, current_user, item.company_id, "library:edit")
+    refuse_same_name_on_update(db, item, payload)
     if payload.cost_code:
         assert_cost_codes_known(db, item.company_id, codes=[payload.cost_code], status_code=422)
     for k, v in payload.model_dump(exclude_unset=True).items():
@@ -1135,6 +1150,7 @@ def get_library_retentions(company_id: uuid.UUID, db: Session = Depends(get_db),
 def create_library_retention(payload: RetentionCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     get_company_membership(db, current_user, payload.company_id)
     require_permission(db, current_user, payload.company_id, "library:edit")
+    refuse_same_name_on_create(db, models.LibraryRetention, payload)
     item = models.LibraryRetention(company_id=payload.company_id, name=payload.name)
     db.add(item)
     db.commit()
@@ -1149,6 +1165,7 @@ def update_library_retention(item_id: uuid.UUID, payload: RetentionUpdate, db: S
         raise HTTPException(status_code=404, detail="Retention not found")
     get_company_membership(db, current_user, item.company_id)
     require_permission(db, current_user, item.company_id, "library:edit")
+    refuse_same_name_on_update(db, item, payload)
     item.name = payload.name
     db.commit()
     db.refresh(item)
@@ -1190,6 +1207,7 @@ def get_material_categories(company_id: uuid.UUID, db: Session = Depends(get_db)
 def create_material_category(payload: MaterialCategoryCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     get_company_membership(db, current_user, payload.company_id)
     require_permission(db, current_user, payload.company_id, "library:edit")
+    refuse_same_name_on_create(db, models.MaterialCategory, payload)
     item = models.MaterialCategory(
         company_id=payload.company_id,
         name=payload.name,
@@ -1208,6 +1226,7 @@ def update_material_category(item_id: uuid.UUID, payload: MaterialCategoryUpdate
         raise HTTPException(status_code=404, detail="Material category not found")
     get_company_membership(db, current_user, item.company_id)
     require_permission(db, current_user, item.company_id, "library:edit")
+    refuse_same_name_on_update(db, item, payload)
     for k, v in payload.model_dump(exclude_unset=True).items():
         setattr(item, k, v)
     db.commit()

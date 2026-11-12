@@ -392,6 +392,23 @@ export default function LibraryHubPage() {
     }
   };
 
+  // One save at a time: a double click on Save used to send two requests and
+  // add the same vendor twice.
+  const savingRef = React.useRef(false);
+  const [saving, setSaving] = useState(false);
+  const onceAtATime = (fn: (e: React.FormEvent) => Promise<void>) => async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      await fn(e);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
+
   const handleCreateParty = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!partyName.trim()) return;
@@ -1350,7 +1367,7 @@ export default function LibraryHubPage() {
               <button onClick={() => setIsSimpleDrawerOpen(false)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>
             </div>
 
-            <form onSubmit={handleCreateSimple} className="p-6 space-y-4">
+            <form onSubmit={onceAtATime(handleCreateSimple)} className="p-6 space-y-4">
               {activeTab === "cost-code" && (
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-muted uppercase tracking-wider block mb-1.5">Cost Code *</label>
@@ -1433,7 +1450,8 @@ export default function LibraryHubPage() {
 
               <button
                 type="submit"
-                className="w-full py-2 bg-primary hover:bg-primary-hover text-white font-medium rounded-md text-sm transition-all mt-4 cursor-pointer"
+                disabled={saving}
+                className="w-full py-2 bg-primary hover:bg-primary-hover disabled:opacity-60 disabled:cursor-wait text-white font-medium rounded-md text-sm transition-all mt-4 cursor-pointer"
               >
                 Create Item
               </button>
@@ -1451,7 +1469,7 @@ export default function LibraryHubPage() {
               <button onClick={() => setIsPartyDrawerOpen(false)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>
             </div>
 
-            <form onSubmit={handleCreateParty} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+            <form onSubmit={onceAtATime(handleCreateParty)} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <div className="space-y-1 md:col-span-2">
                   <label className="text-xs font-medium text-muted uppercase tracking-wider block mb-1.5">Party Name *</label>
@@ -1773,7 +1791,8 @@ export default function LibraryHubPage() {
 
               <button
                 type="submit"
-                className="w-full py-2 bg-primary hover:bg-primary-hover text-white font-medium rounded-md text-sm transition-all mt-2 cursor-pointer"
+                disabled={saving}
+                className="w-full py-2 bg-primary hover:bg-primary-hover disabled:opacity-60 disabled:cursor-wait text-white font-medium rounded-md text-sm transition-all mt-2 cursor-pointer"
               >
                 {editingId ? "Update Party" : "Register Party"}
               </button>
@@ -1791,7 +1810,7 @@ export default function LibraryHubPage() {
               <button onClick={() => setIsMaterialDrawerOpen(false)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>
             </div>
 
-            <form onSubmit={handleCreateMaterial} className="p-6 space-y-3.5 max-h-[500px] overflow-y-auto">
+            <form onSubmit={onceAtATime(handleCreateMaterial)} className="p-6 space-y-3.5 max-h-[500px] overflow-y-auto">
               <div className="space-y-1">
                 <label className="text-xs font-medium text-muted uppercase tracking-wider block mb-1.5">Material Name *</label>
                 <input
@@ -1910,7 +1929,8 @@ export default function LibraryHubPage() {
 
               <button
                 type="submit"
-                className="w-full py-2 bg-primary hover:bg-primary-hover text-white font-medium rounded-md text-sm transition-all mt-2 cursor-pointer"
+                disabled={saving}
+                className="w-full py-2 bg-primary hover:bg-primary-hover disabled:opacity-60 disabled:cursor-wait text-white font-medium rounded-md text-sm transition-all mt-2 cursor-pointer"
               >
                 {editingId ? "Update Material" : "Save Material"}
               </button>
@@ -1928,7 +1948,7 @@ export default function LibraryHubPage() {
               <button onClick={() => setIsRateDrawerOpen(false)} className="text-muted hover:text-foreground cursor-pointer"><Icon name="close" className="w-5 h-5" /></button>
             </div>
 
-            <form onSubmit={handleCreateRate} className="p-6 space-y-3.5 max-h-[500px] overflow-y-auto">
+            <form onSubmit={onceAtATime(handleCreateRate)} className="p-6 space-y-3.5 max-h-[500px] overflow-y-auto">
               <div className="space-y-1">
                 <label className="text-xs font-medium text-muted uppercase tracking-wider block mb-1.5">Item Name *</label>
                 <input
@@ -2054,7 +2074,8 @@ export default function LibraryHubPage() {
 
               <button
                 type="submit"
-                className="w-full py-2 bg-primary hover:bg-primary-hover text-white font-medium rounded-md text-sm transition-all mt-2 cursor-pointer"
+                disabled={saving}
+                className="w-full py-2 bg-primary hover:bg-primary-hover disabled:opacity-60 disabled:cursor-wait text-white font-medium rounded-md text-sm transition-all mt-2 cursor-pointer"
               >
                 {editingId ? "Update Rate Card Item" : "Save Rate Card Item"}
               </button>

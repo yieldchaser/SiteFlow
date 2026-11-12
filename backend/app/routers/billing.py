@@ -2074,6 +2074,8 @@ def create_subcontractor(req: SubcontractorCreateRequest, db: Session = Depends(
     if not req.name or not req.name.strip():
         raise HTTPException(status_code=400, detail="Subcontractor name is required")
 
+    from app.library_names import refuse_same_name
+    refuse_same_name(db, models.LibraryParty, req.company_id, req.name, party_type="Subcontractor")
     tax_no = req.tax_no or req.gstin
     party = models.LibraryParty(
         company_id=req.company_id,
